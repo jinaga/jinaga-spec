@@ -1,11 +1,13 @@
 import JinagaSpec.Semantics
 
 /-!
-# Splitting a specification
+# Splitting a specification: shared plumbing
 
-`splitBeforeFirstSuccessor`. The graph can run a *head* of predecessor walks. A
-*tail* needs the store. The split cuts at the first match the graph cannot run,
-which is the *pivot*.
+The split (`JinagaSpec/Hoist.lean`) cuts a specification at the first match the
+graph cannot run — the *pivot* — into a *head* the graph runs, and a *tail* that
+needs the store, seeded with only the labels it uses. This file holds what a
+split's result is and how it evaluates, independent of the algorithm that
+produces it.
 
 The split assumes its input is well-formed (`JinagaSpec/WellFormed.lean`), and
 so needs no check of its own. In particular, no declared label is reserved, so
@@ -42,38 +44,9 @@ mutual
     | .existential _ ms => usedInMatches ms
 end
 
-/-- The path conditions of a match, in order. -/
-def pathsOf (conditions : List Condition) : List PathCondition :=
-  conditions.filterMap fun
-    | .path c => some c
-    | .existential .. => none
-
-/-- The existential conditions of a match, in order. -/
-def existentialsOf (conditions : List Condition) : List Condition :=
-  conditions.filter fun
-    | .path .. => false
-    | .existential .. => true
-
-/-! ## Splitting the pivot -/
-
-/-- The label the split gives the fact that the head walks to for the `i`th path
-condition of the pivot. -/
+/-- The label the split gives the fact that the head walks to for the `i`th
+hoisted path condition. -/
 def splitLabel (i : Nat) : Name := s!"__s{i}"
-
-/-- Split each path condition of the pivot, numbering them from `i`. One that
-walks predecessors gives the head a match that binds a split label, and the tail
-joins to that label instead. One that walks none already names a label the head
-binds. -/
-def splitPaths (i : Nat) : List PathCondition → List Match × List PathCondition
-  | [] => ([], [])
-  | c :: cs =>
-    let (headMatches, tailPaths) := splitPaths (i + 1) cs
-    match c.rolesRight.getLast? with
-    | none => (headMatches, c :: tailPaths)
-    | some last =>
-      (.mk { name := splitLabel i, type := last.predecessorType }
-          [.path { rolesLeft := [], labelRight := c.labelRight, rolesRight := c.rolesRight }] :: headMatches,
-       { rolesLeft := c.rolesLeft, labelRight := splitLabel i, rolesRight := [] } :: tailPaths)
 
 /-- The head always exists, and has no matches when the pivot is the first
 match and walks no predecessors. The tail is absent when nothing seeks
@@ -82,35 +55,10 @@ structure Split where
   head : Specification
   tail : Option Specification
 
-/-- The tail's matches: the pivot with its path conditions rewritten to join the
-split labels, and the matches after it. Existential conditions stay with the
-pivot, which the tail runs. -/
-def tailMatchesAt (pivot : Match) (tailPaths : List PathCondition) (after : List Match) : List Match :=
-  .mk pivot.unknown (tailPaths.map .path ++ existentialsOf pivot.conditions) :: after
-
 /-- The tail is given the labels in scope at the pivot that it uses. -/
 def tailGivenAt (s : Specification) (headMatches tailMatches : List Match) : List Label :=
   let used := usedInMatches tailMatches ++ s.projection.labels
   (s.given ++ headMatches.map (·.unknown)).filter fun label => used.contains label.name
-
-/-- Split at a pivot: the first match the graph cannot run, with the matches
-before and after it. -/
-def splitAt (s : Specification) (before : List Match) (pivot : Match) (after : List Match) : Split :=
-  let (splitMatches, tailPaths) := splitPaths 0 (pathsOf pivot.conditions)
-  let headMatches := before ++ splitMatches
-  let tailMatches := tailMatchesAt pivot tailPaths after
-  let tailGiven := tailGivenAt s headMatches tailMatches
-  -- The head projects the tail's givens.
-  { head := { given := s.given, matchList := headMatches,
-              projection := .composite (tailGiven.map fun l => { name := l.name, label := l.name }) },
-    tail := some { given := tailGiven, matchList := tailMatches, projection := s.projection } }
-
-def splitBeforeFirstSuccessor (s : Specification) : Split :=
-  match s.matchList.span matchIsDeterministic with
-  | (_, []) =>
-    -- No match seeks successors, so the whole specification is the head.
-    { head := s, tail := none }
-  | (before, pivot :: after) => splitAt s before pivot after
 
 /-! ## Evaluating a split -/
 

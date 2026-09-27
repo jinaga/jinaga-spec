@@ -1,8 +1,8 @@
 # TypeScript port
 
-Runs the conformance vectors against the split in a `jinaga.js` checkout. That
-split is `hoist` (jinaga/jinaga.js#325), so each split vector is checked
-against its `hoisted` envelope.
+Runs the conformance vectors against the split in a `jinaga.js` checkout:
+`splitBeforeFirstSuccessor` (jinaga/jinaga.js#325), each split vector's own
+`expected` envelope.
 
 ```
 npm ci

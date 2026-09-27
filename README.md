@@ -12,8 +12,9 @@ tractable, and the ports checkable. The answer so far is yes. Nothing in `jinaga
 
 | | |
 |---|---|
-| `JinagaSpec/Syntax.lean`, `Semantics.lean`, `Split.lean` | The definitions: the language, what it means over a fact graph, and the split. 350 lines with the check, written to be read next to the TypeScript. |
-| `JinagaSpec/Proofs/` | The proof that the split preserves meaning. About 1,200 lines. `Main.lean` has the theorem. |
+| `JinagaSpec/Syntax.lean`, `Semantics.lean`, `Split.lean` | The definitions: the language, what it means over a fact graph, and the shared plumbing a split's result evaluates through. Written to be read next to the TypeScript. |
+| `JinagaSpec/Hoist.lean` | `splitBeforeFirstSuccessor`: the split. Reaches into existential conditions at any depth, not only the pivot's own top level, hoisting a predecessor walk into the head wherever doing so is sound. |
+| `JinagaSpec/Proofs/` | The proof that the split preserves meaning. `Proofs/Hoist.lean` has the theorem. |
 | `JinagaSpec/Cases.lean`, `Vectors.lean` | Named specifications, and the program that writes them out with the split the oracle computes. |
 | `vectors/` | The generated conformance vectors: `split/` for the split, `well-formed/` for the check. Any port can read them. |
 | `ports/typescript/` | Runs the vectors against `jinaga.js`, holds a reference `isWellFormed`, and audits `jinaga.js`'s parser against the well-formedness vectors. |
@@ -22,7 +23,6 @@ tractable, and the ports checkable. The answer so far is yes. Nothing in `jinaga
 | `docs/contracts.md` | What the split expects, who must provide it, and how to check a sequence of steps. |
 | `JinagaSpec/WellFormed.lean` | `isWellFormed`: an executable check of the split's preconditions, proved to agree with `WellFormed`. |
 | `JinagaSpec/Store.lean`, `JinagaSpec/Proofs/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary theorem `tailReadsGiven` decides. |
-| `JinagaSpec/Hoist.lean`, `JinagaSpec/Proofs/Hoist.lean` | `hoist`: the fix for formulation D of #231, proved sound for every well-formed specification. |
 
 ## Try it
 
@@ -40,8 +40,11 @@ toolchain is pinned in `lean-toolchain`, and there is no other Lean dependency
 
 An authorization rule is a specification. To evaluate one, `jinaga.js` cuts it
 at its first match that the in-memory graph cannot run. The *head* before the
-cut walks predecessors on the graph. The *tail* after it runs against the
-store, once per head result, seeded with only the facts the tail is given.
+cut walks predecessors on the graph, reaching into the tail's existential
+conditions, at any depth, not only the pivot's own top level, for every
+predecessor walk of a label already in scope, hoisting it into the head
+wherever doing so is sound. The *tail* after it runs against the store, once
+per head result, seeded with only the facts the tail is given.
 
 ```lean
 theorem split_correct (s : Specification) (hwf : WellFormed s) (g : Graph) (env : Env)
@@ -98,28 +101,26 @@ specification means on the graph that holds the given (`store_correct`). See
 when the tail is given the rule's own given
 ([jinaga/jinaga.js#324](https://github.com/jinaga/jinaga.js/pull/324)). The
 TypeScript port checks that it throws exactly when `tailReadsGiven` is true of
-the split it runs, which is `hoist`, below.
+the split it runs.
 
-`hoist` (`JinagaSpec/Hoist.lean`) is the split `jinaga.js` runs
-([jinaga/jinaga.js#325](https://github.com/jinaga/jinaga.js/pull/325)). It
-admits formulation D of jinaga/jinaga.js#231, which `splitBeforeFirstSuccessor`
-leaves with a tail that reads the given: it reaches into the tail's existential
-conditions, at any depth, not only the pivot's own top level, for a
-predecessor walk of a label already in scope, hoisting it only where doing so
-is sound. `hoist_correct` proves
-this sound for every well-formed specification, with no hypothesis beyond
-`WellFormed s` — the same shape as `split_correct` — and `store_denies_hoist`/
-`store_correct_hoist` carry the store boundary theorems over to it. Where
-hoisting stops being sound, and the argument the general proof turns on, are
-in `docs/findings.md` — including a second unsoundness the randomized check
-found in an earlier version of the rule, one level of nesting deeper than the
-first.
+Reaching into existential conditions at any depth, rather than only the
+pivot's own top level, is what admits formulation D of jinaga/jinaga.js#231,
+which a split confined to the pivot's own path conditions leaves with a tail
+that reads the given. Not every such condition can be hoisted soundly — only
+one at *positive* polarity, not enclosed by any negative existential, however
+deep — and `split_correct` proves the split sound regardless, for every
+well-formed specification, with no hypothesis beyond `WellFormed s`. Where
+hoisting stops being sound, and the argument the proof turns on, are in
+`docs/findings.md` — including an unsoundness the randomized check found in an
+earlier version of the rule, one level of nesting deeper than the first
+counterexample.
 
 ## Reading the definitions
 
-`Split.lean` is in a deliberately **portable subset**: inductive types, total
-pure functions, structural recursion, and lists. No tactics, no dependent types.
-A port should read line for line. Names match TypeScript, with these exceptions:
+`Split.lean` and `Hoist.lean` are in a deliberately **portable subset**:
+inductive types, total pure functions, structural recursion, and lists. No
+tactics, no dependent types. A port should read line for line. Names match
+TypeScript, with these exceptions:
 
 | Lean | TypeScript |
 |---|---|
@@ -131,12 +132,13 @@ A port should read line for line. Names match TypeScript, with these exceptions:
 | `Split.evaluate` | the head-then-tail evaluation in `AuthorizationRuleSpecification` |
 | `Env.restrictTo names` | `startReferences(tuple, tail)` |
 | `tailGivenAt` | `referencedLabels(tailMatches, inScope, projection)` |
-| `splitPaths`, `splitLabel` | none, since `jinaga.js` runs `hoist`, which subsumes it; and `splitLabel(i)` |
+| `splitLabel` | `splitLabel(i)` |
 | `WellFormed` | what `SpecificationParser` and `validateSpecification` enforce |
 | `Graph.authGraph` | the in-memory write batch, with the fact under authorization added |
 | `Split.evaluateStore` | `AuthorizationRuleSpecification.isAuthorized`/`getAuthorizedPopulation`, running the tail on the store |
 | `tailReadsGiven` | the check in `AuthorizationRuleSpecification`'s constructor that throws `AuthorizationRuleError` (jinaga/jinaga.js#324) |
-| `hoist`, `hoistMatches`, `hoistCondition` | `splitBeforeFirstSuccessor`, `hoistMatches`, `hoistCondition` (jinaga/jinaga.js#325); the Lean index is the length of the list of hoisted matches |
+| `splitBeforeFirstSuccessor` | `splitBeforeFirstSuccessor` (jinaga/jinaga.js#325) |
+| `hoistMatches`, `hoistCondition` | `hoistMatches`, `hoistCondition`; jinaga.js numbers split labels by the length of the accumulator it builds up, where Lean threads an explicit `i : Nat` index |
 
 
 ## Conformance vectors
@@ -172,11 +174,7 @@ harder to hide, but they are not a proof about the TypeScript.
 2. Given conditions and the remaining projections, and a .NET runner for the vectors.
 3. Vectors that check evaluation (a specification, a graph, and the expected
    results), so a port is checked on meaning as well as on shape.
-4. Make `hoist` the specification's split: regenerate the vectors so
-   `expected` is the hoisted split, and drop the separate `hoisted` envelope.
-   `jinaga.js` runs it (jinaga/jinaga.js#325), and `jinaga.net` should adopt it
-   with the boundary check in item 1.
-5. `buildFeeds`, then skeleton canonicity, then distribution soundness.
+4. `buildFeeds`, then skeleton canonicity, then distribution soundness.
 
 ## License
 

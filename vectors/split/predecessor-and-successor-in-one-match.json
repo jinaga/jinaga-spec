@@ -13,34 +13,6 @@
  "source":
  "splitSpecificationSpec: should split if predecessor and then successor, but in one match",
  "name": "predecessor-and-successor-in-one-match",
- "hoisted":
- {"tailText":
-  "(__s0: Office) {\n    u1: President [\n        u1->office: Office = __s0\n    ]\n} => u1\n",
-  "tailReadsGiven": false,
-  "tail":
-  {"projection": {"type": "fact", "label": "u1"},
-   "matches":
-   [{"unknown": {"type": "President", "name": "u1"},
-     "conditions":
-     [{"type": "path",
-       "rolesRight": [],
-       "rolesLeft": [{"predecessorType": "Office", "name": "office"}],
-       "labelRight": "__s0"}]}],
-   "given": [{"label": {"type": "Office", "name": "__s0"}, "conditions": []}]},
-  "headText":
-  "(p1: Employee) {\n    __s0: Office [\n        __s0 = p1->office: Office\n    ]\n} => {\n    __s0 = __s0\n}\n",
-  "head":
-  {"projection":
-   {"type": "composite",
-    "components": [{"type": "fact", "name": "__s0", "label": "__s0"}]},
-   "matches":
-   [{"unknown": {"type": "Office", "name": "__s0"},
-     "conditions":
-     [{"type": "path",
-       "rolesRight": [{"predecessorType": "Office", "name": "office"}],
-       "rolesLeft": [],
-       "labelRight": "p1"}]}],
-   "given": [{"label": {"type": "Employee", "name": "p1"}, "conditions": []}]}},
  "expected":
  {"tailText":
   "(__s0: Office) {\n    u1: President [\n        u1->office: Office = __s0\n    ]\n} => u1\n",

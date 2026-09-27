@@ -44,28 +44,6 @@ theorem allHold_append {g : Graph} {env : Env} {u : Name} {a b : List Condition}
   | nil => simp [allHold]
   | cons c cs ih => simp [allHold, ih, Bool.and_assoc]
 
-/-- A match's conditions hold if and only if its path conditions and its
-existential conditions each do. -/
-theorem allHold_pathsOf_existentialsOf {g : Graph} {env : Env} {u : Name} {cs : List Condition} :
-    allHold g env u cs =
-      (allHold g env u ((pathsOf cs).map .path) && allHold g env u (existentialsOf cs)) := by
-  induction cs with
-  | nil => simp [allHold, pathsOf, existentialsOf]
-  | cons c cs ih =>
-    cases c with
-    | path p =>
-      simp [pathsOf, existentialsOf, allHold, ih, Bool.and_assoc] at *
-    | existential e ms =>
-      have h1 : pathsOf (.existential e ms :: cs) = pathsOf cs := by simp [pathsOf]
-      have h2 : existentialsOf (.existential e ms :: cs) =
-          .existential e ms :: existentialsOf cs := by simp [existentialsOf]
-      rw [h1, h2]
-      simp only [allHold]
-      rw [ih]
-      cases holds g env u (.existential e ms) <;>
-        cases allHold g env u ((pathsOf cs).map .path) <;>
-        cases allHold g env u (existentialsOf cs) <;> rfl
-
 /-- Only the labels a match list declares change. -/
 theorem evalMatches_frame {g : Graph} {ms : List Match} :
     ∀ {env e' : Env}, e' ∈ evalMatches g env ms →
@@ -118,17 +96,5 @@ theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g 
   simp only [List.flatMap_def]
   congr 1
   exact List.map_congr_left he
-
-theorem pathsOf_cons_path {pc : PathCondition} {cs : List Condition} :
-    pathsOf (.path pc :: cs) = pc :: pathsOf cs := rfl
-
-theorem pathsOf_cons_ex {e : Bool} {ms : List Match} {cs : List Condition} :
-    pathsOf (.existential e ms :: cs) = pathsOf cs := rfl
-
-theorem existentialsOf_cons_path {pc : PathCondition} {cs : List Condition} :
-    existentialsOf (.path pc :: cs) = existentialsOf cs := rfl
-
-theorem existentialsOf_cons_ex {e : Bool} {ms : List Match} {cs : List Condition} :
-    existentialsOf (.existential e ms :: cs) = .existential e ms :: existentialsOf cs := rfl
 
 end JinagaSpec
