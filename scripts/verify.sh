@@ -37,7 +37,7 @@ jinaga="${JINAGA_JS:-../jinaga.js}"
 if [ -d "$jinaga/src/specification" ]; then
   jinaga="$(cd "$jinaga" && pwd)"
   echo "== TypeScript port against $jinaga"
-  (cd ports/typescript && npm ci --silent && JINAGA_JS="$jinaga" npm run --silent vectors | grep -E "vectors pass|FAIL"; npm run --silent audit | tail -2)
+  (cd ports/typescript && npm ci --silent && JINAGA_JS="$jinaga" npm run --silent vectors | grep -E "vectors pass|vectors agree|FAIL"; npm run --silent audit | tail -2)
 else
   echo "== TypeScript port skipped (no jinaga.js checkout at $jinaga)"
 fi
