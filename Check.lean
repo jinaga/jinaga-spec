@@ -488,22 +488,22 @@ def main (args : List String) : IO UInt32 := do
   let cxEnv : Env := fun n => if n = "p1" then some 0 else none
   let cxExpected := cx.evaluate gx cxEnv
   let cxNoPolarity := (hoistNoPolarity cx).evaluate gx cxEnv
-  let cxHoist := (splitBeforeFirstSuccessor cx).evaluate gx cxEnv
-  IO.println s!"hoist counterexample: reference {repr cxExpected}, ignoring polarity {repr cxNoPolarity}, hoist {repr cxHoist}"
+  let cxSplit := (splitBeforeFirstSuccessor cx).evaluate gx cxEnv
+  IO.println s!"split counterexample: reference {repr cxExpected}, ignoring polarity {repr cxNoPolarity}, split {repr cxSplit}"
   unless !sameSet cxExpected cxNoPolarity do
     throw <| IO.userError "the polarity counterexample no longer disagrees when polarity is ignored"
-  unless sameSet cxExpected cxHoist do
-    throw <| IO.userError "hoist (respecting polarity) disagreed on the polarity counterexample"
+  unless sameSet cxExpected cxSplit do
+    throw <| IO.userError "the split (respecting polarity) disagreed on the polarity counterexample"
   let (cx2, gx2) := polarityDoubleNegCounterexample
   let cx2Env : Env := fun n => if n = "p1" then some 0 else none
   let cx2Expected := cx2.evaluate gx2 cx2Env
   let cx2NaiveParity := (hoistNaiveParity cx2).evaluate gx2 cx2Env
-  let cx2Hoist := (splitBeforeFirstSuccessor cx2).evaluate gx2 cx2Env
-  IO.println s!"hoist double-negation counterexample: reference {repr cx2Expected}, naive parity {repr cx2NaiveParity}, hoist {repr cx2Hoist}"
+  let cx2Split := (splitBeforeFirstSuccessor cx2).evaluate gx2 cx2Env
+  IO.println s!"split double-negation counterexample: reference {repr cx2Expected}, naive parity {repr cx2NaiveParity}, split {repr cx2Split}"
   unless !sameSet cx2Expected cx2NaiveParity do
     throw <| IO.userError "the double-negation counterexample no longer disagrees under naive parity"
-  unless sameSet cx2Expected cx2Hoist do
-    throw <| IO.userError "hoist (monotone polarity) disagreed on the double-negation counterexample"
+  unless sameSet cx2Expected cx2Split do
+    throw <| IO.userError "the split (monotone polarity) disagreed on the double-negation counterexample"
   let mut hoistNoPolTotal : Tally := {}
   let mut hoistNaiveTotal : Tally := {}
   let mut hoistTotal : Tally := {}
