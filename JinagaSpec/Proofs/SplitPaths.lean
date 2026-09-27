@@ -10,7 +10,7 @@ whether the successor walk reaches any of them.
 -/
 namespace JinagaSpec
 
-private theorem step_mem_type {g : Graph} {role : Role} {r p : FactId}
+theorem step_mem_type {g : Graph} {role : Role} {r p : FactId}
     (h : p ∈ g.step role r) :
     ∃ f ∈ g, f.id = p ∧ f.type = role.predecessorType := by
   unfold Graph.step at h
@@ -30,7 +30,7 @@ private theorem step_mem_type {g : Graph} {role : Role} {r p : FactId}
       simp only [beq_iff_eq] at h1
       exact ⟨f, h2, h1, hp⟩
 
-private theorem walk_mem_type {g : Graph} {last : Role} :
+theorem walk_mem_type {g : Graph} {last : Role} :
     ∀ (R : List Role) (r a : FactId), a ∈ g.walk r R → R.getLast? = some last →
       ∃ f ∈ g, f.id = a ∧ f.type = last.predecessorType := by
   intro R
@@ -111,7 +111,7 @@ theorem splitPaths_head_index :
       · obtain ⟨j, hj, hn⟩ := ih (i + 1) m hm
         exact ⟨j, by omega, hn⟩
 
-private theorem pathHolds_agree {g : Graph} {c : PathCondition} {u : Name} {f : FactId}
+theorem pathHolds_agree {g : Graph} {c : PathCondition} {u : Name} {f : FactId}
     {e e' : Env} (h : e' c.labelRight = e c.labelRight ∨ c.labelRight = u) :
     c.holds g (e'.bind u f) u = c.holds g (e.bind u f) u := by
   have h1 : (e'.bind u f) u = (e.bind u f) u := by simp [Env.bind]
@@ -124,7 +124,7 @@ private theorem pathHolds_agree {g : Graph} {c : PathCondition} {u : Name} {f : 
   unfold PathCondition.holds
   rw [h1, h2]
 
-private theorem allHold_bind_irrel {g : Graph} {u name : Name} {f x : FactId} {e : Env}
+theorem allHold_bind_irrel {g : Graph} {u name : Name} {f x : FactId} {e : Env}
     (_hnu : name ≠ u) :
     ∀ (ps : List PathCondition), (∀ c ∈ ps, c.labelRight ≠ name) →
       allHold g ((e.bind name x).bind u f) u (ps.map .path) =

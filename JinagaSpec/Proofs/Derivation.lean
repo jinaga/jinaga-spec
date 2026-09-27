@@ -174,6 +174,57 @@ theorem scopedConditions_existentialsOf {inner outer : List Name} :
       rw [e]
       exact ⟨h.1, ih h.2⟩
 
+/-! ## Every label a scoped, well-named list of matches uses is ordinary
+
+A used label is either something already in scope (ordinary, by hypothesis) or
+something the matches themselves declare (ordinary, by well-namedness) —
+recursively, through existential conditions at any depth. -/
+
+mutual
+  theorem usedInMatches_ordinary :
+      ∀ (ms : List Match) (A : List Name), ScopedMatches A ms → WellNamedMatches A ms →
+        (∀ x ∈ A, isReserved x = false) → ∀ x ∈ usedInMatches ms, isReserved x = false
+    | [], _, _, _, _, _, hx => by simp [usedInMatches] at hx
+    | .mk u cs :: rest, A, hsc, hwn, hordA, x, hx => by
+      obtain ⟨hcs, hrest⟩ : ScopedConditions (u.name :: A) A cs ∧ ScopedMatches (u.name :: A) rest := hsc
+      obtain ⟨hun, hordU, hwncs, hwnrest⟩ :
+          u.name ∉ A ∧ isReserved u.name = false ∧ WellNamedConditions (u.name :: A) cs ∧
+            WellNamedMatches (u.name :: A) rest := hwn
+      have hordAu : ∀ y ∈ u.name :: A, isReserved y = false := by
+        intro y hy
+        rcases List.mem_cons.mp hy with rfl | hy
+        · exact hordU
+        · exact hordA y hy
+      simp only [usedInMatches, List.mem_append] at hx
+      rcases hx with hx | hx
+      · exact usedInConditions_ordinary cs (u.name :: A) A hcs hwncs hordAu hordA x hx
+      · exact usedInMatches_ordinary rest (u.name :: A) hrest hwnrest hordAu x hx
+
+  theorem usedInConditions_ordinary :
+      ∀ (cs : List Condition) (inner outer : List Name), ScopedConditions inner outer cs →
+        WellNamedConditions inner cs → (∀ x ∈ inner, isReserved x = false) →
+        (∀ x ∈ outer, isReserved x = false) → ∀ x ∈ usedInConditions cs, isReserved x = false
+    | [], _, _, _, _, _, _, _, hx => by simp [usedInConditions] at hx
+    | c :: cs, inner, outer, hsc, hwn, hordI, hordO, x, hx => by
+      obtain ⟨hc0, hcs⟩ : ScopedCondition inner outer c ∧ ScopedConditions inner outer cs := hsc
+      obtain ⟨hwnc, hwncs⟩ : WellNamedCondition inner c ∧ WellNamedConditions inner cs := hwn
+      simp only [usedInConditions, List.mem_append] at hx
+      rcases hx with hx | hx
+      · exact usedInCondition_ordinary c inner outer hc0 hwnc hordI hordO x hx
+      · exact usedInConditions_ordinary cs inner outer hcs hwncs hordI hordO x hx
+
+  theorem usedInCondition_ordinary :
+      ∀ (c : Condition) (inner outer : List Name), ScopedCondition inner outer c →
+        WellNamedCondition inner c → (∀ x ∈ inner, isReserved x = false) →
+        (∀ x ∈ outer, isReserved x = false) → ∀ x ∈ usedInCondition c, isReserved x = false
+    | .path pc, _, outer, hsc, _, _, hordO, x, hx => by
+      simp only [usedInCondition, List.mem_singleton] at hx
+      subst hx
+      exact hordO _ hsc
+    | .existential _ ms, inner, _, hsc, hwn, hordI, _, x, hx =>
+      usedInMatches_ordinary ms inner hsc hwn hordI x hx
+end
+
 /-! ## Facts about a specification split at a pivot -/
 
 section Pivot

@@ -173,36 +173,70 @@ handcrafted counterexamples. This is the same shape of finding as the
 shadowing experiment above: a plausible-sounding rule, refuted by the
 randomized check before it reached a proof.
 
-## Hoisting: the proof covers a reduced scope
+## Hoisting: the general proof, and why it did not need `splitPaths`' numbering
 
-`hoist_correct` in full generality needs the argument above stated for actual
-existentials, not just tested against them: hoisting a positive-polarity
-condition into the head does not change whether the enclosing existentials
-have a solution. That argument is not proved; `docs/contracts.md` and
-`JinagaSpec/Proofs/Hoist.lean`'s module doc record what it would need.
+`hoist_correct` is now proved for every well-formed specification, with no
+hypothesis beyond `WellFormed s` — the same shape as `split_correct`. An
+earlier pass at this proof (recorded in an earlier revision of this file)
+tried to reduce `hoist_correct` to `split_correct` by showing the two
+algorithms compute the same split, up to `splitPaths`' numbering. That attempt
+stalled on a real obstacle: `hoist`'s split-label counter only advances when a
+condition is actually hoisted, while `splitPaths`' advances once per top-level
+path condition regardless, so the two numberings only coincide when every one
+of the pivot's own top-level conditions is eligible — not the general case,
+and not formulation D, where the eligible condition is *not* at the pivot's
+own top level at all.
 
-What is proved (`hoist_correct_reduced`) is narrower than the "depth zero and
-one positive existential" scope the task suggested attempting: it covers a
-pivot whose own top-level path conditions are *all* individually eligible for
-hoisting (or has none to hoist at all), with nothing eligible anywhere below
-that top level, and nothing eligible in the matches after the pivot. The extra
-condition — *all* of the pivot's own conditions eligible, not just the ones
-that are — is not needed for soundness; it is needed only so that `hoist`'s
-split-label numbering (which advances only when a condition is actually
-hoisted) lines up exactly with `splitPaths`' numbering (which advances once
-per top-level path condition regardless), so that the two computed splits are
-equal enough for `split_correct` to close the gap directly. A pivot with a
-*mix* of hoistable and non-hoistable top-level conditions — common among the
-named cases, and not covered here — picks the same split labels under a
-different, merely differently-numbered, name; closing that gap needs a
-renaming-invariance lemma (`hoist s` and `splitBeforeFirstSuccessor s` agree up
-to a bijection on reserved labels), which was not attempted. Of the sixteen
-named cases, six are in the proved scope
-(`predecessor-and-successor-in-one-match`, `existential-on-the-pivot`,
-`several-paths-each-walk-predecessors`, `projected-label-reaches-the-tail`,
-and the two with no pivot at all); formulation D needs the general argument;
-the rest need the renaming lemma. All sixteen, and thousands of random
-specifications, pass the randomized check regardless.
+The proof that landed does not go through `splitPaths` or `splitBeforeFirstSuccessor`
+at all. It generalizes the two lemmas underneath `split_correct` directly, to
+the whole tree instead of the pivot's own flat condition list:
+
+- `Locality.lean`'s environment-agreement argument (two environments agreeing
+  on a scope give solutions agreeing on that scope, plus what the matches
+  declare) generalizes to `hoistMatches`/`hoistConditions`/`hoistCondition`'s
+  own recursion, carrying the same agreement through however many nested
+  existentials.
+- `SplitPaths.lean`'s swap (a hoisted path condition, and the head match that
+  witnesses it, say the same thing) generalizes to a condition at any depth,
+  using the *same* commutation argument at every level: a hoisted label is
+  bound in the head, so it is existentially quantified outside every
+  quantifier of the tail; existentials commute with existentials, so pulling
+  the walk out through positive existentials preserves meaning, and a
+  negative existential is a universal an existential cannot be pulled through
+  — exactly the boundary `hoistCondition`'s monotone polarity already draws
+  (`Hoisting: polarity is not parity`, above).
+
+The two combine into one mutual induction
+(`hoistMatches_correct`/`hoistConditions_correct`/`hoistCondition_correct`,
+`Proofs/Hoist.lean`) mirroring `hoistMatches`/`hoistConditions`/`hoistCondition`'s
+own recursive structure: at each step, hoisting a match list is a genuine
+transformation (not just "a different but agreeing environment", the way
+`evalMatches_agree` treats it), so the induction is stated as a full `↔` over
+an explicit projection `(L, r)` — mirroring `pivot_step`'s own top-level
+shape — rather than the one-directional "original implies hoisted" form a
+first attempt reaches for; degenerating `L` to `[]` is what lets a nested
+existential's own emptiness check reuse the very same theorem, rather than
+needing a second, weaker lemma just for that case. `hoist_step` and
+`hoist_correct` then assemble exactly as `pivot_step` and `split_correct` do,
+using a generalized `tail_scoped` (`hoist_tail_scoped`) built on
+`hoistMatches_scoped` in place of `splitPaths_names`.
+
+The store boundary theorems carry over the same way: `store_denies_hoist` and
+`store_correct_hoist` (`Proofs/Store.lean`) are `store_denies`/`store_correct`
+with `hoist` in place of `splitBeforeFirstSuccessor`, reusing every
+graph-agnostic lemma (`walk_authGraph_eq`, `ordinary_binds_store`,
+`evalMatches_authGraph_agree`, `safeAt_before`) unchanged, and replacing only
+the two facts that were `splitPaths`-shaped: `given_notin_headMatchList` (now
+`given_notin_headMatchList_hoist`, using `hoistMatches_reserved` instead of
+`splitPaths_names`) and `splitPaths_head_binds_store` (now
+`hoistMatches_head_binds_store`, the same one-step-of-the-walk argument,
+generalized to `hoistMatches`'s recursion the same way `hoist_step` generalizes
+`pivot_step`). `OrdinaryTypes` survives hoisting outright
+(`hoistMatches_ordinaryTypes`): hoisting only ever rewrites conditions, never
+a match's own unknown or its type.
+
+All sixteen named cases, and thousands of random specifications, pass the
+randomized check, and now also the proof.
 
 ## Where the proof effort went
 
@@ -210,12 +244,12 @@ specifications, pass the randomized check regardless.
 |---|---|
 | `Locality.lean` | Evaluating matches depends only on the labels they use. |
 | `SplitPaths.lean` | Splitting the pivot's path conditions preserves them. |
-| `Derivation.lean` | The tail's givens, derived as used labels in scope, are closed. |
+| `Derivation.lean` | The tail's givens, derived as used labels in scope, are closed; every label a well-formed, scoped list of matches uses is ordinary. |
 | `Main.lean` | The pivot step, and the theorem. |
 | `WellFormedCheck.lean` | The executable check decides `WellFormed`. |
 | `Basic.lean`, `Scoped.lean` | Helper facts, and the definitions of well-formedness. |
-| `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies` and `store_correct`. |
-| `Proofs/Hoist.lean` | `hoist` agrees with `splitPaths`' numbering, and with the reference semantics, in the reduced scope above. |
+| `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies`/`store_correct` and their `hoist` counterparts. |
+| `Proofs/Hoist.lean` | `hoist` agrees with the reference semantics, for every well-formed specification, at any nesting depth. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
