@@ -1,10 +1,11 @@
 {
   "name": "jinaga-spec-typescript-port",
   "private": true,
-  "description": "Runs the conformance vectors against the TypeScript implementation in jinaga.js",
+  "description": "Runs the conformance vectors, and audits jinaga.js against them",
   "type": "module",
   "scripts": {
-    "vectors": "tsx run-vectors.ts"
+    "vectors": "tsx run-vectors.ts",
+    "audit": "tsx audit-jinaga.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

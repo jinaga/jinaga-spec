@@ -15,11 +15,12 @@ tractable, and the ports checkable. The answer so far is yes. Nothing in `jinaga
 | `JinagaSpec/Syntax.lean`, `Semantics.lean`, `Split.lean` | The definitions: the language, what it means over a fact graph, and the split. 343 lines, written to be read next to the TypeScript. |
 | `JinagaSpec/Proofs/` | The proof that the split preserves meaning. About 1,200 lines. `Main.lean` has the theorem. |
 | `JinagaSpec/Cases.lean`, `Vectors.lean` | Seventeen named specifications, and the program that writes them out with the split the oracle computes. |
-| `vectors/split/*.json` | The generated conformance vectors. Any port can read them. |
-| `ports/typescript/` | Runs the vectors against the TypeScript in a `jinaga.js` checkout. |
+| `vectors/` | The generated conformance vectors: `split/` for the split, `well-formed/` for the check. Any port can read them. |
+| `ports/typescript/` | Runs the vectors against `jinaga.js`, holds a reference `isWellFormed`, and audits `jinaga.js`'s parser against the well-formedness vectors. |
 | `Check.lean` | Randomized test of the theorem, with mutation checks. Runs before proving, and still useful after. |
 | `docs/findings.md` | What the spike turned up. Read this after the theorem. |
 | `docs/contracts.md` | What the split expects, who must provide it, and how to check a sequence of steps. |
+| `JinagaSpec/WellFormed.lean` | `isWellFormed`: an executable check of the split's preconditions, proved to agree with `WellFormed`. |
 
 ## Try it
 
@@ -119,8 +120,8 @@ harder to hide, but they are not a proof about the TypeScript.
 
 ## Next
 
-1. An executable `isWellFormed` with a soundness proof, and vectors for it
-   (`docs/contracts.md`).
+1. Wire `isWellFormed` into the `AuthorizationRuleSpecification` constructors in
+   `jinaga.js` and `jinaga.net` (`docs/contracts.md`).
 2. Given conditions and the remaining projections, and a .NET runner for the vectors.
 3. Vectors that check evaluation (a specification, a graph, and the expected
    results), so a port is checked on meaning as well as on shape.

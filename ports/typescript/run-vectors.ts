@@ -1,4 +1,5 @@
-// Runs the split conformance vectors against jinaga.js.
+// Runs the conformance vectors: the split against jinaga.js, and the
+// well-formedness check against the reference implementation in this directory.
 //
 //   JINAGA_JS=/path/to/jinaga.js npm run vectors
 //
@@ -8,10 +9,13 @@ import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { checkWellFormed } from "./well-formed.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const jinagaJs = resolve(process.env.JINAGA_JS ?? join(here, "../../../jinaga.js"));
-const vectorsDir = resolve(process.env.VECTORS ?? join(here, "../../vectors/split"));
+const vectorsRoot = resolve(process.env.VECTORS ?? join(here, "../../vectors"));
+const vectorsDir = join(vectorsRoot, "split");
+const wellFormedDir = join(vectorsRoot, "well-formed");
 
 const { splitBeforeFirstSuccessor } = await import(pathToFileURL(join(jinagaJs, "src/specification/specification.ts")).href);
 const { describeSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/description.ts")).href);
@@ -48,5 +52,20 @@ for (const file of files) {
         for (const p of problems) console.log(p.split("\n").map(l => "        " + l).join("\n"));
     }
 }
-console.log(`\n${files.length - failed} of ${files.length} vectors pass against ${jinagaJs}`);
-process.exit(failed === 0 ? 0 : 1);
+console.log(`\n${files.length - failed} of ${files.length} split vectors pass against ${jinagaJs}`);
+
+let wellFormedFailed = 0;
+const wellFormedFiles = readdirSync(wellFormedDir).filter(f => f.endsWith(".json")).sort();
+for (const file of wellFormedFiles) {
+    const vector = JSON.parse(readFileSync(join(wellFormedDir, file), "utf8"));
+    try {
+        deepStrictEqual(checkWellFormed(vector.specification), vector.expected);
+        console.log(`  ok    ${vector.name}`);
+    } catch (e: any) {
+        wellFormedFailed++;
+        console.log(`  FAIL  ${vector.name}   (${vector.source})`);
+        console.log(e.message.split("\n").slice(0, 12).map((l: string) => "        " + l).join("\n"));
+    }
+}
+console.log(`\n${wellFormedFiles.length - wellFormedFailed} of ${wellFormedFiles.length} well-formedness vectors pass`);
+process.exit(failed === 0 && wellFormedFailed === 0 ? 0 : 1);

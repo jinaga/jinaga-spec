@@ -71,7 +71,11 @@ The parser accepts, and `validateSpecification` passes,
 ```
 
 and the split returns a tail whose projection is `nosuchlabel`, a label nothing
-defines. `split_correct` does not apply, because `Projected` fails. The rule loads
+defines. `npm run audit` in `ports/typescript` reproduces this for every
+specification in `vectors/well-formed`: the parser rejects every scoping and
+shadowing violation, accepts every well-formed one (sibling-name reuse included),
+and accepts all three projection violations, which `validateSpecification` also
+passes. `split_correct` does not apply, because `Projected` fails. The rule loads
 and fails only when it runs. (Reproduced against the branch carrying #308, #309
 and #311.) The other two conditions are enforced by the parser, so a rule
 loaded from text meets them.
@@ -100,22 +104,56 @@ obligation.
 | producer | Scoped, Unshadowed, Projected | proved / enforced in code / **unverified** |
 | `f1` | ... | ... |
 
-Until a step is proved, the way to verify the sequence is to check the
-precondition at the boundary: run a `wellFormed` check on the specification
-immediately before it reaches the split, and treat failure as an authoring error.
-That check does not exist yet.
+Until a step is proved, verify the sequence by running the check on the
+specification immediately before it reaches the split, and treating failure as
+an authoring error.
 
-## Recommended next steps
+## The check
 
-1. **An executable `isWellFormed`** in `JinagaSpec/`, in the portable subset, with
-   a soundness theorem (`isWellFormed s = true → WellFormed s`). Ports run the
-   same check.
-2. **Vectors for it:** specifications that are well-formed, and one violating each
-   condition, with the expected verdict.
-3. **Call the check at the choke point:** the `AuthorizationRuleSpecification`
-   constructor, and the exported `splitBeforeFirstSuccessor`.
-4. **Close the projection gap** in the parser, or accept it as the reason for (3).
-5. **State `WellFormed` postconditions** for `alphaTransform`,
+`isWellFormed` (`JinagaSpec/WellFormed.lean`) is that check. It is written in the
+portable subset and reports the three conditions separately (`isScoped`,
+`isUnshadowed`, `isProjected`), so a port can name the one a specification
+violates.
+
+- **It decides the hypothesis exactly:** `isWellFormed_iff` proves
+  `isWellFormed s = true ↔ WellFormed s`. So a specification that passes is split
+  correctly (`split_correct_of_check`), and one the theorem covers is never
+  rejected.
+- **It has vectors:** `vectors/well-formed/` holds 16 specifications, well-formed
+  and violating each condition, with the expected verdict. Each case states the
+  verdict a reader of the rules expects, and the generator refuses to write a
+  vector where the oracle disagrees. All 17 specifications in `vectors/split/`
+  are checked to be well-formed.
+- **It has a reference port:** `ports/typescript/well-formed.ts` mirrors the Lean
+  and depends on nothing, so it can be lifted into `jinaga.js` as it stands. It
+  passes all 16 vectors, and mutants that skip the scope check or the shadowing
+  check are each caught by the vectors written for them.
+
+### Putting it to use in `jinaga.js`
+
+Not done here, because it changes `jinaga.js`. The change is small:
+
+1. Add `well-formed.ts` under `src/specification/`.
+2. In the `AuthorizationRuleSpecification` constructor, after
+   `validateSpecificationOrThrow`, throw an `AuthorizationRuleError` naming the
+   violated condition if `checkWellFormed` fails. That closes the projection gap
+   at the point a rule is stored, for the parser, the builders, and any future
+   producer, without relying on any of them.
+3. Decide whether the exported `splitBeforeFirstSuccessor` should check too, or
+   whether its documentation should state the precondition. Throwing there
+   changes a public function's behavior for callers outside this repository.
+
+`jinaga.net` needs the same check, run against the same vectors.
+
+## Remaining work
+
+1. **Wire the check into the constructors** in `jinaga.js` and `jinaga.net`
+   (above).
+2. **State `WellFormed` postconditions** for `alphaTransform`,
    `intersectSpecificationWithDistribution`, `reduceSpecification` and
    `buildFeeds`, and prove them or list them here as obligations, before any of
    them feeds the split.
+3. **Prove the split's own output well-formed**, so a head or tail can be passed
+   on.
+4. **Model conditions on givens and the remaining projections**, which the check
+   ignores today.

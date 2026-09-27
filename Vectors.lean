@@ -28,9 +28,37 @@ def caseToJson (c : Case) : Json :=
       ("headText", text split.head),
       ("tailText", text split.tail)])]
 
+def verdictsToJson (s : Specification) : Json :=
+  Json.mkObj [("scoped", isScoped s), ("unshadowed", isUnshadowed s),
+              ("projected", isProjected s), ("wellFormed", isWellFormed s)]
+
+def wellFormedCaseToJson (c : WellFormedCase) : Json :=
+  Json.mkObj [
+    ("name", c.name),
+    ("description", c.description),
+    ("source", c.source),
+    ("specification", specificationToJson c.spec),
+    ("text", describeSpecification c.spec),
+    ("expected", verdictsToJson c.spec)]
+
+/-- The vector's verdicts come from the oracle, but each case states what a
+reader of the rules expects, and a disagreement is an error, not a vector. -/
+def checkIntent (c : WellFormedCase) : IO Unit := do
+  if isScoped c.spec != c.expectScoped || isUnshadowed c.spec != c.expectUnshadowed || isProjected c.spec != c.expectProjected then
+    throw <| IO.userError s!"{c.name}: the oracle says scoped={isScoped c.spec}, unshadowed={isUnshadowed c.spec}, projected={isProjected c.spec}, but the case expects {c.expectScoped}, {c.expectUnshadowed}, {c.expectProjected}"
+
 def main (args : List String) : IO Unit := do
-  let dir : System.FilePath := (args.headD "vectors") / "split"
-  IO.FS.createDirAll dir
+  let root : System.FilePath := args.headD "vectors"
+  let splitDir := root / "split"
+  let wfDir := root / "well-formed"
+  IO.FS.createDirAll splitDir
+  IO.FS.createDirAll wfDir
   for c in cases do
-    IO.FS.writeFile (dir / s!"{c.name}.json") ((caseToJson c).pretty ++ "\n")
-  IO.println s!"wrote {cases.length} vectors to {dir}"
+    -- Every specification the split vectors use is one the theorem covers.
+    unless isWellFormed c.spec do
+      throw <| IO.userError s!"split case {c.name} is not well-formed"
+    IO.FS.writeFile (splitDir / s!"{c.name}.json") ((caseToJson c).pretty ++ "\n")
+  for c in wellFormedCases do
+    checkIntent c
+    IO.FS.writeFile (wfDir / s!"{c.name}.json") ((wellFormedCaseToJson c).pretty ++ "\n")
+  IO.println s!"wrote {cases.length} split vectors to {splitDir} and {wellFormedCases.length} well-formedness vectors to {wfDir}"

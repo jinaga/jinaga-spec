@@ -29,3 +29,21 @@ has a text printer, when printing the input, the head, and the tail gives `text`
 The JSON shapes are those of `Specification` in `jinaga.js`
 (`src/specification/specification.ts`). Givens carry `conditions: []`; conditions
 on givens are not modelled yet.
+
+## `well-formed/<name>.json`
+
+The same envelope, for the check `isWellFormed`:
+
+```jsonc
+{
+  "name": "projection-names-an-undefined-label",
+  "description": "...", "source": "...",
+  "specification": { ... }, "text": "...",
+  "expected": { "scoped": true, "unshadowed": true, "projected": false, "wellFormed": false }
+}
+```
+
+A port passes when its check returns exactly `expected` for `specification`. The
+three verdicts are the conditions in `docs/contracts.md`. Each case states the
+verdict a reader of the rules expects, and the generator refuses to write a
+vector where the oracle disagrees.

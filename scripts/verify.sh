@@ -17,14 +17,17 @@ echo "== No sorry, no added axioms"
 if grep -rnE "sorry|^axiom|native_decide" JinagaSpec; then
   echo "found a forbidden construct"; exit 1
 fi
-tmp="$(mktemp -d)"; printf 'import JinagaSpec\n#print axioms JinagaSpec.split_correct\n' > "$tmp/a.lean"
+tmp="$(mktemp -d)"; printf 'import JinagaSpec\n#print axioms JinagaSpec.split_correct\n#print axioms JinagaSpec.isWellFormed_iff\n' > "$tmp/a.lean"
 lake env lean "$tmp/a.lean" | tee "$tmp/out.txt"
 if grep -q sorryAx "$tmp/out.txt"; then echo "split_correct depends on sorry"; exit 1; fi
 
 echo "== Vectors are up to date"
 lake build vectors
 tmp="$(mktemp -d)"; lake exe vectors "$tmp" > /dev/null
-diff -r "$tmp/split" vectors/split && echo "vectors/split matches the oracle"
+for kind in split well-formed; do
+  diff -r "$tmp/$kind" "vectors/$kind" || { echo "vectors/$kind is out of date: run lake exe vectors"; exit 1; }
+done
+echo "vectors match the oracle"
 
 echo "== Randomized check"
 lake build check
@@ -34,7 +37,7 @@ jinaga="${JINAGA_JS:-../jinaga.js}"
 if [ -d "$jinaga/src/specification" ]; then
   jinaga="$(cd "$jinaga" && pwd)"
   echo "== TypeScript port against $jinaga"
-  (cd ports/typescript && npm ci --silent && JINAGA_JS="$jinaga" npm run --silent vectors | tail -3)
+  (cd ports/typescript && npm ci --silent && JINAGA_JS="$jinaga" npm run --silent vectors | grep -E "vectors pass|FAIL"; npm run --silent audit | tail -2)
 else
   echo "== TypeScript port skipped (no jinaga.js checkout at $jinaga)"
 fi

@@ -1,4 +1,5 @@
 import JinagaSpec.Build
+import JinagaSpec.WellFormed
 
 /-!
 # Cases
@@ -151,6 +152,137 @@ def cases : List Case :=
       [unknown "u1" "Blog" [path [] "p1" [blog]],
        unknown "u2" "Post" [path [blog] "u1", path [author] "p2"]]
       (fact "u2") }
+  ]
+
+/-- A specification, and the verdict on each well-formedness condition that a
+person reading the rules expects. The generator checks the oracle agrees. -/
+structure WellFormedCase where
+  name : String
+  description : String
+  source : String
+  spec : Specification
+  expectScoped : Bool
+  expectUnshadowed : Bool
+  expectProjected : Bool
+
+def wellFormedCases : List WellFormedCase :=
+  let office := role "office" "Office"
+  let revoked := role "revoked" "Revoked"
+  let simple := [unknown "u1" "Office" [path [] "p1" [office]]]
+  [
+  { name := "simple"
+    description := "A given, one match joined to it, and a projection of that match."
+    source := "the baseline"
+    spec := spec [("p1", "Employee")] simple (fact "u1")
+    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+  { name := "existential-uses-the-enclosing-unknown"
+    description := "An existential condition joins the unknown of the match it belongs to. That unknown is in scope inside it, and only there."
+    source := "splitSpecificationSpec: should split path when existential condition exists"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office" [path [] "p1" [office], notExists [unknown "u2" "Revoked" [path [revoked] "u1"]]]]
+      (fact "u1")
+    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+  { name := "sibling-existentials-reuse-a-name"
+    description := "Two existential conditions each declare a match named e. Scope is lexical, so the second does not see the first."
+    source := "SpecificationParser.parseMatches discards a nested match's labels when the condition ends"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office"
+        [path [] "p1" [office],
+         notExists [unknown "e" "Revoked" [path [revoked] "u1"]],
+         notExists [unknown "e" "Revoked" [path [revoked] "u1"]]]]
+      (fact "u1")
+    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+  { name := "composite-projection"
+    description := "A composite projection names a given and a top-level unknown."
+    source := "the baseline"
+    spec := spec [("p1", "Employee")] simple
+      (.composite [{ name := "employee", label := "p1" }, { name := "office", label := "u1" }])
+    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+  { name := "path-joins-an-undefined-label"
+    description := "A path condition joins a label nothing declares."
+    source := "SpecificationParser.parsePathCondition: The label ... has not been defined"
+    spec := spec [("p1", "Employee")] [unknown "u1" "Office" [path [] "nosuch" [office]]] (fact "u1")
+    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+  { name := "path-joins-its-own-unknown"
+    description := "A match joins its own unknown. The split reads it bound in the original and unbound in the head."
+    source := "the counterexample to splitPaths_correct without pivot_paths_ne"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office" [path [] "p1" [office], path [office] "u1" [office]]] (fact "u1")
+    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+  { name := "path-joins-a-later-match"
+    description := "A match joins a label that a later match declares."
+    source := "scope is lexical: a match sees only the matches before it"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office" [path [] "u2" [office]],
+       unknown "u2" "Office" [path [] "p1" [office]]]
+      (fact "u1")
+    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+  { name := "existential-joins-an-undefined-label"
+    description := "A path condition inside an existential condition joins a label nothing declares."
+    source := "SpecificationParser.parsePathCondition, in a nested match"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office"
+        [path [] "p1" [office], notExists [unknown "e" "Revoked" [path [revoked] "nosuch"]]]]
+      (fact "u1")
+    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+  { name := "existential-joins-a-sibling-conditions-match"
+    description := "The second existential condition joins the match the first declares. That match is not in scope outside its own condition."
+    source := "SpecificationParser.parseMatches discards a nested match's labels"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office"
+        [path [] "p1" [office],
+         notExists [unknown "e1" "Revoked" [path [revoked] "u1"]],
+         notExists [unknown "e2" "Revoked" [path [revoked] "e1"]]]]
+      (fact "u1")
+    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+  { name := "unknown-shadows-a-given"
+    description := "A match declares a label that is already a given."
+    source := "SpecificationParser.parseMatch: The name ... has already been used"
+    spec := spec [("p1", "Employee")] [unknown "p1" "Office" [path [] "p1" [office]]] (fact "p1")
+    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+  { name := "unknown-shadows-an-earlier-match"
+    description := "Two matches declare the same label."
+    source := "SpecificationParser.parseMatch: The name ... has already been used"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office" [path [] "p1" [office]],
+       unknown "u1" "Office" [path [] "p1" [office]]]
+      (fact "u1")
+    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+  { name := "existential-shadows-an-outer-label"
+    description := "A match inside an existential condition declares a label that is already in scope."
+    source := "SpecificationParser.parseExistentialCondition passes the outer labels down"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office"
+        [path [] "p1" [office], notExists [unknown "p1" "Revoked" [path [revoked] "u1"]]]]
+      (fact "u1")
+    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+  { name := "existential-shadows-the-enclosing-unknown"
+    description := "A match inside an existential condition declares the enclosing match's unknown."
+    source := "SpecificationParser.parseExistentialCondition adds the unknown to the scope"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office"
+        [path [] "p1" [office], notExists [unknown "u1" "Revoked" [path [revoked] "p1"]]]]
+      (fact "u1")
+    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+  { name := "projection-names-an-undefined-label"
+    description := "The projection names a label nothing declares. The parser and validateSpecification accept this today."
+    source := "docs/contracts.md: the gap"
+    spec := spec [("p1", "Employee")] simple (fact "nosuchlabel")
+    expectScoped := true, expectUnshadowed := true, expectProjected := false },
+  { name := "composite-projection-names-an-undefined-label"
+    description := "One component of a composite projection names a label nothing declares."
+    source := "docs/contracts.md: the gap"
+    spec := spec [("p1", "Employee")] simple
+      (.composite [{ name := "office", label := "u1" }, { name := "other", label := "nosuch" }])
+    expectScoped := true, expectUnshadowed := true, expectProjected := false },
+  { name := "projection-names-a-nested-unknown"
+    description := "The projection names a match declared inside an existential condition, which is not in scope outside it."
+    source := "the theorem's Projected condition"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office"
+        [path [] "p1" [office], notExists [unknown "e" "Revoked" [path [revoked] "u1"]]]]
+      (fact "e")
+    expectScoped := true, expectUnshadowed := true, expectProjected := false }
   ]
 
 end JinagaSpec
