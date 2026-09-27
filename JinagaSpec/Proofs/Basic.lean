@@ -96,4 +96,39 @@ theorem isReserved_splitLabel (i : Nat) : isReserved (splitLabel i) = true := by
   simp only [isReserved, splitLabel, toString]
   simp
 
+/-! ## Small shared facts
+
+Used by more than one proof file, so stated once here instead of once per
+file. -/
+
+/-- The two halves of `span` make up the list. -/
+theorem span_loop_append (p : Match → Bool) :
+    ∀ (l acc : List Match), (List.span.loop p l acc).1 ++ (List.span.loop p l acc).2 = acc.reverse ++ l := by
+  intro l
+  induction l with
+  | nil => intro acc; simp [List.span.loop]
+  | cons a as ih =>
+    intro acc
+    simp only [List.span.loop]
+    cases p a <;> simp [ih]
+
+/-- Functions that agree on a list's members give the same `flatMap`. -/
+theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g x = h x) :
+    l.flatMap g = l.flatMap h := by
+  simp only [List.flatMap_def]
+  congr 1
+  exact List.map_congr_left he
+
+theorem pathsOf_cons_path {pc : PathCondition} {cs : List Condition} :
+    pathsOf (.path pc :: cs) = pc :: pathsOf cs := rfl
+
+theorem pathsOf_cons_ex {e : Bool} {ms : List Match} {cs : List Condition} :
+    pathsOf (.existential e ms :: cs) = pathsOf cs := rfl
+
+theorem existentialsOf_cons_path {pc : PathCondition} {cs : List Condition} :
+    existentialsOf (.path pc :: cs) = existentialsOf cs := rfl
+
+theorem existentialsOf_cons_ex {e : Bool} {ms : List Match} {cs : List Condition} :
+    existentialsOf (.existential e ms :: cs) = .existential e ms :: existentialsOf cs := rfl
+
 end JinagaSpec

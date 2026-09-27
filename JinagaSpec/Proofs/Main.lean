@@ -152,17 +152,6 @@ theorem pivot_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: a
 
 end Pivot
 
-/-- The two halves of `span` make up the list. -/
-private theorem span_loop_append (p : Match → Bool) :
-    ∀ (l acc : List Match), (List.span.loop p l acc).1 ++ (List.span.loop p l acc).2 = acc.reverse ++ l := by
-  intro l
-  induction l with
-  | nil => intro acc; simp [List.span.loop]
-  | cons a as ih =>
-    intro acc
-    simp only [List.span.loop]
-    cases p a <;> simp [ih]
-
 /-- A split preserves the meaning of a well-formed specification. -/
 theorem split_correct (s : Specification) (hwf : WellFormed s) (g : Graph) (env : Env)
     (r : List (Option FactId)) :

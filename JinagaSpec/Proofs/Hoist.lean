@@ -119,53 +119,29 @@ together, so the two agree on which split label numbers which condition. -/
 def AllEligible (scope : List Name) (ps : List PathCondition) : Prop :=
   ∀ c ∈ ps, c.rolesRight.getLast? ≠ none ∧ scope.contains c.labelRight = true
 
-private theorem pathsOf_cons_path {pc : PathCondition} {cs : List Condition} :
-    pathsOf (.path pc :: cs) = pc :: pathsOf cs := rfl
-
-private theorem pathsOf_cons_ex {e : Bool} {ms : List Match} {cs : List Condition} :
-    pathsOf (.existential e ms :: cs) = pathsOf cs := rfl
-
-private theorem existentialsOf_cons_path {pc : PathCondition} {cs : List Condition} :
-    existentialsOf (.path pc :: cs) = existentialsOf cs := rfl
-
-private theorem existentialsOf_cons_ex {e : Bool} {ms : List Match} {cs : List Condition} :
-    existentialsOf (.existential e ms :: cs) = .existential e ms :: existentialsOf cs := rfl
-
-private theorem pathsOf_map_path {tps : List PathCondition} : pathsOf (tps.map .path) = tps := by
+/-- Splitting `tps.map .path` back into paths and existentials recovers `tps`
+and finds no existentials: it has none. -/
+private theorem pathsOf_existentialsOf_map_path {tps : List PathCondition} :
+    pathsOf (tps.map .path) = tps ∧ existentialsOf (tps.map .path) = [] := by
   induction tps with
-  | nil => rfl
-  | cons t ts ih => simp [pathsOf_cons_path, ih]
+  | nil => exact ⟨rfl, rfl⟩
+  | cons t ts ih => simp [pathsOf_cons_path, existentialsOf_cons_path, ih]
 
-private theorem existentialsOf_map_path {tps : List PathCondition} :
-    existentialsOf (tps.map .path) = [] := by
-  induction tps with
-  | nil => rfl
-  | cons t ts ih => simpa [existentialsOf_cons_path] using ih
+/-- `pathsOf`/`existentialsOf` distribute over `++`. -/
+private theorem pathsOf_existentialsOf_append {cs1 cs2 : List Condition} :
+    pathsOf (cs1 ++ cs2) = pathsOf cs1 ++ pathsOf cs2 ∧
+      existentialsOf (cs1 ++ cs2) = existentialsOf cs1 ++ existentialsOf cs2 :=
+  ⟨by simp [pathsOf, List.filterMap_append], by simp [existentialsOf, List.filter_append]⟩
 
-private theorem pathsOf_append {cs1 cs2 : List Condition} :
-    pathsOf (cs1 ++ cs2) = pathsOf cs1 ++ pathsOf cs2 := by
-  simp [pathsOf, List.filterMap_append]
-
-private theorem existentialsOf_append {cs1 cs2 : List Condition} :
-    existentialsOf (cs1 ++ cs2) = existentialsOf cs1 ++ existentialsOf cs2 := by
-  simp [existentialsOf, List.filter_append]
-
-private theorem pathsOf_existentialsOf {cs : List Condition} : pathsOf (existentialsOf cs) = [] := by
+/-- `existentialsOf` is idempotent, and has no paths left to find. -/
+private theorem pathsOf_existentialsOf_idem {cs : List Condition} :
+    pathsOf (existentialsOf cs) = [] ∧ existentialsOf (existentialsOf cs) = existentialsOf cs := by
   induction cs with
-  | nil => rfl
+  | nil => exact ⟨rfl, rfl⟩
   | cons c cs ih =>
     cases c with
     | path p => simpa [existentialsOf_cons_path] using ih
-    | existential e ms => simpa [existentialsOf_cons_ex, pathsOf_cons_ex] using ih
-
-private theorem existentialsOf_existentialsOf {cs : List Condition} :
-    existentialsOf (existentialsOf cs) = existentialsOf cs := by
-  induction cs with
-  | nil => rfl
-  | cons c cs ih =>
-    cases c with
-    | path p => simpa [existentialsOf_cons_path] using ih
-    | existential e ms => simp [existentialsOf_cons_ex, ih]
+    | existential e ms => simp [existentialsOf_cons_ex, pathsOf_cons_ex, ih]
 
 private theorem hoistConditions_cons {scope : List Name} {c : Condition} {cs : List Condition}
     {i : Nat} {pos : Bool} :
@@ -266,12 +242,6 @@ theorem usedInConditions_congr {cs1 cs2 : List Condition}
     x ∈ usedInConditions cs1 ↔ x ∈ usedInConditions cs2 := by
   rw [usedInConditions_perm cs1 x, usedInConditions_perm cs2 x, hp, he]
 
-private theorem flatMap_congr' {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g x = h x) :
-    l.flatMap g = l.flatMap h := by
-  simp only [List.flatMap_def]
-  congr 1
-  exact List.map_congr_left he
-
 /-- Two condition lists with the same `allHold` value, for every environment,
 give the same `evalMatches` on a match declaring them, whatever else follows. -/
 theorem evalMatches_congr_allHold {g : Graph} {u : Label} {cs1 cs2 : List Condition}
@@ -284,7 +254,7 @@ theorem evalMatches_congr_allHold {g : Graph} {u : Label} {cs1 cs2 : List Condit
     _ = (g.filter (fun f => f.type == u.type)).flatMap (fun f =>
           let env' := env.bind u.name f.id
           if allHold g env' u.name cs2 = true then evalMatches g env' rest else []) := by
-        apply flatMap_congr'
+        apply flatMap_congr
         intro f _
         simp only [h]
     _ = evalMatches g env (.mk u cs2 :: rest) := rfl
@@ -311,17 +281,6 @@ theorem tailGivenAt_congr (s : Specification) (hm : List Match) {u : Label} {cs1
     simp only [List.mem_append, hmem]
   simp only [List.contains_eq_mem, decide_eq_decide]
   exact h1
-
-/-- The two halves of `span` make up the list. -/
-private theorem hoist_span_loop_append (p : Match → Bool) :
-    ∀ (l acc : List Match), (List.span.loop p l acc).1 ++ (List.span.loop p l acc).2 = acc.reverse ++ l := by
-  intro l
-  induction l with
-  | nil => intro acc; simp [List.span.loop]
-  | cons a as ih =>
-    intro acc
-    simp only [List.span.loop]
-    cases p a <;> simp [ih]
 
 /-- The scope the reduced theorem is proved for: at the pivot, nothing below
 its own top level is eligible for hoisting, and every one of its own top-level
@@ -366,10 +325,12 @@ theorem hoist_correct_reduced (s : Specification) (hwf : WellFormed s) (hr : Red
     -- interleaved order; `splitAt`'s puts the rewritten paths first. Neither
     -- `allHold` nor `tailGivenAt` can tell the difference.
     have hp : tps = pathsOf (tps.map .path ++ existentialsOf cs) := by
-      rw [pathsOf_append, pathsOf_map_path, pathsOf_existentialsOf]
+      rw [pathsOf_existentialsOf_append.1, pathsOf_existentialsOf_map_path.1,
+        pathsOf_existentialsOf_idem.1]
       simp
     have he : existentialsOf cs = existentialsOf (tps.map .path ++ existentialsOf cs) := by
-      rw [existentialsOf_append, existentialsOf_map_path, existentialsOf_existentialsOf]
+      rw [pathsOf_existentialsOf_append.2, pathsOf_existentialsOf_map_path.2,
+        pathsOf_existentialsOf_idem.2]
       simp
     have hHM : hoistMatches (scopeAt s before) 0 true (.mk u cs :: after) =
         (i1, sm, .mk u cs' :: after) := by
@@ -412,7 +373,7 @@ theorem hoist_correct_reduced (s : Specification) (hwf : WellFormed s) (hr : Red
     unfold Split.evaluate
     apply Iff.of_eq
     apply congrArg (r ∈ ·)
-    apply flatMap_congr'
+    apply flatMap_congr
     intro tuple _
     unfold Specification.evaluate
     congr 1

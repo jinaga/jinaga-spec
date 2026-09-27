@@ -31,14 +31,6 @@ theorem Graph.mem_of_factOf_eq_some {g : Graph} {id : FactId} {fact : Fact}
   unfold Graph.factOf at h
   exact List.mem_of_find?_eq_some h
 
-/-- A private helper: functions that agree on a list's members give the same
-`flatMap`. -/
-private theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g x = h x) :
-    l.flatMap g = l.flatMap h := by
-  simp only [List.flatMap_def]
-  congr 1
-  exact List.map_congr_left he
-
 section AuthGraph
 
 variable {store : Graph} {f : Fact}
@@ -311,17 +303,6 @@ end EvalAgree
 
 /-! ## Locating the given -/
 
-/-- The two halves of `span` make up the list. -/
-private theorem store_span_loop_append (p : Match → Bool) :
-    ∀ (l acc : List Match), (List.span.loop p l acc).1 ++ (List.span.loop p l acc).2 = acc.reverse ++ l := by
-  intro l
-  induction l with
-  | nil => intro acc; simp [List.span.loop]
-  | cons a as ih =>
-    intro acc
-    simp only [List.span.loop]
-    cases p a <;> simp [ih]
-
 /-- No given a well-formed specification declares is a label its own head
 splits into. -/
 theorem given_notin_headMatchList {s : Specification} (hwf : WellFormed s) {g0 : Label}
@@ -332,7 +313,7 @@ theorem given_notin_headMatchList {s : Specification} (hwf : WellFormed s) {g0 :
   generalize hspan : s.matchList.span matchIsDeterministic = sp
   obtain ⟨before, rest⟩ := sp
   have hs : s.matchList = before ++ rest := by
-    have h := store_span_loop_append matchIsDeterministic s.matchList []
+    have h := span_loop_append matchIsDeterministic s.matchList []
     unfold List.span at hspan
     rw [hspan] at h
     simpa using h.symm
@@ -368,26 +349,6 @@ theorem given_notin_headMatchList {s : Specification} (hwf : WellFormed s) {g0 :
 at the pivot is safely bound to. Only the given itself can be `f`; every other
 label already in scope is `InStore`. -/
 def SafeId (store : Graph) (f : Fact) (id : FactId) : Prop := id = f.id ∨ InStore store id
-
-private theorem store_splitPaths_head_index :
-    ∀ (ps : List PathCondition) (i : Nat), ∀ m ∈ (splitPaths i ps).1,
-      ∃ j, i ≤ j ∧ m.unknown.name = splitLabel j := by
-  intro ps
-  induction ps with
-  | nil => intro i m hm; simp [splitPaths] at hm
-  | cons c cs ih =>
-    intro i m hm
-    cases hl : c.rolesRight.getLast? with
-    | none =>
-      simp only [splitPaths, hl] at hm
-      obtain ⟨j, hj, hn⟩ := ih (i + 1) m hm
-      exact ⟨j, by omega, hn⟩
-    | some last =>
-      simp only [splitPaths, hl] at hm
-      rcases List.mem_cons.mp hm with rfl | hm
-      · exact ⟨i, Nat.le_refl _, rfl⟩
-      · obtain ⟨j, hj, hn⟩ := ih (i + 1) m hm
-        exact ⟨j, by omega, hn⟩
 
 /-- Every id a split match binds, while its head runs on `authGraph store f`,
 is the id of a fact in the store: its own path condition needs its candidate's
@@ -451,7 +412,7 @@ theorem splitPaths_head_binds_store {store : Graph} {f : Fact} (hclosed : store.
       · have hfresh : splitLabel i ∉ (splitPaths (i + 1) cs).1.map (·.unknown.name) := by
           intro hmem
           obtain ⟨m, hm, hmn⟩ := List.mem_map.mp hmem
-          obtain ⟨j, hj, hn⟩ := store_splitPaths_head_index cs (i + 1) m hm
+          obtain ⟨j, hj, hn⟩ := splitPaths_head_index cs (i + 1) m hm
           rw [hn] at hmn
           exact absurd (splitLabel_injective hmn) (by omega)
         refine ⟨fct.id, ?_, hfctInStore⟩
@@ -511,12 +472,8 @@ theorem ordinaryTypesConditions_existentialsOf {cs : List Condition}
   | cons c cs ih =>
     obtain ⟨hc, hcs⟩ : OrdinaryTypesCondition c ∧ OrdinaryTypesConditions cs := h
     cases c with
-    | path p => simpa [existentialsOf] using ih hcs
-    | existential e ms =>
-      have heq : existentialsOf (.existential e ms :: cs) = .existential e ms :: existentialsOf cs := by
-        simp [existentialsOf]
-      rw [heq]
-      exact ⟨hc, ih hcs⟩
+    | path p => simpa [existentialsOf_cons_path] using ih hcs
+    | existential e ms => rw [existentialsOf_cons_ex]; exact ⟨hc, ih hcs⟩
 
 theorem ordinaryTypesConditions_map_path {ps : List PathCondition} :
     OrdinaryTypesConditions (ps.map .path) := by
@@ -618,7 +575,7 @@ theorem store_correct (hwf : WellFormed s) (hg : s.given = [g0]) (hord : Ordinar
     simp [Split.evaluateStore, Split.evaluate]
   | cons pivot after =>
     have hs : s.matchList = before ++ pivot :: after := by
-      have h1 := store_span_loop_append matchIsDeterministic s.matchList []
+      have h1 := span_loop_append matchIsDeterministic s.matchList []
       unfold List.span at hspan
       rw [hspan] at h1
       simpa using h1.symm

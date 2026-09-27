@@ -91,7 +91,7 @@ theorem splitPaths_names (i : Nat) :
 
 /-- The head matches of a split numbered from `i` bind split labels numbered
 `i` or later. -/
-private theorem splitPaths_head_index :
+theorem splitPaths_head_index :
     ∀ (ps : List PathCondition) (i : Nat), ∀ m ∈ (splitPaths i ps).1,
       ∃ j, i ≤ j ∧ m.unknown.name = splitLabel j := by
   intro ps
