@@ -69,8 +69,9 @@ need (it asks whether any result is the user).
 `split_correct` runs the head and the tail on the same graph. A rule does not:
 it runs while its fact is being authorized, before that fact is saved, so the
 store the tail runs on does not have it. `JinagaSpec/Store.lean` models this —
-`Split.evaluateStore` is the runner's behaviour, and `tailReadsGiven` is what
-`jinaga.js`'s constructor checks — and two theorems say the check is exact:
+`Split.evaluateStore` is the runner's behaviour, and `tailReadsGiven` is the
+model's name for exactly the shape that denies everyone — and two theorems say
+the boundary is exact:
 
 ```lean
 theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (hord : OrdinaryTypes s)
@@ -92,11 +93,23 @@ A rule with one given, whose tail reads that given, admits nobody
 specification means on the graph that holds the given (`store_correct`). See
 `docs/findings.md` for the retyping trick both proofs lean on.
 
+`jinaga.js` no longer refuses this shape at construction. Pull request
+[#308](https://github.com/jinaga/jinaga.js/pull/308) removed the tail's old
+single-given restriction, and with it the upfront `AuthorizationRuleError`
+this condition used to raise: a rule shaped this way now constructs and runs,
+and is refused with `Forbidden` only because the store cannot read a fact
+that has not been saved yet — `store_denies`'s own mechanism, reached at
+runtime rather than guarded against in advance. `jinaga.js`'s own test for
+this shape (`test/authorization/authorizationSplitTailSpec.ts`) documents that
+the decision is still the wrong one for formulation D: the write should be
+admitted.
+
 `hoist` (`JinagaSpec/Hoist.lean`) is the intended fix for formulation D of
-jinaga/jinaga.js#231, the shape `tailReadsGiven` refuses that this split alone
-cannot admit: it reaches into the tail's existential conditions, at any depth,
-not only the pivot's own top level, for a predecessor walk of a label already
-in scope, hoisting it only where doing so is sound. `hoist_correct` proves
+jinaga/jinaga.js#231, the shape that denies everyone (`tailReadsGiven`) that
+this split alone cannot admit: it reaches into the tail's existential
+conditions, at any depth, not only the pivot's own top level, for a
+predecessor walk of a label already in scope, hoisting it only where doing so
+is sound. `hoist_correct` proves
 this sound for every well-formed specification, with no hypothesis beyond
 `WellFormed s` — the same shape as `split_correct` — and `store_denies_hoist`/
 `store_correct_hoist` carry the store boundary theorems over to it. Where
@@ -125,7 +138,7 @@ A port should read line for line. Names match TypeScript, with these exceptions:
 | `WellFormed` | what `SpecificationParser` and `validateSpecification` enforce |
 | `Graph.authGraph` | the in-memory write batch, with the fact under authorization added |
 | `Split.evaluateStore` | `AuthorizationRuleSpecification.isAuthorized`/`getAuthorizedPopulation`, running the tail on the store |
-| `tailReadsGiven` | the check in `AuthorizationRuleSpecification`'s constructor that throws `AuthorizationRuleError` |
+| `tailReadsGiven` | the model's name for the shape `jinaga.js` now reaches `Forbidden` for at runtime, via the store read, rather than refusing at construction (jinaga/jinaga.js#308) |
 | `hoist` | not implemented in `jinaga.js` yet; the intended fix for jinaga/jinaga.js#297 |
 
 
@@ -157,12 +170,13 @@ harder to hide, but they are not a proof about the TypeScript.
 ## Next
 
 1. Wire `isWellFormed` into the `AuthorizationRuleSpecification` constructors in
-   `jinaga.net` (`docs/contracts.md`); `jinaga.js` now does both this and the
-   `tailReadsGiven` check (branch `claude/quirky-einstein-ixwwgj`, not yet merged).
+   `jinaga.net` (`docs/contracts.md`); `jinaga.js` now does this
+   (jinaga/jinaga.js#308, #311).
 2. Given conditions and the remaining projections, and a .NET runner for the vectors.
 3. Vectors that check evaluation (a specification, a graph, and the expected
    results), so a port is checked on meaning as well as on shape.
-4. Wire `hoist` into `jinaga.js`'s split, so fewer rules trip `tailReadsGiven`.
+4. Wire `hoist` into `jinaga.js`'s split, so fewer rules are wrongly denied by
+   the mechanism `tailReadsGiven`/`store_denies` describes.
 5. `buildFeeds`, then skeleton canonicity, then distribution soundness.
 
 ## License

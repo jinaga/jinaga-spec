@@ -64,16 +64,49 @@ the evaluator does: it seeds the head from `head.given[0]`, which seeds every
 given exactly when there is one. Checked once in the constructor, the evaluator
 does not check them per call.
 
-A third rule-level condition belongs at the same boundary: the tail must not be
-given the rule's own given. A rule runs while its fact is being authorized,
-before that fact is saved, so the store the tail runs on does not have it
-(`JinagaSpec/Store.lean`, `docs/findings.md`). `tailReadsGiven` decides this
-from the split alone, and `jinaga.js`'s constructor throws
-`AuthorizationRuleError` when it is true (commit "Refuse an authorization rule
-whose tail is given the fact under authorization", branch
-`claude/quirky-einstein-ixwwgj`). `store_denies` and `store_correct` say the
-check is exact: false means the store means what the graph means, true means
-the rule admits nobody.
+A third rule-level condition used to belong at the same boundary: the tail
+must not be given the rule's own given, because a rule runs while its fact is
+being authorized, before that fact is saved, so the store the tail runs on
+does not have it (`JinagaSpec/Store.lean`, `docs/findings.md`).
+`tailReadsGiven` decides this from the split alone, and `store_denies`/
+`store_correct` say it is exact: true means the rule admits nobody, false
+means the store means what the graph means.
+
+`jinaga.js` no longer checks this at construction. Pull request
+[#308](https://github.com/jinaga/jinaga.js/pull/308), which removed the
+tail's old single-given restriction so a tail can be given the head's own
+projected labels as well as the rule's given, also dropped the upfront
+`AuthorizationRuleError` this condition used to raise: a rule shaped this way
+now constructs and runs, and is refused with `Forbidden` only because the
+store cannot read a fact that has not been saved yet — `store_denies`'s own
+mechanism, reached at runtime rather than guarded against in advance.
+`jinaga.js`'s own test for this shape
+(`test/authorization/authorizationSplitTailSpec.ts`) documents that the
+decision is still the wrong one for formulation D (jinaga/jinaga.js#231): the
+write should be admitted, and wiring `hoist` in place of the split
+(`hoist_correct`, below) is what would let it read a predecessor walk of the
+given instead of the given itself, tracked as jinaga/jinaga.js#297.
+
+## `hoist`'s contract
+
+`hoist` (`JinagaSpec/Hoist.lean`) is an alternative to
+`splitBeforeFirstSuccessor` that reaches into the tail's existential
+conditions, at any depth, for a predecessor walk of a label already in scope,
+and hoists it into the head wherever doing so is sound. Its precondition is
+exactly the split's (`WellFormed`, above) — no reduced scope, no extra
+condition.
+
+**Postconditions.**
+
+| | Status |
+|---|---|
+| `hoist` returns the same results as the whole specification (as sets). | Proved: `hoist_correct`. |
+| A rule whose tail is not given the fact under authorization means the same on the store as the specification means, with `hoist` in place of the split. | Proved: `store_correct_hoist`. |
+| A rule whose tail is given it admits nobody, with `hoist` in place of the split. | Proved: `store_denies_hoist`. |
+
+`hoist` is not yet wired into `jinaga.js`'s constructor; see the previous
+section and `docs/findings.md` for the commutation argument the general proof
+turns on.
 
 ## Who can hand the split a specification
 
