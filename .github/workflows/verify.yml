@@ -5,19 +5,22 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - name: Check out jinaga-spec
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Installs elan and the toolchain pinned in lean-toolchain, and caches
       # .lake (keyed on the toolchain and the lake manifest) -- the official,
       # maintained action, rather than piping elan's installer script from a
       # mutable branch.
       - name: Set up Lean
-        uses: leanprover/lean-action@v1
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           build: false
