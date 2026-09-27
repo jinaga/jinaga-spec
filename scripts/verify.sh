@@ -37,7 +37,15 @@ jinaga="${JINAGA_JS:-../jinaga.js}"
 if [ -d "$jinaga/src/specification" ]; then
   jinaga="$(cd "$jinaga" && pwd)"
   echo "== TypeScript port against $jinaga"
-  (cd ports/typescript && npm ci --silent && JINAGA_JS="$jinaga" npm run --silent vectors | grep -E "vectors pass|vectors agree|FAIL"; npm run --silent audit | tail -2)
+  # Each step is its own statement, not chained with && or ;: under set -e, a
+  # failure partway through an && list (e.g. cd or npm ci) does not stop the
+  # script, and a later, unrelated command succeeding can mask it.
+  (
+    cd ports/typescript
+    npm ci --silent
+    JINAGA_JS="$jinaga" npm run --silent vectors | grep -E "vectors pass|vectors agree|FAIL"
+    npm run --silent audit | tail -2
+  )
 else
   echo "== TypeScript port skipped (no jinaga.js checkout at $jinaga)"
 fi

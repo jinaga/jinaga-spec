@@ -12,41 +12,22 @@ jobs:
       - name: Check out jinaga-spec
         uses: actions/checkout@v4
 
-      # The runner imports jinaga.js source directly (`ports/typescript/run-vectors.ts`),
-      # so the gate always runs against jinaga.js's own main, not a pinned commit or
-      # anyone's local checkout.
-      - name: Check out jinaga/jinaga.js
-        uses: actions/checkout@v4
+      # Installs elan and the toolchain pinned in lean-toolchain, and caches
+      # .lake (keyed on the toolchain and the lake manifest) -- the official,
+      # maintained action, rather than piping elan's installer script from a
+      # mutable branch.
+      - name: Set up Lean
+        uses: leanprover/lean-action@v1
         with:
-          repository: jinaga/jinaga.js
-          ref: main
-          path: jinaga.js
+          auto-config: false
+          build: false
+          test: false
+          lint: false
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install jinaga.js's dependencies
-        working-directory: jinaga.js
-        run: npm ci
-
-      - name: Cache elan and the Lean build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.elan
-            .lake
-          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}
-
-      - name: Install elan
-        run: |
-          if [ ! -x "$HOME/.elan/bin/elan" ]; then
-            curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
-          fi
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
+      # No jinaga.js checkout here: the spec verifies itself. The TypeScript
+      # cross-check (JINAGA_JS) is a local/manual step, run against a freshly
+      # fetched jinaga.js checkout — see scripts/verify.sh's own comment — not
+      # part of this repo's own merge gate, which does not depend on any
+      # downstream implementation.
       - name: Run scripts/verify.sh
-        env:
-          JINAGA_JS: ${{ github.workspace }}/jinaga.js
         run: scripts/verify.sh
