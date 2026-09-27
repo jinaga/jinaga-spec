@@ -28,7 +28,7 @@
  "name": "several-paths-each-walk-predecessors",
  "expected":
  {"tailText":
-  "(s1: Workspace, s2: Workspace) {\n    u1: Owner [\n        u1->workspace: Workspace = s1\n        u1->workspace: Workspace = s2\n    ]\n    u2: Jinaga.User [\n        u2 = u1->user: Jinaga.User\n    ]\n} => u2\n",
+  "(__s0: Workspace, __s1: Workspace) {\n    u1: Owner [\n        u1->workspace: Workspace = __s0\n        u1->workspace: Workspace = __s1\n    ]\n    u2: Jinaga.User [\n        u2 = u1->user: Jinaga.User\n    ]\n} => u2\n",
   "tail":
   {"projection": {"type": "fact", "label": "u2"},
    "matches":
@@ -37,11 +37,11 @@
      [{"type": "path",
        "rolesRight": [],
        "rolesLeft": [{"predecessorType": "Workspace", "name": "workspace"}],
-       "labelRight": "s1"},
+       "labelRight": "__s0"},
       {"type": "path",
        "rolesRight": [],
        "rolesLeft": [{"predecessorType": "Workspace", "name": "workspace"}],
-       "labelRight": "s2"}]},
+       "labelRight": "__s1"}]},
     {"unknown": {"type": "Jinaga.User", "name": "u2"},
      "conditions":
      [{"type": "path",
@@ -49,18 +49,18 @@
        "rolesLeft": [],
        "labelRight": "u1"}]}],
    "given":
-   [{"label": {"type": "Workspace", "name": "s1"}, "conditions": []},
-    {"label": {"type": "Workspace", "name": "s2"}, "conditions": []}]},
+   [{"label": {"type": "Workspace", "name": "__s0"}, "conditions": []},
+    {"label": {"type": "Workspace", "name": "__s1"}, "conditions": []}]},
   "headText":
-  "(p1: Link) {\n    s1: Workspace [\n        s1 = p1->item: Item->workspace: Workspace\n    ]\n    s2: Workspace [\n        s2 = p1->parent: Item->workspace: Workspace\n    ]\n} => {\n    s1 = s1\n    s2 = s2\n}\n",
+  "(p1: Link) {\n    __s0: Workspace [\n        __s0 = p1->item: Item->workspace: Workspace\n    ]\n    __s1: Workspace [\n        __s1 = p1->parent: Item->workspace: Workspace\n    ]\n} => {\n    __s0 = __s0\n    __s1 = __s1\n}\n",
   "head":
   {"projection":
    {"type": "composite",
     "components":
-    [{"type": "fact", "name": "s1", "label": "s1"},
-     {"type": "fact", "name": "s2", "label": "s2"}]},
+    [{"type": "fact", "name": "__s0", "label": "__s0"},
+     {"type": "fact", "name": "__s1", "label": "__s1"}]},
    "matches":
-   [{"unknown": {"type": "Workspace", "name": "s1"},
+   [{"unknown": {"type": "Workspace", "name": "__s0"},
      "conditions":
      [{"type": "path",
        "rolesRight":
@@ -68,7 +68,7 @@
         {"predecessorType": "Workspace", "name": "workspace"}],
        "rolesLeft": [],
        "labelRight": "p1"}]},
-    {"unknown": {"type": "Workspace", "name": "s2"},
+    {"unknown": {"type": "Workspace", "name": "__s1"},
      "conditions":
      [{"type": "path",
        "rolesRight":

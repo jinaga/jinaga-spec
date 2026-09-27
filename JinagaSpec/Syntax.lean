@@ -65,4 +65,9 @@ structure Specification where
   matchList : List Match
   projection : Projection
 
+/-- Labels that begin with `__` belong to the split, which names the facts it
+hands from the head to the tail. A specification may not declare one, so a
+split label can never collide with a label the specification declares. -/
+def isReserved (name : Name) : Bool := name.startsWith "__"
+
 end JinagaSpec

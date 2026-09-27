@@ -7,9 +7,10 @@ The hypotheses the split theorem needs, stated as the parser and validator
 guarantee them:
 
 * every label a path condition names is in scope (`ScopedMatches`), and
-* a match never re-declares a label that is already in scope
-  (`UnshadowedMatches`), which `SpecificationParser.parseMatch` rejects with
-  "The name ... has already been used".
+* a match never re-declares a label that is already in scope, and never
+  declares a label reserved for the split (`WellNamedMatches`).
+  `SpecificationParser.parseMatch` rejects the first with "The name ... has
+  already been used".
 
 Scope is lexical. A match sees the givens, the matches before it, and, inside
 its own existential conditions, its own unknown.
@@ -69,19 +70,21 @@ mutual
 end
 
 mutual
-  /-- No match declares a label that is already in scope. -/
-  def UnshadowedMatches : List Name → List Match → Prop
+  /-- Every match declares a new label, not one already in scope, and an ordinary
+  one, not reserved for the split. -/
+  def WellNamedMatches : List Name → List Match → Prop
     | _, [] => True
     | scope, .mk u cs :: rest =>
-      u.name ∉ scope ∧ UnshadowedConditions (u.name :: scope) cs ∧ UnshadowedMatches (u.name :: scope) rest
+      u.name ∉ scope ∧ isReserved u.name = false ∧
+        WellNamedConditions (u.name :: scope) cs ∧ WellNamedMatches (u.name :: scope) rest
 
-  def UnshadowedConditions (inner : List Name) : List Condition → Prop
+  def WellNamedConditions (inner : List Name) : List Condition → Prop
     | [] => True
-    | c :: cs => UnshadowedCondition inner c ∧ UnshadowedConditions inner cs
+    | c :: cs => WellNamedCondition inner c ∧ WellNamedConditions inner cs
 
-  def UnshadowedCondition (inner : List Name) : Condition → Prop
+  def WellNamedCondition (inner : List Name) : Condition → Prop
     | .path _ => True
-    | .existential _ ms => UnshadowedMatches inner ms
+    | .existential _ ms => WellNamedMatches inner ms
 end
 
 /-- The scope after the matches: the unknown of each is added. -/
@@ -104,8 +107,9 @@ def scopeAt (s : Specification) (before : List Match) : List Name :=
 /-- What the parser and validator guarantee about a specification, and what
 the split theorem assumes. -/
 structure WellFormed (s : Specification) : Prop where
+  givensOrdinary : ∀ g ∈ s.given, isReserved g.name = false
   inScope : ScopedMatches (s.given.map (·.name)) s.matchList
-  noShadowing : UnshadowedMatches (s.given.map (·.name)) s.matchList
+  wellNamed : WellNamedMatches (s.given.map (·.name)) s.matchList
   projected : ∀ x ∈ s.projection.labels,
     x ∈ s.given.map (·.name) ∨ x ∈ s.matchList.map (·.unknown.name)
 

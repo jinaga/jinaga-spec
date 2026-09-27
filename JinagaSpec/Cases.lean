@@ -48,7 +48,7 @@ def cases : List Case :=
        unknown "u2" "Blog" [path [creator] "u1"]]
       (fact "u2") },
   { name := "only-successors"
-    description := "The first match walks successors of the given, so there is no head."
+    description := "The first match walks successors of the given, so the head has no matches and the tail is the whole specification."
     source := "splitSpecificationSpec: should put all in tail if only successor joins"
     spec := spec [("p1", "Company")]
       [unknown "u1" "Office" [path [company] "p1"]] (fact "u1") },
@@ -121,23 +121,8 @@ def cases : List Case :=
          exists' [unknown "u2" "Owner" [path [workspace] "p1" [parent, workspace], path [user] "u1" [user]]]],
        unknown "u3" "Jinaga.User" [path [] "u1" [user]]]
       (fact "u3") },
-  { name := "split-label-avoids-an-unknown"
-    description := "An earlier match is already named s1, so the split label is s2."
-    source := "the naming rule of #231"
-    spec := spec [("p1", "Employee")]
-      [unknown "s1" "Office" [path [] "p1" [office]],
-       unknown "u1" "President" [path [office] "p1" [office]]]
-      (fact "u1") },
-  { name := "split-label-avoids-a-nested-unknown"
-    description := "An existential condition declares s1 in its own match, so the split label is s2."
-    source := "the naming rule of #231"
-    spec := spec [("p1", "Link")]
-      [unknown "u1" "Owner"
-        [path [workspace] "p1" [item, workspace],
-         notExists [unknown "s1" "Revoked" [path [role "owner" "Owner"] "u1"]]]]
-      (fact "u1") },
   { name := "given-only-an-existential-uses"
-    description := "The pivot's existential condition reads a second given that no head match mentions. The head must still name that given, because it projects it."
+    description := "The pivot's existential condition reads a second given that no head match mentions. The head is given every given, and projects the one the tail needs."
     source := "#297: the head's own projection takes part in deriving its givens"
     spec := spec [("p1", "Post"), ("p2", "Jinaga.User")]
       [unknown "u1" "Blog" [path [] "p1" [blog]],
@@ -154,16 +139,16 @@ def cases : List Case :=
       (fact "u2") }
   ]
 
-/-- A specification, and the verdict on each well-formedness condition that a
-person reading the rules expects. The generator checks the oracle agrees. -/
+/-- A specification, and the rules a person reading them expects it to violate.
+The generator checks the oracle agrees that it is well-formed exactly when it
+violates none. -/
 structure WellFormedCase where
   name : String
   description : String
   source : String
   spec : Specification
-  expectScoped : Bool
-  expectUnshadowed : Bool
-  expectProjected : Bool
+  /-- The rules the specification violates: `scoped`, `named` or `projected`. -/
+  violates : List String
 
 def wellFormedCases : List WellFormedCase :=
   let office := role "office" "Office"
@@ -174,14 +159,14 @@ def wellFormedCases : List WellFormedCase :=
     description := "A given, one match joined to it, and a projection of that match."
     source := "the baseline"
     spec := spec [("p1", "Employee")] simple (fact "u1")
-    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+    violates := [] },
   { name := "existential-uses-the-enclosing-unknown"
     description := "An existential condition joins the unknown of the match it belongs to. That unknown is in scope inside it, and only there."
     source := "splitSpecificationSpec: should split path when existential condition exists"
     spec := spec [("p1", "Employee")]
       [unknown "u1" "Office" [path [] "p1" [office], notExists [unknown "u2" "Revoked" [path [revoked] "u1"]]]]
       (fact "u1")
-    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+    violates := [] },
   { name := "sibling-existentials-reuse-a-name"
     description := "Two existential conditions each declare a match named e. Scope is lexical, so the second does not see the first."
     source := "SpecificationParser.parseMatches discards a nested match's labels when the condition ends"
@@ -191,24 +176,24 @@ def wellFormedCases : List WellFormedCase :=
          notExists [unknown "e" "Revoked" [path [revoked] "u1"]],
          notExists [unknown "e" "Revoked" [path [revoked] "u1"]]]]
       (fact "u1")
-    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+    violates := [] },
   { name := "composite-projection"
     description := "A composite projection names a given and a top-level unknown."
     source := "the baseline"
     spec := spec [("p1", "Employee")] simple
       (.composite [{ name := "employee", label := "p1" }, { name := "office", label := "u1" }])
-    expectScoped := true, expectUnshadowed := true, expectProjected := true },
+    violates := [] },
   { name := "path-joins-an-undefined-label"
     description := "A path condition joins a label nothing declares."
     source := "SpecificationParser.parsePathCondition: The label ... has not been defined"
     spec := spec [("p1", "Employee")] [unknown "u1" "Office" [path [] "nosuch" [office]]] (fact "u1")
-    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+    violates := ["scoped"] },
   { name := "path-joins-its-own-unknown"
     description := "A match joins its own unknown. The split reads it bound in the original and unbound in the head."
     source := "the counterexample to splitPaths_correct without pivot_paths_ne"
     spec := spec [("p1", "Employee")]
       [unknown "u1" "Office" [path [] "p1" [office], path [office] "u1" [office]]] (fact "u1")
-    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+    violates := ["scoped"] },
   { name := "path-joins-a-later-match"
     description := "A match joins a label that a later match declares."
     source := "scope is lexical: a match sees only the matches before it"
@@ -216,7 +201,7 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Office" [path [] "u2" [office]],
        unknown "u2" "Office" [path [] "p1" [office]]]
       (fact "u1")
-    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+    violates := ["scoped"] },
   { name := "existential-joins-an-undefined-label"
     description := "A path condition inside an existential condition joins a label nothing declares."
     source := "SpecificationParser.parsePathCondition, in a nested match"
@@ -224,7 +209,7 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Office"
         [path [] "p1" [office], notExists [unknown "e" "Revoked" [path [revoked] "nosuch"]]]]
       (fact "u1")
-    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+    violates := ["scoped"] },
   { name := "existential-joins-a-sibling-conditions-match"
     description := "The second existential condition joins the match the first declares. That match is not in scope outside its own condition."
     source := "SpecificationParser.parseMatches discards a nested match's labels"
@@ -234,12 +219,12 @@ def wellFormedCases : List WellFormedCase :=
          notExists [unknown "e1" "Revoked" [path [revoked] "u1"]],
          notExists [unknown "e2" "Revoked" [path [revoked] "e1"]]]]
       (fact "u1")
-    expectScoped := false, expectUnshadowed := true, expectProjected := true },
+    violates := ["scoped"] },
   { name := "unknown-shadows-a-given"
     description := "A match declares a label that is already a given."
     source := "SpecificationParser.parseMatch: The name ... has already been used"
     spec := spec [("p1", "Employee")] [unknown "p1" "Office" [path [] "p1" [office]]] (fact "p1")
-    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+    violates := ["named"] },
   { name := "unknown-shadows-an-earlier-match"
     description := "Two matches declare the same label."
     source := "SpecificationParser.parseMatch: The name ... has already been used"
@@ -247,7 +232,7 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Office" [path [] "p1" [office]],
        unknown "u1" "Office" [path [] "p1" [office]]]
       (fact "u1")
-    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+    violates := ["named"] },
   { name := "existential-shadows-an-outer-label"
     description := "A match inside an existential condition declares a label that is already in scope."
     source := "SpecificationParser.parseExistentialCondition passes the outer labels down"
@@ -255,7 +240,7 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Office"
         [path [] "p1" [office], notExists [unknown "p1" "Revoked" [path [revoked] "u1"]]]]
       (fact "u1")
-    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+    violates := ["named"] },
   { name := "existential-shadows-the-enclosing-unknown"
     description := "A match inside an existential condition declares the enclosing match's unknown."
     source := "SpecificationParser.parseExistentialCondition adds the unknown to the scope"
@@ -263,18 +248,36 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Office"
         [path [] "p1" [office], notExists [unknown "u1" "Revoked" [path [revoked] "p1"]]]]
       (fact "u1")
-    expectScoped := true, expectUnshadowed := false, expectProjected := true },
+    violates := ["named"] },
+  { name := "unknown-uses-a-reserved-label"
+    description := "A match declares a label that begins with `__`, which the split reserves for the facts it hands from the head to the tail."
+    source := "the reserved-label rule"
+    spec := spec [("p1", "Employee")] [unknown "__s0" "Office" [path [] "p1" [office]]] (fact "__s0")
+    violates := ["named"] },
+  { name := "given-uses-a-reserved-label"
+    description := "A given begins with `__`."
+    source := "the reserved-label rule"
+    spec := spec [("__p", "Employee")] [unknown "u1" "Office" [path [] "__p" [office]]] (fact "u1")
+    violates := ["named"] },
+  { name := "existential-uses-a-reserved-label"
+    description := "A match inside an existential condition declares a label that begins with `__`."
+    source := "the reserved-label rule"
+    spec := spec [("p1", "Employee")]
+      [unknown "u1" "Office"
+        [path [] "p1" [office], notExists [unknown "__s1" "Revoked" [path [revoked] "u1"]]]]
+      (fact "u1")
+    violates := ["named"] },
   { name := "projection-names-an-undefined-label"
     description := "The projection names a label nothing declares. The parser and validateSpecification accept this today."
     source := "docs/contracts.md: the gap"
     spec := spec [("p1", "Employee")] simple (fact "nosuchlabel")
-    expectScoped := true, expectUnshadowed := true, expectProjected := false },
+    violates := ["projected"] },
   { name := "composite-projection-names-an-undefined-label"
     description := "One component of a composite projection names a label nothing declares."
     source := "docs/contracts.md: the gap"
     spec := spec [("p1", "Employee")] simple
       (.composite [{ name := "office", label := "u1" }, { name := "other", label := "nosuch" }])
-    expectScoped := true, expectUnshadowed := true, expectProjected := false },
+    violates := ["projected"] },
   { name := "projection-names-a-nested-unknown"
     description := "The projection names a match declared inside an existential condition, which is not in scope outside it."
     source := "the theorem's Projected condition"
@@ -282,7 +285,7 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Office"
         [path [] "p1" [office], notExists [unknown "e" "Revoked" [path [revoked] "u1"]]]]
       (fact "e")
-    expectScoped := true, expectUnshadowed := true, expectProjected := false }
+    violates := ["projected"] }
   ]
 
 end JinagaSpec

@@ -3,14 +3,14 @@ import JinagaSpec.Proofs.SplitPaths
 /-!
 # The tail's givens are closed
 
-The tail's givens are derived from what the tail uses. This file shows the
-derivation is closed: every label a path condition of the tail names is either
-one of its givens or declared earlier in the tail, and so is every label its
-projection names. Together with locality, that is why the tail can run from its
-givens alone.
+The tail's givens are derived from what the tail uses: the labels in scope at the
+pivot that its matches and projection name. This file shows the derivation is
+closed: every label a path condition of the tail names is either one of its
+givens or declared earlier in the tail, and so is every label its projection
+names. Together with locality, that is why the tail can run from its givens
+alone.
 
-The hypotheses are those of `WellFormed`: a label a match uses is in scope, and
-no match re-declares a label in scope.
+The hypotheses are those of `WellFormed`.
 -/
 namespace JinagaSpec
 
@@ -70,30 +70,30 @@ theorem scopedMatches_append {A : List Name} {ms1 ms2 : List Match} :
     simp only [List.cons_append, ScopedMatches, ih, scopeAfter, Match.unknown_mk]
     grind
 
-theorem unshadowedMatches_append {A : List Name} {ms1 ms2 : List Match} :
-    UnshadowedMatches A (ms1 ++ ms2) ↔
-      UnshadowedMatches A ms1 ∧ UnshadowedMatches (scopeAfter A ms1) ms2 := by
+theorem wellNamedMatches_append {A : List Name} {ms1 ms2 : List Match} :
+    WellNamedMatches A (ms1 ++ ms2) ↔
+      WellNamedMatches A ms1 ∧ WellNamedMatches (scopeAfter A ms1) ms2 := by
   induction ms1 generalizing A with
-  | nil => simp [UnshadowedMatches, scopeAfter]
+  | nil => simp [WellNamedMatches, scopeAfter]
   | cons m ms ih =>
     obtain ⟨u, cs⟩ := m
-    simp only [List.cons_append, UnshadowedMatches, ih, scopeAfter, Match.unknown_mk]
+    simp only [List.cons_append, WellNamedMatches, ih, scopeAfter, Match.unknown_mk]
     grind
 
-/-- No unknown of an unshadowed list of matches is in the scope. -/
-theorem unshadowed_names_notin {ms : List Match} :
-    ∀ {A : List Name}, UnshadowedMatches A ms → ∀ x ∈ ms.map (·.unknown.name), x ∉ A := by
+/-- No unknown of a well-named list of matches is in the scope. -/
+theorem wellNamed_names_notin {ms : List Match} :
+    ∀ {A : List Name}, WellNamedMatches A ms → ∀ x ∈ ms.map (·.unknown.name), x ∉ A := by
   induction ms with
   | nil => simp
   | cons m ms ih =>
     obtain ⟨u, cs⟩ := m
     intro A h x hx
-    simp only [UnshadowedMatches] at h
+    simp only [WellNamedMatches] at h
     simp only [List.map_cons, List.mem_cons, Match.unknown_mk] at hx
     rcases hx with rfl | hx
     · exact h.1
     · intro hxA
-      exact ih h.2.2 x hx (List.mem_cons_of_mem _ hxA)
+      exact ih h.2.2.2 x hx (List.mem_cons_of_mem _ hxA)
 
 theorem scopedConditions_append {i o : List Name} {a b : List Condition} :
     ScopedConditions i o (a ++ b) ↔ ScopedConditions i o a ∧ ScopedConditions i o b := by
@@ -123,27 +123,6 @@ theorem usedInConditions_map_path {ps : List PathCondition} :
   | nil => simp [usedInConditions]
   | cons p ps ih => simp [usedInConditions, usedInCondition, ih]
 
-theorem declaredInMatches_append {a b : List Match} :
-    declaredInMatches (a ++ b) = declaredInMatches a ++ declaredInMatches b := by
-  induction a with
-  | nil => simp [declaredInMatches]
-  | cons m ms ih =>
-    obtain ⟨u, cs⟩ := m
-    simp [declaredInMatches, ih]
-
-theorem mem_declaredInMatches_of_mem_names {ms : List Match} :
-    ∀ x ∈ ms.map (·.unknown.name), x ∈ declaredInMatches ms := by
-  induction ms with
-  | nil => simp
-  | cons m ms ih =>
-    obtain ⟨u, cs⟩ := m
-    intro x hx
-    simp only [List.map_cons, List.mem_cons, Match.unknown_mk] at hx
-    simp only [declaredInMatches, List.mem_cons, List.mem_append]
-    rcases hx with rfl | hx
-    · exact Or.inl rfl
-    · exact Or.inr (Or.inr (ih x hx))
-
 theorem scopedConditions_pathsOf {i o : List Name} :
     ∀ {cs : List Condition}, ScopedConditions i o cs →
       ∀ c ∈ pathsOf cs, c.labelRight ∈ o := by
@@ -163,6 +142,20 @@ theorem scopedConditions_pathsOf {i o : List Name} :
       simp only [pathsOf, List.filterMap_cons] at hp
       exact ih h.2 p (by simpa [pathsOf] using hp)
 
+
+/-- Every unknown of a well-named list of matches is ordinary. -/
+theorem wellNamed_ordinary {ms : List Match} :
+    ∀ {A : List Name}, WellNamedMatches A ms → ∀ m ∈ ms, isReserved m.unknown.name = false := by
+  induction ms with
+  | nil => simp
+  | cons m ms ih =>
+    obtain ⟨u, cs⟩ := m
+    intro A h m' hm'
+    simp only [WellNamedMatches] at h
+    rcases List.mem_cons.mp hm' with rfl | hm'
+    · exact h.2.1
+    · exact ih h.2.2.2 m' hm'
+
 /-- The existential conditions of a scoped list of conditions are scoped. -/
 theorem scopedConditions_existentialsOf {inner outer : List Name} :
     ∀ {cs : List Condition}, ScopedConditions inner outer cs →
@@ -181,37 +174,25 @@ theorem scopedConditions_existentialsOf {inner outer : List Name} :
       rw [e]
       exact ⟨h.1, ih h.2⟩
 
-theorem mem_referencedLabels_names {ms : List Match} {labels : List Label} {proj : Projection}
-    {x : Name} :
-    x ∈ (referencedLabels ms labels proj).map (·.name) ↔
-      x ∈ labels.map (·.name) ∧ x ∈ usedInMatches ms ++ proj.labels ∧
-        x ∉ ms.map (·.unknown.name) := by
-  simp only [referencedLabels, List.mem_map, List.mem_filter, List.contains_iff_mem,
-    Bool.not_eq_true', Bool.eq_false_iff, ne_eq, List.mem_append]
-  constructor
-  · rintro ⟨l, ⟨hl, hu⟩, rfl⟩
-    exact ⟨⟨l, hl, rfl⟩, by simpa using hu⟩
-  · rintro ⟨⟨l, hl, rfl⟩, hu⟩
-    exact ⟨l, ⟨hl, by simpa using hu⟩, rfl⟩
-
 /-! ## Facts about a specification split at a pivot -/
 
 section Pivot
 
 variable {s : Specification} {before after : List Match} {pivot : Match}
 
-/-- The scope at a pivot is declared. -/
-theorem scopeAt_declared (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after) :
-    ∀ x ∈ scopeAt s before, x ∈ declaredLabels s := by
+/-- No label in scope at the pivot is reserved, so none is a split label. -/
+theorem scopeAt_ordinary (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after) :
+    ∀ x ∈ scopeAt s before, isReserved x = false := by
   intro x hx
-  have _ := hwf
   unfold scopeAt at hx
   rw [mem_scopeAfter] at hx
-  unfold declaredLabels
-  rw [hs, declaredInMatches_append]
+  have h := hwf.wellNamed
+  rw [hs, wellNamedMatches_append] at h
   rcases hx with hx | hx
-  · exact List.mem_append_right _ (List.mem_append_left _ (mem_declaredInMatches_of_mem_names x hx))
-  · exact List.mem_append_left _ hx
+  · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
+    exact wellNamed_ordinary h.1 m hm
+  · obtain ⟨g, hg, rfl⟩ := List.mem_map.mp hx
+    exact hwf.givensOrdinary g hg
 
 /-- What well-formedness says about the pieces of the original specification
 that the tail keeps. -/
@@ -238,18 +219,17 @@ theorem pivot_scoped (hwf : WellFormed s) (hs : s.matchList = before ++ pivot ::
       · exact Or.inl (by unfold scopeAt; rw [mem_scopeAfter]; exact Or.inl h)
       · exact Or.inr h
 
-/-- The pivot's unknown and the labels its path conditions join are declared. -/
-theorem pivot_labels_declared (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after) :
+/-- The pivot's unknown and the labels its path conditions join are ordinary. -/
+theorem pivot_labels_ordinary (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after) :
     ∀ x ∈ pivot.unknown.name :: (pathsOf pivot.conditions).map (·.labelRight),
-      x ∈ declaredLabels s := by
+      isReserved x = false := by
   intro x hx
   rcases List.mem_cons.mp hx with rfl | hx
-  · unfold declaredLabels
-    rw [hs, declaredInMatches_append]
-    exact List.mem_append_right _ (List.mem_append_right _
-      (mem_declaredInMatches_of_mem_names _ (by simp)))
+  · have h := hwf.wellNamed
+    rw [hs, wellNamedMatches_append] at h
+    exact wellNamed_ordinary h.2 pivot (by simp)
   · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
-    exact scopeAt_declared hwf hs _ ((pivot_scoped hwf hs).1 c hc)
+    exact scopeAt_ordinary hwf hs _ ((pivot_scoped hwf hs).1 c hc)
 
 /-- No path condition of the pivot joins the pivot to itself: the label it
 joins is in scope, and the pivot's unknown is not. -/
@@ -257,81 +237,59 @@ theorem pivot_paths_ne (hwf : WellFormed s) (hs : s.matchList = before ++ pivot 
     ∀ c ∈ pathsOf pivot.conditions, c.labelRight ≠ pivot.unknown.name := by
   intro c hc heq
   have hin := (pivot_scoped hwf hs).1 c hc
-  have hun := hwf.noShadowing
+  have hun := hwf.wellNamed
   rw [hs] at hun
-  have hun2 := (unshadowedMatches_append.mp hun).2
-  exact unshadowed_names_notin hun2 pivot.unknown.name (by simp) (heq ▸ hin)
+  have hun2 := (wellNamedMatches_append.mp hun).2
+  exact wellNamed_names_notin hun2 pivot.unknown.name (by simp) (heq ▸ hin)
 
-/-- The derivation of the tail's givens is closed, for any split labels and
-tail paths with the properties `splitPaths_names` gives. -/
+/-- The derivation of the tail's givens is closed, for any split matches and
+tail paths whose labels the pivot joined or the split matches bind. -/
 theorem tail_scoped_aux (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after)
     (sm : List Match) (tps : List PathCondition)
-    (hfresh : ∀ m ∈ sm, m.unknown.name ∉ declaredLabels s)
     (hpaths : ∀ c ∈ tps, c.labelRight ∈ (pathsOf pivot.conditions).map (·.labelRight) ∨
         c.labelRight ∈ sm.map (·.unknown.name)) :
-    ScopedMatches ((tailGivenAt s sm (tailMatchesAt pivot tps after)).map (·.name))
+    ScopedMatches ((tailGivenAt s (before ++ sm) (tailMatchesAt pivot tps after)).map (·.name))
         (tailMatchesAt pivot tps after) ∧
       ∀ x ∈ s.projection.labels,
-        x ∈ (tailGivenAt s sm (tailMatchesAt pivot tps after)).map (·.name) ∨
+        x ∈ (tailGivenAt s (before ++ sm) (tailMatchesAt pivot tps after)).map (·.name) ∨
         x ∈ (tailMatchesAt pivot tps after).map (·.unknown.name) := by
   obtain ⟨hp1, hp2, hp3, hp4⟩ := pivot_scoped hwf hs
-  have hunsh : UnshadowedMatches (scopeAt s before) (pivot :: after) := by
-    have h := hwf.noShadowing
-    rw [hs, unshadowedMatches_append] at h
-    exact h.2
-  have hdef : ∀ x ∈ (tailMatchesAt pivot tps after).map (·.unknown.name), x ∉ scopeAt s before := by
-    have : (tailMatchesAt pivot tps after).map (·.unknown.name) =
-        (pivot :: after).map (·.unknown.name) := by simp [tailMatchesAt]
-    rw [this]
-    exact unshadowed_names_notin hunsh
-  have hdecl : ∀ x ∈ (tailMatchesAt pivot tps after).map (·.unknown.name),
-      x ∈ declaredLabels s := by
-    have : (tailMatchesAt pivot tps after).map (·.unknown.name) =
-        (pivot :: after).map (·.unknown.name) := by simp [tailMatchesAt]
-    rw [this]
-    intro x hx
-    unfold declaredLabels
-    rw [hs, declaredInMatches_append]
-    exact List.mem_append_right _ (List.mem_append_right _
-      (mem_declaredInMatches_of_mem_names x hx))
   have hused : usedInMatches (tailMatchesAt pivot tps after) =
       tps.map (·.labelRight) ++ (usedInConditions (existentialsOf pivot.conditions) ++
         usedInMatches after) := by
     obtain ⟨u, cs⟩ := pivot
     simp [tailMatchesAt, usedInMatches, usedInConditions_append, usedInConditions_map_path]
-  have hnames : ∀ x, x ∈ (tailGivenAt s sm (tailMatchesAt pivot tps after)).map (·.name) ↔
-      x ∈ (s.given ++ s.matchList.map (·.unknown) ++ sm.map (·.unknown)).map (·.name) ∧
-        x ∈ usedInMatches (tailMatchesAt pivot tps after) ++ s.projection.labels ∧
-        x ∉ (tailMatchesAt pivot tps after).map (·.unknown.name) := by
+  have hnames : ∀ x, x ∈ (tailGivenAt s (before ++ sm) (tailMatchesAt pivot tps after)).map (·.name) ↔
+      x ∈ (s.given ++ (before ++ sm).map (·.unknown)).map (·.name) ∧
+        x ∈ usedInMatches (tailMatchesAt pivot tps after) ++ s.projection.labels := by
     intro x
-    exact mem_referencedLabels_names
+    simp only [tailGivenAt, List.mem_map, List.mem_filter, List.contains_iff_mem]
+    constructor
+    · rintro ⟨l, ⟨hl, hu⟩, rfl⟩
+      exact ⟨⟨l, hl, rfl⟩, hu⟩
+    · rintro ⟨⟨l, hl, rfl⟩, hu⟩
+      exact ⟨l, ⟨hl, hu⟩, rfl⟩
   -- a scope label the tail uses, or the projection names, is a given
   have hscope : ∀ x ∈ scopeAt s before,
       x ∈ usedInMatches (tailMatchesAt pivot tps after) ++ s.projection.labels →
-      x ∈ (tailGivenAt s sm (tailMatchesAt pivot tps after)).map (·.name) := by
+      x ∈ (tailGivenAt s (before ++ sm) (tailMatchesAt pivot tps after)).map (·.name) := by
     intro x hx hu
     rw [hnames]
-    refine ⟨?_, hu, hdef x |> fun h hm => h hm hx⟩
-    have hx' := hx
-    unfold scopeAt at hx'
-    rw [mem_scopeAfter] at hx'
+    refine ⟨?_, hu⟩
+    unfold scopeAt at hx
+    rw [mem_scopeAfter] at hx
     simp only [List.map_append, List.mem_append, List.map_map]
-    rcases hx' with h | h
-    · refine Or.inl (Or.inr ?_)
-      rw [hs]
-      simp only [List.map_append, List.mem_append]
-      exact Or.inl h
-    · exact Or.inl (Or.inl h)
+    rcases hx with h | h
+    · exact Or.inr (Or.inl (by simpa [Function.comp_def] using h))
+    · exact Or.inl (by simpa using h)
   have hN : ∀ x ∈ sm.map (·.unknown.name),
       x ∈ usedInMatches (tailMatchesAt pivot tps after) ++ s.projection.labels →
-      x ∈ (tailGivenAt s sm (tailMatchesAt pivot tps after)).map (·.name) := by
+      x ∈ (tailGivenAt s (before ++ sm) (tailMatchesAt pivot tps after)).map (·.name) := by
     intro x hx hu
     rw [hnames]
-    refine ⟨?_, hu, fun hm => ?_⟩
-    · simp only [List.map_append, List.mem_append, List.map_map]
-      exact Or.inr (by simpa [Function.comp_def] using hx)
-    · obtain ⟨m, hm', rfl⟩ := List.mem_map.mp hx
-      exact hfresh m hm' (hdecl _ hm)
+    refine ⟨?_, hu⟩
+    simp only [List.map_append, List.mem_append, List.map_map]
+    exact Or.inr (Or.inr (by simpa [Function.comp_def] using hx))
   have key : ∀ G, ScopedMatches G (tailMatchesAt pivot tps after) ↔
       ScopedConditions (pivot.unknown.name :: G) G
         (tps.map .path ++ existentialsOf pivot.conditions) ∧
@@ -372,14 +330,14 @@ theorem tail_scoped_aux (hwf : WellFormed s) (hs : s.matchList = before ++ pivot
 tail joins a label that is one of its givens or is declared earlier in it, and
 so does every label its projection names. -/
 theorem tail_scoped (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after) :
-    let split := splitPaths (declaredLabels s) (pathsOf pivot.conditions)
+    let split := splitPaths 0 (pathsOf pivot.conditions)
     let tail := tailMatchesAt pivot split.2 after
-    let given := (tailGivenAt s split.1 tail).map (·.name)
+    let given := (tailGivenAt s (before ++ split.1) tail).map (·.name)
     ScopedMatches given tail ∧
     ∀ x ∈ s.projection.labels, x ∈ given ∨ x ∈ tail.map (·.unknown.name) := by
   intro split tail given
-  have hn := splitPaths_names (declaredLabels s) (pathsOf pivot.conditions)
-  exact tail_scoped_aux hwf hs split.1 split.2 hn.1 hn.2
+  have hn := splitPaths_names 0 (pathsOf pivot.conditions)
+  exact tail_scoped_aux hwf hs split.1 split.2 hn.2
 
 end Pivot
 

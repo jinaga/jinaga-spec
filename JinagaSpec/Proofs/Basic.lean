@@ -85,56 +85,15 @@ theorem evalMatches_frame {g : Graph} {ms : List Match} :
     rw [ih h' x hxms]
     simp [Env.bind, hxu]
 
-/-! ## Fresh labels -/
+/-! ## Split labels -/
 
-private theorem sName_injective {m n : Nat} (h : s!"s{m}" = s!"s{n}") : m = n := by
-  simp only [toString] at h
-  exact Nat.repr_injective ((String.append_right_inj "s").mp h)
+theorem splitLabel_injective {i j : Nat} (h : splitLabel i = splitLabel j) : i = j := by
+  simp only [splitLabel, toString] at h
+  exact Nat.repr_injective ((String.append_right_inj "__s").mp h)
 
-/-- If `s1` ... `s(n-1)` are taken, and fewer than `n + fuel` names are, then the
-search does not return a taken name. When the fuel runs out, the name is
-returned unchecked: it is free because a taken `sn` would make `n` distinct
-taken names. -/
-private theorem freshFrom_not_mem (taken : List Name) :
-    ∀ (fuel n : Nat), 1 ≤ n → (∀ j, 1 ≤ j → j < n → s!"s{j}" ∈ taken) →
-      taken.length ≤ fuel + (n - 1) → freshFrom taken fuel n ∉ taken := by
-  intro fuel
-  induction fuel with
-  | zero =>
-    intro n hn hprev hlen hmem
-    simp only [freshFrom] at hmem
-    have hall : ∀ x ∈ (List.range' 1 n).map (fun j => s!"s{j}"), x ∈ taken := by
-      intro x hx
-      obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hx
-      rw [List.mem_range'_1] at hj
-      by_cases hjn : j = n
-      · subst hjn; exact hmem
-      · exact hprev j (by omega) (by omega)
-    have hnodup : ((List.range' 1 n).map (fun j => s!"s{j}")).Nodup := by
-      have h0 : (List.range' 1 n).Nodup := List.nodup_range'
-      exact List.Pairwise.map (fun j => s!"s{j}") (fun a b hab h => hab (sName_injective h)) h0
-    have := hnodup.length_le_of_subset hall
-    simp at this
-    omega
-  | succ fuel ih =>
-    intro n hn hprev hlen
-    simp only [freshFrom]
-    by_cases hc : taken.contains s!"s{n}" = true
-    · simp only [hc, ite_true]
-      apply ih (n + 1) (by omega)
-      · intro j hj1 hjn
-        by_cases hjeq : j = n
-        · subst hjeq; exact List.contains_iff_mem.mp hc
-        · exact hprev j hj1 (by omega)
-      · omega
-    · simp only [hc]
-      simpa using hc
-
-/-- The candidate for a split label is not one the specification declares. -/
-theorem freshLabel_not_mem (taken : List Name) : freshLabel taken ∉ taken := by
-  unfold freshLabel
-  apply freshFrom_not_mem taken taken.length 1 (by omega)
-  · intro j h1 h2; omega
-  · omega
+/-- A split label is reserved, so it is not a label the specification declares. -/
+theorem isReserved_splitLabel (i : Nat) : isReserved (splitLabel i) = true := by
+  simp only [isReserved, splitLabel, toString]
+  simp
 
 end JinagaSpec

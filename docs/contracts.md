@@ -2,20 +2,22 @@
 
 An algorithm is correct only for the inputs it expects. `split_correct` is a
 theorem about **well-formed** specifications. This document says what the split
-expects, who is responsible for providing it, and how to check a sequence of
-steps that ends in the split. Where a postcondition is proved, it says where.
-Where it is not, it says so, and the obligation stays with whoever composes the
-steps.
+expects, who is responsible for providing it, and how a library can make the
+expectation true by construction. Where a postcondition is proved, it says
+where. Where it is not, it says so, and the obligation stays with whoever
+composes the steps.
 
 ## The split's contract
 
-**Precondition** (`WellFormed`, `JinagaSpec/Proofs/Scoped.lean`):
+**Precondition** (`WellFormed`, `JinagaSpec/Proofs/Scoped.lean`; executable as
+`isWellFormed`, `JinagaSpec/WellFormed.lean`):
 
 1. **Scoped.** Every label a path condition names is in scope: a given, an
    earlier match, or, inside an existential condition, the enclosing unknown.
    In particular, a match never joins its own unknown.
-2. **Unshadowed.** No match declares a label that is already in scope.
-   (Lexical: sibling existential conditions may reuse a name.)
+2. **Well-named.** Every declared label is new, not already in scope (scope is
+   lexical, so sibling existential conditions may reuse a name), and ordinary,
+   not reserved. A label that begins with `__` is reserved for the split.
 3. **Projected.** The projection names only givens and top-level unknowns.
 
 **Postconditions.**
@@ -23,62 +25,72 @@ steps.
 | | Status |
 |---|---|
 | The split returns the same results as the whole specification (as sets). | Proved: `split_correct`. |
+| The split is total. It has a head, possibly with no matches, and a tail only when a match seeks successors. | By construction: `Split.head` is not optional. |
 | The tail's path conditions and projection name only the tail's givens or labels the tail declares earlier. | Proved: `tail_scoped`. |
-| Every split label is distinct from every label the specification declares. | Proved: `splitPaths_names`, `freshLabel_not_mem`. |
+| Every split label is reserved, so it differs from every label the specification declares. | Proved: `splitPaths_names`, `isReserved_splitLabel`. |
 | The head is deterministic (the graph can run it). | True by construction, **not proved**. |
 | The head and tail are themselves `WellFormed`, so they can be split or transformed again. | **Not stated, not proved.** |
 
 The last two matter only if a head or tail is fed to another algorithm that
 assumes well-formedness. Nothing does today.
 
+## Make it true by construction
+
+A precondition that every caller must remember is a precondition that will be
+forgotten. Two moves remove the need to remember it.
+
+1. **Check once, at the boundary where a specification enters.** `isWellFormed`
+   decides the precondition exactly (`isWellFormed_iff`), so a specification that
+   passes is split correctly (`split_correct_of_check`), and one the theorem
+   covers is never rejected.
+2. **Give the checked value a type.** A function that relies on the
+   precondition takes the type that only the check can make. The compiler then
+   enforces the precondition for every caller, and no internal function checks it
+   again.
+
+`jinaga.js` does both in pull requests
+[#308](https://github.com/jinaga/jinaga.js/pull/308) and
+[#311](https://github.com/jinaga/jinaga.js/pull/311):
+`assertWellFormed` runs the check and returns a `WellFormedSpecification`, which
+`splitBeforeFirstSuccessor` takes, and `AuthorizationRuleSpecification` calls it
+once in its constructor. A test with `@ts-expect-error` shows the compiler
+rejecting a specification that has not been checked.
+
+The rule-level conditions of an authorization rule belong at the same boundary:
+one given, and a projection of a single fact. The split does not need them, but
+the evaluator does: it seeds the head from `head.given[0]`, which seeds every
+given exactly when there is one. Checked once in the constructor, the evaluator
+does not check them per call.
+
 ## Who can hand the split a specification
 
 Traced in `jinaga.js` and the local `jinaga.net` checkout:
 
 - **`splitBeforeFirstSuccessor` has one caller in `jinaga.js`**, the class
-  `AuthorizationRuleSpecification` (`src/authorization/authorizationRules.ts`),
-  in `isAuthorized` and `getAuthorizedPopulation`. `jinaga.net` has the same
-  shape (`Authorization/AuthorizationRuleSpecification.cs`). The other local
-  checkouts (`jinaga-server`, `jinaga-replicator`, and the rest) do not call it.
-- **The class is not exported,** but the function is
-  (`src/index.ts`), so any package can call it with any `Specification`.
-- **The class is constructed in three places:** the model builder
-  (`typeFromDefinition`), the predecessor-selector builder
-  (`typeFromPredecessorSelector`), and the parser (`parseAuthorizationRules`,
-  reached from `AuthorizationRules.loadFromDescription`).
-- **Its constructor runs `validateSpecificationOrThrow`,** which checks only that
-  each match is *rooted* (begins with a path condition). It checks none of the
-  three conditions above.
+  `AuthorizationRuleSpecification` (`src/authorization/authorizationRules.ts`).
+  `jinaga.net` has the same shape (`Authorization/AuthorizationRuleSpecification.cs`).
+  The other local checkouts do not call it.
+- **The class is not exported,** but the function is, so any package can call it.
+  With the type above, a caller must obtain a `WellFormedSpecification` from
+  `assertWellFormed` first.
+- **The class is built in three places:** the model builder, the
+  predecessor-selector builder, and the parser (`AuthorizationRules.loadFromDescription`).
+  All three reach the constructor, so the check there covers each of them, and
+  any future producer, without relying on any of them.
 
 ## Which producer establishes which condition
 
-| | Scoped | Unshadowed | Projected |
+| | Scoped | Well-named | Projected |
 |---|---|---|---|
-| **Parser** | Enforced: a path's joined label must be in `labels` ("has not been defined"), and `labels` excludes the match's own unknown. Nested matches are parsed with `[...labels, unknown]`. | Enforced: `parseMatch` rejects a name already in `labels` ("has already been used"). Nested labels are discarded on the way out, so scope is lexical. | **Not enforced.** `parseProjection` and `parseComponent` read an identifier and never look it up. |
-| **Model builder** | By construction, unverified. Labels come from the lambdas' parameters. | By construction, unverified. Not read. | By construction, unverified. |
+| **Parser** | Enforced: a path's joined label must be in `labels`, which excludes the match's own unknown. | Enforced for *new* (`parseMatch`: "has already been used"). Scope is lexical. **Not enforced** for reserved. | **Not enforced.** `parseProjection` and `parseComponent` never look a label up. |
+| **Model builder** | By construction, unverified. | By construction, unverified. | By construction, unverified. |
 | **`validateSpecification`** | Not checked. | Not checked. | Not checked. |
-| **Any other caller of the exported function** | No guarantee. | No guarantee. | No guarantee. |
+| **`assertWellFormed`** | Checked. | Checked. | Checked. |
 
-### A gap that exists today
-
-The parser accepts, and `validateSpecification` passes,
-
-```
-(p1: Employee) {
-    u1: Office [ u1 = p1->office: Office ]
-    u2: President [ u2->office: Office = u1 ]
-} => nosuchlabel
-```
-
-and the split returns a tail whose projection is `nosuchlabel`, a label nothing
-defines. `npm run audit` in `ports/typescript` reproduces this for every
-specification in `vectors/well-formed`: the parser rejects every scoping and
-shadowing violation, accepts every well-formed one (sibling-name reuse included),
-and accepts all three projection violations, which `validateSpecification` also
-passes. `split_correct` does not apply, because `Projected` fails. The rule loads
-and fails only when it runs. (Reproduced against the branch carrying #308, #309
-and #311.) The other two conditions are enforced by the parser, so a rule
-loaded from text meets them.
+`npm run audit` in `ports/typescript` runs the parser and `validateSpecification`
+over the well-formedness vectors. Six ill-formed vectors pass both: the three
+projection violations and the three reserved-label violations. The check at the
+boundary rejects them.
 
 ## Other algorithms that produce or transform specifications
 
@@ -86,7 +98,9 @@ These are exported from `jinaga.js` and are not modelled here:
 `alphaTransform`, `intersectSpecificationWithDistribution`, `reduceSpecification`,
 `buildFeeds`, and the inverse-specification builders. **None feeds the split in
 the current code.** If any ever does, it must preserve `WellFormed`, and today
-there is no statement, and no proof, that it does.
+there is no statement, and no proof, that it does. For each, the obligation is
+one of: a proof here, or a test in the implementation that its output is
+well-formed for well-formed input.
 
 ## Checking a sequence of steps
 
@@ -96,64 +110,27 @@ For a pipeline `s0 → f1 → ... → fn → split`, the split's precondition ho
 2. each `fi` preserves it: `WellFormed x → WellFormed (fi x)`, and
 3. so `WellFormed (fn (... (f1 s0)))` holds when the split runs.
 
-Record each pipeline in a table like this. An unproved cell is a runtime
-obligation.
+A cell that is not proved is a runtime obligation, and the type above turns it
+into one the compiler tracks: the pipeline must end in `assertWellFormed`.
 
 | step | establishes or preserves | how it is known |
 |---|---|---|
-| producer | Scoped, Unshadowed, Projected | proved / enforced in code / **unverified** |
+| producer | Scoped, Well-named, Projected | proved / enforced in code / **unverified** |
 | `f1` | ... | ... |
 
-Until a step is proved, verify the sequence by running the check on the
-specification immediately before it reaches the split, and treating failure as
-an authoring error.
+## What is not covered
 
-## The check
-
-`isWellFormed` (`JinagaSpec/WellFormed.lean`) is that check. It is written in the
-portable subset and reports the three conditions separately (`isScoped`,
-`isUnshadowed`, `isProjected`), so a port can name the one a specification
-violates.
-
-- **It decides the hypothesis exactly:** `isWellFormed_iff` proves
-  `isWellFormed s = true ↔ WellFormed s`. So a specification that passes is split
-  correctly (`split_correct_of_check`), and one the theorem covers is never
-  rejected.
-- **It has vectors:** `vectors/well-formed/` holds 16 specifications, well-formed
-  and violating each condition, with the expected verdict. Each case states the
-  verdict a reader of the rules expects, and the generator refuses to write a
-  vector where the oracle disagrees. All 17 specifications in `vectors/split/`
-  are checked to be well-formed.
-- **It has a reference port:** `ports/typescript/well-formed.ts` mirrors the Lean
-  and depends on nothing, so it can be lifted into `jinaga.js` as it stands. It
-  passes all 16 vectors, and mutants that skip the scope check or the shadowing
-  check are each caught by the vectors written for them.
-
-### Putting it to use in `jinaga.js`
-
-Not done here, because it changes `jinaga.js`. The change is small:
-
-1. Add `well-formed.ts` under `src/specification/`.
-2. In the `AuthorizationRuleSpecification` constructor, after
-   `validateSpecificationOrThrow`, throw an `AuthorizationRuleError` naming the
-   violated condition if `checkWellFormed` fails. That closes the projection gap
-   at the point a rule is stored, for the parser, the builders, and any future
-   producer, without relying on any of them.
-3. Decide whether the exported `splitBeforeFirstSuccessor` should check too, or
-   whether its documentation should state the precondition. Throwing there
-   changes a public function's behavior for callers outside this repository.
-
-`jinaga.net` needs the same check, run against the same vectors.
+Conditions on givens, and the labels declared inside nested specification
+projections, are not modelled, and the check ignores them. The reserved-label
+rule makes the second harmless for the split's own labels: no declaration site,
+modelled or not, can collide with a name it may not use.
 
 ## Remaining work
 
-1. **Wire the check into the constructors** in `jinaga.js` and `jinaga.net`
-   (above).
-2. **State `WellFormed` postconditions** for `alphaTransform`,
-   `intersectSpecificationWithDistribution`, `reduceSpecification` and
-   `buildFeeds`, and prove them or list them here as obligations, before any of
-   them feeds the split.
+1. **`jinaga.net`:** the same check at the same boundary, and the split
+   simplified to match. Filed as issues.
+2. **State `WellFormed` postconditions** for the algorithms above, and prove them
+   or test them.
 3. **Prove the split's own output well-formed**, so a head or tail can be passed
    on.
-4. **Model conditions on givens and the remaining projections**, which the check
-   ignores today.
+4. **Model conditions on givens and the remaining projections.**

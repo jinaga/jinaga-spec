@@ -15,7 +15,7 @@
  "name": "predecessor-and-successor-in-one-match",
  "expected":
  {"tailText":
-  "(s1: Office) {\n    u1: President [\n        u1->office: Office = s1\n    ]\n} => u1\n",
+  "(__s0: Office) {\n    u1: President [\n        u1->office: Office = __s0\n    ]\n} => u1\n",
   "tail":
   {"projection": {"type": "fact", "label": "u1"},
    "matches":
@@ -24,14 +24,16 @@
      [{"type": "path",
        "rolesRight": [],
        "rolesLeft": [{"predecessorType": "Office", "name": "office"}],
-       "labelRight": "s1"}]}],
-   "given": [{"label": {"type": "Office", "name": "s1"}, "conditions": []}]},
+       "labelRight": "__s0"}]}],
+   "given": [{"label": {"type": "Office", "name": "__s0"}, "conditions": []}]},
   "headText":
-  "(p1: Employee) {\n    s1: Office [\n        s1 = p1->office: Office\n    ]\n} => s1\n",
+  "(p1: Employee) {\n    __s0: Office [\n        __s0 = p1->office: Office\n    ]\n} => {\n    __s0 = __s0\n}\n",
   "head":
-  {"projection": {"type": "fact", "label": "s1"},
+  {"projection":
+   {"type": "composite",
+    "components": [{"type": "fact", "name": "__s0", "label": "__s0"}]},
    "matches":
-   [{"unknown": {"type": "Office", "name": "s1"},
+   [{"unknown": {"type": "Office", "name": "__s0"},
      "conditions":
      [{"type": "path",
        "rolesRight": [{"predecessorType": "Office", "name": "office"}],

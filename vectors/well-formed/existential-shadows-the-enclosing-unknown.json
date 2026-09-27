@@ -1,4 +1,5 @@
-{"text":
+{"violates": ["named"],
+ "text":
  "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n        !E {\n            u1: Revoked [\n                u1->revoked: Revoked = p1\n            ]\n        }\n    ]\n} => u1\n",
  "specification":
  {"projection": {"type": "fact", "label": "u1"},
@@ -22,7 +23,6 @@
  "source":
  "SpecificationParser.parseExistentialCondition adds the unknown to the scope",
  "name": "existential-shadows-the-enclosing-unknown",
- "expected":
- {"wellFormed": false, "unshadowed": false, "scoped": true, "projected": true},
+ "expected": {"wellFormed": false},
  "description":
  "A match inside an existential condition declares the enclosing match's unknown."}

@@ -1,8 +1,8 @@
-{"violates": ["projected"],
+{"violates": ["named"],
  "text":
- "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n        !E {\n            e: Revoked [\n                e->revoked: Revoked = u1\n            ]\n        }\n    ]\n} => e\n",
+ "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n        !E {\n            __s1: Revoked [\n                __s1->revoked: Revoked = u1\n            ]\n        }\n    ]\n} => u1\n",
  "specification":
- {"projection": {"type": "fact", "label": "e"},
+ {"projection": {"type": "fact", "label": "u1"},
   "matches":
   [{"unknown": {"type": "Office", "name": "u1"},
     "conditions":
@@ -12,7 +12,7 @@
       "labelRight": "p1"},
      {"type": "existential",
       "matches":
-      [{"unknown": {"type": "Revoked", "name": "e"},
+      [{"unknown": {"type": "Revoked", "name": "__s1"},
         "conditions":
         [{"type": "path",
           "rolesRight": [],
@@ -20,8 +20,8 @@
           "labelRight": "u1"}]}],
       "exists": false}]}],
   "given": [{"label": {"type": "Employee", "name": "p1"}, "conditions": []}]},
- "source": "the theorem's Projected condition",
- "name": "projection-names-a-nested-unknown",
+ "source": "the reserved-label rule",
+ "name": "existential-uses-a-reserved-label",
  "expected": {"wellFormed": false},
  "description":
- "The projection names a match declared inside an existential condition, which is not in scope outside it."}
+ "A match inside an existential condition declares a label that begins with `__`."}

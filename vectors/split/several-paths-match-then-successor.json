@@ -52,9 +52,11 @@
        "labelRight": "u2"}]}],
    "given": [{"label": {"type": "Workspace", "name": "u1"}, "conditions": []}]},
   "headText":
-  "(p1: Link) {\n    u1: Workspace [\n        u1 = p1->item: Item->workspace: Workspace\n        u1 = p1->parent: Item->workspace: Workspace\n    ]\n} => u1\n",
+  "(p1: Link) {\n    u1: Workspace [\n        u1 = p1->item: Item->workspace: Workspace\n        u1 = p1->parent: Item->workspace: Workspace\n    ]\n} => {\n    u1 = u1\n}\n",
   "head":
-  {"projection": {"type": "fact", "label": "u1"},
+  {"projection":
+   {"type": "composite",
+    "components": [{"type": "fact", "name": "u1", "label": "u1"}]},
    "matches":
    [{"unknown": {"type": "Workspace", "name": "u1"},
      "conditions":

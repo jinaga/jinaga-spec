@@ -34,7 +34,7 @@
  "name": "several-paths-one-reuses-a-head-label",
  "expected":
  {"tailText":
-  "(u1: Workspace, s1: Workspace) {\n    u2: Owner [\n        u2->workspace: Workspace = u1\n        u2->workspace: Workspace = s1\n    ]\n    u3: Jinaga.User [\n        u3 = u2->user: Jinaga.User\n    ]\n} => u3\n",
+  "(u1: Workspace, __s1: Workspace) {\n    u2: Owner [\n        u2->workspace: Workspace = u1\n        u2->workspace: Workspace = __s1\n    ]\n    u3: Jinaga.User [\n        u3 = u2->user: Jinaga.User\n    ]\n} => u3\n",
   "tail":
   {"projection": {"type": "fact", "label": "u3"},
    "matches":
@@ -47,7 +47,7 @@
       {"type": "path",
        "rolesRight": [],
        "rolesLeft": [{"predecessorType": "Workspace", "name": "workspace"}],
-       "labelRight": "s1"}]},
+       "labelRight": "__s1"}]},
     {"unknown": {"type": "Jinaga.User", "name": "u3"},
      "conditions":
      [{"type": "path",
@@ -56,15 +56,15 @@
        "labelRight": "u2"}]}],
    "given":
    [{"label": {"type": "Workspace", "name": "u1"}, "conditions": []},
-    {"label": {"type": "Workspace", "name": "s1"}, "conditions": []}]},
+    {"label": {"type": "Workspace", "name": "__s1"}, "conditions": []}]},
   "headText":
-  "(p1: Link) {\n    u1: Workspace [\n        u1 = p1->item: Item->workspace: Workspace\n    ]\n    s1: Workspace [\n        s1 = p1->parent: Item->workspace: Workspace\n    ]\n} => {\n    s1 = s1\n    u1 = u1\n}\n",
+  "(p1: Link) {\n    u1: Workspace [\n        u1 = p1->item: Item->workspace: Workspace\n    ]\n    __s1: Workspace [\n        __s1 = p1->parent: Item->workspace: Workspace\n    ]\n} => {\n    __s1 = __s1\n    u1 = u1\n}\n",
   "head":
   {"projection":
    {"type": "composite",
     "components":
     [{"type": "fact", "name": "u1", "label": "u1"},
-     {"type": "fact", "name": "s1", "label": "s1"}]},
+     {"type": "fact", "name": "__s1", "label": "__s1"}]},
    "matches":
    [{"unknown": {"type": "Workspace", "name": "u1"},
      "conditions":
@@ -74,7 +74,7 @@
         {"predecessorType": "Workspace", "name": "workspace"}],
        "rolesLeft": [],
        "labelRight": "p1"}]},
-    {"unknown": {"type": "Workspace", "name": "s1"},
+    {"unknown": {"type": "Workspace", "name": "__s1"},
      "conditions":
      [{"type": "path",
        "rolesRight":

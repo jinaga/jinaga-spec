@@ -26,7 +26,7 @@
  "name": "existential-on-the-pivot",
  "expected":
  {"tailText":
-  "(s1: Company) {\n    u1: Administrator [\n        u1->company: Company = s1\n        !E {\n            u2: Administrator.Revoked [\n                u2->administrator: Administrator = u1\n            ]\n        }\n    ]\n} => u1\n",
+  "(__s0: Company) {\n    u1: Administrator [\n        u1->company: Company = __s0\n        !E {\n            u2: Administrator.Revoked [\n                u2->administrator: Administrator = u1\n            ]\n        }\n    ]\n} => u1\n",
   "tail":
   {"projection": {"type": "fact", "label": "u1"},
    "matches":
@@ -35,7 +35,7 @@
      [{"type": "path",
        "rolesRight": [],
        "rolesLeft": [{"predecessorType": "Company", "name": "company"}],
-       "labelRight": "s1"},
+       "labelRight": "__s0"},
       {"type": "existential",
        "matches":
        [{"unknown": {"type": "Administrator.Revoked", "name": "u2"},
@@ -46,13 +46,15 @@
            [{"predecessorType": "Administrator", "name": "administrator"}],
            "labelRight": "u1"}]}],
        "exists": false}]}],
-   "given": [{"label": {"type": "Company", "name": "s1"}, "conditions": []}]},
+   "given": [{"label": {"type": "Company", "name": "__s0"}, "conditions": []}]},
   "headText":
-  "(p1: Administrator) {\n    s1: Company [\n        s1 = p1->company: Company\n    ]\n} => s1\n",
+  "(p1: Administrator) {\n    __s0: Company [\n        __s0 = p1->company: Company\n    ]\n} => {\n    __s0 = __s0\n}\n",
   "head":
-  {"projection": {"type": "fact", "label": "s1"},
+  {"projection":
+   {"type": "composite",
+    "components": [{"type": "fact", "name": "__s0", "label": "__s0"}]},
    "matches":
-   [{"unknown": {"type": "Company", "name": "s1"},
+   [{"unknown": {"type": "Company", "name": "__s0"},
      "conditions":
      [{"type": "path",
        "rolesRight": [{"predecessorType": "Company", "name": "company"}],

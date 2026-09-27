@@ -1,4 +1,5 @@
-{"text":
+{"violates": [],
+ "text":
  "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n        !E {\n            u2: Revoked [\n                u2->revoked: Revoked = u1\n            ]\n        }\n    ]\n} => u1\n",
  "specification":
  {"projection": {"type": "fact", "label": "u1"},
@@ -22,7 +23,6 @@
  "source":
  "splitSpecificationSpec: should split path when existential condition exists",
  "name": "existential-uses-the-enclosing-unknown",
- "expected":
- {"wellFormed": true, "unshadowed": true, "scoped": true, "projected": true},
+ "expected": {"wellFormed": true},
  "description":
  "An existential condition joins the unknown of the match it belongs to. That unknown is in scope inside it, and only there."}

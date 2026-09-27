@@ -1,4 +1,5 @@
-{"text":
+{"violates": ["projected"],
+ "text":
  "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n    ]\n} => nosuchlabel\n",
  "specification":
  {"projection": {"type": "fact", "label": "nosuchlabel"},
@@ -12,7 +13,6 @@
   "given": [{"label": {"type": "Employee", "name": "p1"}, "conditions": []}]},
  "source": "docs/contracts.md: the gap",
  "name": "projection-names-an-undefined-label",
- "expected":
- {"wellFormed": false, "unshadowed": true, "scoped": true, "projected": false},
+ "expected": {"wellFormed": false},
  "description":
  "The projection names a label nothing declares. The parser and validateSpecification accept this today."}

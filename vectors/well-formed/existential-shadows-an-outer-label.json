@@ -1,4 +1,5 @@
-{"text":
+{"violates": ["named"],
+ "text":
  "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n        !E {\n            p1: Revoked [\n                p1->revoked: Revoked = u1\n            ]\n        }\n    ]\n} => u1\n",
  "specification":
  {"projection": {"type": "fact", "label": "u1"},
@@ -22,7 +23,6 @@
  "source":
  "SpecificationParser.parseExistentialCondition passes the outer labels down",
  "name": "existential-shadows-an-outer-label",
- "expected":
- {"wellFormed": false, "unshadowed": false, "scoped": true, "projected": true},
+ "expected": {"wellFormed": false},
  "description":
  "A match inside an existential condition declares a label that is already in scope."}

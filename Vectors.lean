@@ -28,10 +28,6 @@ def caseToJson (c : Case) : Json :=
       ("headText", text split.head),
       ("tailText", text split.tail)])]
 
-def verdictsToJson (s : Specification) : Json :=
-  Json.mkObj [("scoped", isScoped s), ("unshadowed", isUnshadowed s),
-              ("projected", isProjected s), ("wellFormed", isWellFormed s)]
-
 def wellFormedCaseToJson (c : WellFormedCase) : Json :=
   Json.mkObj [
     ("name", c.name),
@@ -39,13 +35,14 @@ def wellFormedCaseToJson (c : WellFormedCase) : Json :=
     ("source", c.source),
     ("specification", specificationToJson c.spec),
     ("text", describeSpecification c.spec),
-    ("expected", verdictsToJson c.spec)]
+    ("violates", Json.arr (c.violates.map Json.str).toArray),
+    ("expected", Json.mkObj [("wellFormed", isWellFormed c.spec)])]
 
-/-- The vector's verdicts come from the oracle, but each case states what a
-reader of the rules expects, and a disagreement is an error, not a vector. -/
+/-- The vector's verdict comes from the oracle, but each case states which rules
+a reader expects it to violate, and a disagreement is an error, not a vector. -/
 def checkIntent (c : WellFormedCase) : IO Unit := do
-  if isScoped c.spec != c.expectScoped || isUnshadowed c.spec != c.expectUnshadowed || isProjected c.spec != c.expectProjected then
-    throw <| IO.userError s!"{c.name}: the oracle says scoped={isScoped c.spec}, unshadowed={isUnshadowed c.spec}, projected={isProjected c.spec}, but the case expects {c.expectScoped}, {c.expectUnshadowed}, {c.expectProjected}"
+  if isWellFormed c.spec != c.violates.isEmpty then
+    throw <| IO.userError s!"{c.name}: the oracle says wellFormed={isWellFormed c.spec}, but the case violates {c.violates}"
 
 def main (args : List String) : IO Unit := do
   let root : System.FilePath := args.headD "vectors"

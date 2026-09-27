@@ -19,8 +19,7 @@ const { validateSpecification } = await import(src("specification-validation.ts"
 
 const rows = readdirSync(dir).filter(f => f.endsWith(".json")).sort().map(file => {
     const vector = JSON.parse(readFileSync(join(dir, file), "utf8"));
-    const e = vector.expected;
-    const violates = [!e.scoped && "scoped", !e.unshadowed && "unshadowed", !e.projected && "projected"].filter(Boolean).join(", ");
+    const violates = vector.violates.join(", ");
     let parser = "accepts", validator = "-";
     try {
         const p = new SpecificationParser(vector.text);

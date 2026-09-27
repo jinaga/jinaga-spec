@@ -9,7 +9,7 @@ import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { checkWellFormed } from "./well-formed.ts";
+import { isWellFormed } from "./well-formed.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const jinagaJs = resolve(process.env.JINAGA_JS ?? join(here, "../../../jinaga.js"));
@@ -19,6 +19,8 @@ const wellFormedDir = join(vectorsRoot, "well-formed");
 
 const { splitBeforeFirstSuccessor } = await import(pathToFileURL(join(jinagaJs, "src/specification/specification.ts")).href);
 const { describeSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/description.ts")).href);
+// Earlier commits of jinaga.js have no well-formedness check, so it is optional.
+const { wellFormedErrors } = await import(pathToFileURL(join(jinagaJs, "src/specification/specification-validation.ts")).href);
 
 // A missing head or tail is `undefined` in TypeScript and `null` in a vector.
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
@@ -55,17 +57,18 @@ for (const file of files) {
 console.log(`\n${files.length - failed} of ${files.length} split vectors pass against ${jinagaJs}`);
 
 let wellFormedFailed = 0;
+const checkers: [string, (specification: any) => boolean][] = [["reference", isWellFormed]];
+if (wellFormedErrors) checkers.push(["jinaga.js", specification => wellFormedErrors(structuredClone(specification)).length === 0]);
 const wellFormedFiles = readdirSync(wellFormedDir).filter(f => f.endsWith(".json")).sort();
 for (const file of wellFormedFiles) {
     const vector = JSON.parse(readFileSync(join(wellFormedDir, file), "utf8"));
-    try {
-        deepStrictEqual(checkWellFormed(vector.specification), vector.expected);
+    const failures = checkers.filter(([, check]) => check(vector.specification) !== vector.expected.wellFormed).map(([name]) => name);
+    if (failures.length === 0) {
         console.log(`  ok    ${vector.name}`);
-    } catch (e: any) {
+    } else {
         wellFormedFailed++;
-        console.log(`  FAIL  ${vector.name}   (${vector.source})`);
-        console.log(e.message.split("\n").slice(0, 12).map((l: string) => "        " + l).join("\n"));
+        console.log(`  FAIL  ${vector.name}   (${vector.source}): ${failures.join(", ")} disagree${failures.length === 1 ? "s" : ""} with the oracle`);
     }
 }
-console.log(`\n${wellFormedFiles.length - wellFormedFailed} of ${wellFormedFiles.length} well-formedness vectors pass`);
+console.log(`\n${wellFormedFiles.length - wellFormedFailed} of ${wellFormedFiles.length} well-formedness vectors pass (${checkers.map(([name]) => name).join(", ")})`);
 process.exit(failed === 0 && wellFormedFailed === 0 ? 0 : 1);

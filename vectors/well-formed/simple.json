@@ -1,4 +1,5 @@
-{"text":
+{"violates": [],
+ "text":
  "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n    ]\n} => u1\n",
  "specification":
  {"projection": {"type": "fact", "label": "u1"},
@@ -12,7 +13,6 @@
   "given": [{"label": {"type": "Employee", "name": "p1"}, "conditions": []}]},
  "source": "the baseline",
  "name": "simple",
- "expected":
- {"wellFormed": true, "unshadowed": true, "scoped": true, "projected": true},
+ "expected": {"wellFormed": true},
  "description":
  "A given, one match joined to it, and a projection of that match."}

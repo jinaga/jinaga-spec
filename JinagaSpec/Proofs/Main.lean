@@ -37,12 +37,12 @@ variable {g : Graph} {s : Specification} {before after : List Match} {pivot : Ma
 /-- Solving the pivot and everything after it from `e` is the same as solving
 the split labels from `e`, then the tail from the tail's givens alone. -/
 theorem pivot_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after)
-    (hsp : splitPaths (declaredLabels s) (pathsOf pivot.conditions) = (sm, tps))
+    (hsp : splitPaths 0 (pathsOf pivot.conditions) = (sm, tps))
     (e : Env) (r : List (Option FactId)) :
     (∃ e2 ∈ evalMatches g e (pivot :: after), s.projection.labels.map e2 = r) ↔
     (∃ e' ∈ evalMatches g e sm,
       ∃ e3 ∈ evalMatches g
-          (e'.restrictTo ((tailGivenAt s sm (tailMatchesAt pivot tps after)).map (·.name)))
+          (e'.restrictTo ((tailGivenAt s (before ++ sm) (tailMatchesAt pivot tps after)).map (·.name)))
           (tailMatchesAt pivot tps after),
         s.projection.labels.map e3 = r) := by
   -- What well-formedness says at the pivot.
@@ -50,19 +50,19 @@ theorem pivot_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: a
   have hT := tail_scoped hwf hs
   simp only [hsp] at hT
   obtain ⟨hTscoped, hTproj⟩ := hT
-  have hdecl := pivot_labels_declared hwf hs
-  have hscopeDecl := scopeAt_declared hwf hs
+  have hord := pivot_labels_ordinary hwf hs
+  have hscopeOrd := scopeAt_ordinary hwf hs
   have hne := pivot_paths_ne hwf hs
-  have hnames := splitPaths_names (declaredLabels s) (pathsOf pivot.conditions)
+  have hnames := splitPaths_names 0 (pathsOf pivot.conditions)
   simp only [hsp] at hnames
-  obtain ⟨hfresh, -⟩ := hnames
-  generalize htg : (tailGivenAt s sm (tailMatchesAt pivot tps after)).map (·.name) = tgn at *
+  obtain ⟨hreserved, -⟩ := hnames
+  generalize htg : (tailGivenAt s (before ++ sm) (tailMatchesAt pivot tps after)).map (·.name) = tgn at *
   obtain ⟨u, cs⟩ := pivot
   have hTdef : tailMatchesAt (.mk u cs) tps after =
       .mk u (tps.map .path ++ existentialsOf cs) :: after := by
     simp [tailMatchesAt]
   rw [hTdef] at hTscoped hTproj ⊢
-  simp only [Match.unknown_mk, Match.conditions_mk] at hpaths hex hafter hproj hdecl hTproj hne hsp
+  simp only [Match.unknown_mk, Match.conditions_mk] at hpaths hex hafter hproj hord hTproj hne hsp
   obtain ⟨hTconds, hTafter⟩ := hTscoped
   -- One candidate fact for the pivot at a time.
   have hf : ∀ f : Fact,
@@ -82,7 +82,10 @@ theorem pivot_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: a
         apply evalMatches_frame he' x
         intro hmem
         obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hmem
-        exact hfresh m hm (hscopeDecl _ hx)
+        have h1 := hreserved m hm
+        have h2 := hscopeOrd _ hx
+        rw [h1] at h2
+        exact Bool.noConfusion h2
       exact h1.bind u.name f.id
     -- The tail sees only its givens.
     have hrestr : ∀ e' : Env, Agree (u.name :: tgn) ((e'.restrictTo tgn).bind u.name f.id)
@@ -116,7 +119,7 @@ theorem pivot_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: a
         ∃ e4 ∈ evalMatches g (e.bind u.name f.id) after, s.projection.labels.map e4 = r :=
       fun e' he' => exists_projection_iff hafter (hframe e' he') hLF r
     -- The pivot's path conditions.
-    have hG := splitPaths_correct g u.name f.id (pathsOf cs) (declaredLabels s) e hne hdecl
+    have hG := splitPaths_correct g u.name f.id 0 (pathsOf cs) e hne hord
     simp only [hsp] at hG
     have hsplitCs : allHold g (e.bind u.name f.id) u.name cs =
         (allHold g (e.bind u.name f.id) u.name ((pathsOf cs).map .path) &&
@@ -182,21 +185,18 @@ theorem split_correct (s : Specification) (hwf : WellFormed s) (g : Graph) (env 
       unfold Specification.evaluate
       rw [hs, List.mem_map]
     unfold splitAt
-    rcases hsp : splitPaths (declaredLabels s) (pathsOf pivot.conditions) with ⟨sm, tps⟩
+    rcases hsp : splitPaths 0 (pathsOf pivot.conditions) with ⟨sm, tps⟩
     simp only [hsp]
-    by_cases hempty : (before ++ sm).isEmpty = true
-    · -- Nothing for the graph to run: the tail is the whole specification.
-      simp [hempty, Split.evaluate]
-    · rw [hlhs]
-      simp only [hempty, Bool.false_eq_true, ite_false, Split.evaluate, Specification.evaluate]
-      rw [List.mem_flatMap]
-      simp only [List.mem_map, mem_evalMatches_append]
-      constructor
-      · rintro ⟨tuple, ⟨e, he, he'⟩, e3, he3, hr⟩
-        obtain ⟨e2, he2, hr2⟩ := (pivot_step hwf hs hsp e r).mpr ⟨tuple, he', e3, he3, hr⟩
-        exact ⟨e2, ⟨e, he, he2⟩, hr2⟩
-      · rintro ⟨e2, ⟨e, he, he2⟩, hr⟩
-        obtain ⟨tuple, ht, e3, he3, hr3⟩ := (pivot_step hwf hs hsp e r).mp ⟨e2, he2, hr⟩
-        exact ⟨tuple, ⟨e, he, ht⟩, e3, he3, hr3⟩
+    rw [hlhs]
+    simp only [Split.evaluate, Specification.evaluate]
+    rw [List.mem_flatMap]
+    simp only [List.mem_map, mem_evalMatches_append]
+    constructor
+    · rintro ⟨tuple, ⟨e, he, he'⟩, e3, he3, hr⟩
+      obtain ⟨e2, he2, hr2⟩ := (pivot_step hwf hs hsp e r).mpr ⟨tuple, he', e3, he3, hr⟩
+      exact ⟨e2, ⟨e, he, he2⟩, hr2⟩
+    · rintro ⟨e2, ⟨e, he, he2⟩, hr⟩
+      obtain ⟨tuple, ht, e3, he3, hr3⟩ := (pivot_step hwf hs hsp e r).mp ⟨e2, he2, hr⟩
+      exact ⟨tuple, ⟨e, he, ht⟩, e3, he3, hr3⟩
 
 end JinagaSpec

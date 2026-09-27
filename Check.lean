@@ -144,7 +144,7 @@ def onTail (f : Specification → Specification) (sp : Split) : Split :=
   { sp with tail := sp.tail.map f }
 
 def onHead (f : Specification → Specification) (sp : Split) : Split :=
-  { sp with head := sp.head.map f }
+  { sp with head := f sp.head }
 
 def withoutExistentials : Match → Match
   | .mk u cs => .mk u (cs.filter fun | .path .. => true | .existential .. => false)
@@ -173,10 +173,10 @@ def checkSpec (s : Specification) (graphs : Nat) : Gen (Tally × Option String) 
     let actual := sp.evaluate g env
     tally := { tally with checks := tally.checks + 1,
                           nonEmpty := tally.nonEmpty + (if expected.isEmpty then 0 else 1),
-                          split := tally.split + (if sp.head.isSome && sp.tail.isSome then 1 else 0) }
+                          split := tally.split + (if sp.tail.isSome then 1 else 0) }
     if !sameSet expected actual && report.isNone then
       tally := { tally with failures := tally.failures + 1 }
-      report := some s!"{describeSpecification s}\nexpected {repr expected}\nactual   {repr actual}\nsplit head:\n{sp.head.map describeSpecification}\ntail:\n{sp.tail.map describeSpecification}"
+      report := some s!"{describeSpecification s}\nexpected {repr expected}\nactual   {repr actual}\nsplit head:\n{describeSpecification sp.head}\ntail:\n{sp.tail.map describeSpecification}"
     else if !sameSet expected actual then
       tally := { tally with failures := tally.failures + 1 }
   return (tally, report)
@@ -190,7 +190,7 @@ def mutationScore (specs : List Specification) (graphs : Nat) (gen : StdGen × N
     for s in specs do
       let sp := splitBeforeFirstSuccessor s
       let m := mutate sp
-      if sp.head.isSome && sp.tail.isSome then
+      if sp.tail.isSome then
         applicable := applicable + 1
         let mut found := false
         for _ in [0:graphs] do
@@ -219,6 +219,8 @@ def main (args : List String) : IO UInt32 := do
   let mut random : Tally := {}
   for _ in [0:1500] do
     let (s, g) := (genSpec duplicates).run gen
+    unless duplicates || isWellFormed s do
+      throw <| IO.userError s!"the generator made a specification that is not well-formed:\n{describeSpecification s}"
     let ((t, r), g') := (checkSpec s 20).run g
     gen := g'
     random := add random t

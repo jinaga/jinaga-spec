@@ -72,4 +72,4 @@
    [{"label": {"type": "Post", "name": "p1"}, "conditions": []},
     {"label": {"type": "Jinaga.User", "name": "p2"}, "conditions": []}]}},
  "description":
- "The pivot's existential condition reads a second given that no head match mentions. The head must still name that given, because it projects it."}
+ "The pivot's existential condition reads a second given that no head match mentions. The head is given every given, and projects the one the tail needs."}

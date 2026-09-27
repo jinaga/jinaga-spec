@@ -54,9 +54,11 @@
        "exists": false}]}],
    "given": [{"label": {"type": "Company", "name": "u1"}, "conditions": []}]},
   "headText":
-  "(p1: Administrator) {\n    u1: Company [\n        u1 = p1->company: Company\n    ]\n} => u1\n",
+  "(p1: Administrator) {\n    u1: Company [\n        u1 = p1->company: Company\n    ]\n} => {\n    u1 = u1\n}\n",
   "head":
-  {"projection": {"type": "fact", "label": "u1"},
+  {"projection":
+   {"type": "composite",
+    "components": [{"type": "fact", "name": "u1", "label": "u1"}]},
    "matches":
    [{"unknown": {"type": "Company", "name": "u1"},
      "conditions":
