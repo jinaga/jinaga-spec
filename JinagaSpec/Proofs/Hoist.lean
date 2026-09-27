@@ -1,18 +1,18 @@
 import JinagaSpec.Hoist
 import JinagaSpec.Proofs.Main
+import JinagaSpec.Proofs.Derivation
 
 /-!
-# `hoist` agrees with the reference semantics
+# The split agrees with the reference semantics
 
-The argument generalizes `pivot_step`/`splitPaths_correct` to reach into
-existential conditions at any depth. A hoisted label is bound in the head, so
-it is existentially quantified outside every quantifier of the tail; the
-original condition quantifies existentially over the walk inside whatever
-encloses it. Existentials commute with existentials, so pulling the walk out
-through positive existentials and through the tail's own match unknowns
-preserves meaning. A negative existential is a universal, and an existential
-cannot be pulled out through a universal: that is exactly why `hoistCondition`
-only rewrites a condition at positive polarity, monotonically (`docs/findings.md`).
+A hoisted label is bound in the head, so it is existentially quantified
+outside every quantifier of the tail; the original condition quantifies
+existentially over the walk inside whatever encloses it. Existentials commute
+with existentials, so pulling the walk out through positive existentials and
+through the tail's own match unknowns preserves meaning. A negative
+existential is a universal, and an existential cannot be pulled out through a
+universal: that is exactly why `hoistCondition` only rewrites a condition at
+positive polarity, monotonically (`docs/findings.md`).
 
 At negative polarity `hoistMatches`/`hoistConditions`/`hoistCondition` are the
 identity outright (`hoist_false_id`): eligibility is gated on `pos = true`
@@ -20,9 +20,10 @@ syntactically, not on anything about the scope or the condition, so there is
 nothing to prove there. The remaining, positive-polarity case is proved by one
 mutual induction mirroring `hoistMatches`/`hoistConditions`/`hoistCondition`'s
 own recursion, generalizing `Locality.lean`'s agreement argument (an
-environment agreement propagates through matches and conditions) with
-`SplitPaths.lean`'s swap (one hoisted path condition, and the head match that
-witnesses it, say the same thing) to the whole tree, at any depth.
+environment agreement propagates through matches and conditions) to the whole
+tree at once: at any depth, a condition hoisted out of an existential, and the
+head match that witnesses it, say the same thing, not only at the pivot's own
+top level.
 -/
 namespace JinagaSpec
 
@@ -1105,17 +1106,17 @@ mutual
         exact ⟨e2', mem_evalMatches_cons.mpr ⟨f, hf', hty, hc, he2'⟩, hLr2⟩
 end
 
-/-! ## Assembling `hoist`'s correctness -/
+/-! ## Assembling the split's correctness -/
 
 section Pivot
 
 variable {s : Specification} {before after : List Match} {pivot : Match}
 
-/-- The derivation of `hoist`'s tail's givens is closed: every path condition
-the tail's matches name, at any depth, joins a label that is one of the tail's
+/-- The derivation of the tail's givens is closed: every path condition the
+tail's matches name, at any depth, joins a label that is one of the tail's
 givens or is declared earlier in it, and so does every label the projection
-names. Generalizes `tail_scoped`, using `hoistMatches_scoped` in place of the
-shallow, `splitPaths`-specific argument. -/
+names — using `hoistMatches_scoped` to reach every depth at once, rather than
+only the pivot's own top level. -/
 theorem hoist_tail_scoped (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after)
     (n : Nat) (hm tailMatches : List Match)
     (hgenM : hoistMatches (scopeAt s before) 0 true (pivot :: after) = (n, hm, tailMatches)) :
@@ -1159,13 +1160,13 @@ theorem hoist_tail_scoped (hwf : WellFormed s) (hs : s.matchList = before ++ piv
     rw [hgivenMem]
     exact ⟨hMemAll x hxA, by simp [hx]⟩
   · intro x hx
-    rcases (pivot_scoped hwf hs).2.2.2 x hx with hproj | hproj
+    rcases pivot_scoped hwf hs x hx with hproj | hproj
     · exact Or.inl (by rw [hgivenMem]; exact ⟨hMemAll x (List.mem_append_left _ hproj), by simp [hx]⟩)
     · exact Or.inr (hUnk ▸ hproj)
 
 /-- Solving the pivot and everything after it from `e` is the same as
 hoisting every eligible path condition into the head, at any depth, then
-solving the tail from the tail's givens alone. Generalizes `pivot_step`. -/
+solving the tail from the tail's givens alone. -/
 theorem hoist_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: after)
     (n : Nat) (hm tailMatches : List Match)
     (hgenM : hoistMatches (scopeAt s before) 0 true (pivot :: after) = (n, hm, tailMatches))
@@ -1187,7 +1188,7 @@ theorem hoist_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: a
   have hLproj : ∀ x ∈ s.projection.labels,
       x ∈ scopeAt s before ++ (pivot :: after).map (·.unknown.name) := by
     intro x hx
-    simpa using (pivot_scoped hwf hs).2.2.2 x hx
+    simpa using pivot_scoped hwf hs x hx
   have hMain := hoistMatches_correct g (scopeAt s before) (pivot :: after) (scopeAt s before)
     (fun _ hx => hx) hordScope h2 hwn2 hused 0 true e e (fun _ hx => rfl)
     s.projection.labels hLproj r
@@ -1211,12 +1212,11 @@ theorem hoist_step (hwf : WellFormed s) (hs : s.matchList = before ++ pivot :: a
 
 end Pivot
 
-/-- `hoist` preserves the meaning of a well-formed specification, at any
-depth: the general form of `split_correct`. -/
-theorem hoist_correct (s : Specification) (hwf : WellFormed s) (g : Graph) (env : Env)
+/-- The split preserves the meaning of a well-formed specification. -/
+theorem split_correct (s : Specification) (hwf : WellFormed s) (g : Graph) (env : Env)
     (r : List (Option FactId)) :
-    r ∈ (hoist s).evaluate g env ↔ r ∈ s.evaluate g env := by
-  unfold hoist
+    r ∈ (splitBeforeFirstSuccessor s).evaluate g env ↔ r ∈ s.evaluate g env := by
+  unfold splitBeforeFirstSuccessor
   generalize hspan : s.matchList.span matchIsDeterministic = sp
   obtain ⟨before, rest⟩ := sp
   cases rest with

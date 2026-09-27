@@ -302,139 +302,12 @@ end
 
 end EvalAgree
 
-/-! ## Locating the given -/
-
-/-- No given a well-formed specification declares is a label its own head
-splits into. -/
-theorem given_notin_headMatchList {s : Specification} (hwf : WellFormed s) {g0 : Label}
-    (hg0 : g0 ∈ s.given) :
-    g0.name ∉ (splitBeforeFirstSuccessor s).head.matchList.map (·.unknown.name) := by
-  have hg0given : g0.name ∈ s.given.map (·.name) := List.mem_map_of_mem hg0
-  unfold splitBeforeFirstSuccessor
-  generalize hspan : s.matchList.span matchIsDeterministic = sp
-  obtain ⟨before, rest⟩ := sp
-  have hs : s.matchList = before ++ rest := by
-    have h := span_loop_append matchIsDeterministic s.matchList []
-    unfold List.span at hspan
-    rw [hspan] at h
-    simpa using h.symm
-  have hbefore_wf : WellNamedMatches (s.given.map (·.name)) before := by
-    have h := hwf.wellNamed
-    rw [hs, wellNamedMatches_append] at h
-    exact h.1
-  have hg0notin_before : g0.name ∉ before.map (·.unknown.name) := by
-    intro hmem
-    exact (wellNamed_names_notin hbefore_wf g0.name hmem) hg0given
-  cases rest with
-  | nil =>
-    show g0.name ∉ s.matchList.map (·.unknown.name)
-    rw [hs]
-    simpa using hg0notin_before
-  | cons pivot after =>
-    show g0.name ∉ (splitAt s before pivot after).head.matchList.map (·.unknown.name)
-    unfold splitAt
-    rcases hsp : splitPaths 0 (pathsOf pivot.conditions) with ⟨sm, tps⟩
-    simp only [List.map_append, List.mem_append]
-    rintro (h | h)
-    · exact hg0notin_before h
-    · obtain ⟨m, hm, hmn⟩ := List.mem_map.mp h
-      have hres : isReserved m.unknown.name = true := (splitPaths_names 0 (pathsOf pivot.conditions)).1 m (hsp ▸ hm)
-      have hord : isReserved g0.name = false := hwf.givensOrdinary g0 hg0
-      rw [hmn] at hres
-      rw [hres] at hord
-      exact absurd hord (by simp)
-
-/-! ## The head's split matches also bind into the store -/
+/-! ## Every label in scope at the pivot is safely bound -/
 
 /-- Either `f` itself, or the id of a fact in the store: what a label in scope
 at the pivot is safely bound to. Only the given itself can be `f`; every other
 label already in scope is `InStore`. -/
 def SafeId (store : Graph) (f : Fact) (id : FactId) : Prop := id = f.id ∨ InStore store id
-
-/-- Every id a split match binds, while its head runs on `authGraph store f`,
-is the id of a fact in the store: its own path condition needs its candidate's
-id to be in the walk from whatever the pivot's original path condition joined,
-and that walk (of at least one step, since the split only makes a match when
-the walk is nonempty) never reaches outside the store, whether it starts at a
-label already there or at `f` itself. -/
-theorem splitPaths_head_binds_store {store : Graph} {f : Fact} (hclosed : store.closed)
-    (hfnotin : ¬ InStore store f.id) (hfpred : ∀ p ∈ f.predecessors, InStore store p.2) :
-    ∀ (i : Nat) (ps : List PathCondition) (eB : Env),
-      (∀ c ∈ ps, isReserved c.labelRight = false) →
-      (∀ c ∈ ps, ∃ id, eB c.labelRight = some id ∧ SafeId store f id) →
-      ∀ (e2 : Env), e2 ∈ evalMatches (Graph.authGraph store f) eB (splitPaths i ps).1 →
-        ∀ x ∈ (splitPaths i ps).1.map (·.unknown.name), ∃ id, e2 x = some id ∧ InStore store id
-  | _, [], _, _, _, _, _, x, hx => by simp [splitPaths] at hx
-  | i, c :: cs, eB, hres, hsafe, e2, he2, x, hx => by
-    have hres' : ∀ c' ∈ cs, isReserved c'.labelRight = false :=
-      fun c' h => hres c' (List.mem_cons_of_mem _ h)
-    have hsafe' : ∀ c' ∈ cs, ∃ id, eB c'.labelRight = some id ∧ SafeId store f id :=
-      fun c' h => hsafe c' (List.mem_cons_of_mem _ h)
-    cases hl : c.rolesRight.getLast? with
-    | none =>
-      simp only [splitPaths, hl] at hx he2
-      exact splitPaths_head_binds_store hclosed hfnotin hfpred (i + 1) cs eB hres' hsafe' e2 he2 x hx
-    | some last =>
-      simp only [splitPaths, hl, List.map_cons, List.mem_cons] at hx
-      simp only [splitPaths, hl] at he2
-      obtain ⟨fct, -, -, hc, he2'⟩ := mem_evalMatches_cons.mp he2
-      obtain ⟨cid, hceB, hsafeC⟩ := hsafe c List.mem_cons_self
-      have hcRes : isReserved c.labelRight = false := hres c List.mem_cons_self
-      have hnlr : c.labelRight ≠ splitLabel i := by
-        intro h
-        rw [h, isReserved_splitLabel] at hcRes
-        exact absurd hcRes (by simp)
-      have hbindC : (eB.bind (splitLabel i) fct.id) c.labelRight = some cid := by
-        simp [Env.bind, hnlr, hceB]
-      have hbindU : (eB.bind (splitLabel i) fct.id) (splitLabel i) = some fct.id := by
-        simp [Env.bind]
-      have hcondTrue : ((Graph.authGraph store f).walk fct.id []).any
-          (fun a => ((Graph.authGraph store f).walk cid c.rolesRight).contains a) = true := by
-        have hc' := hc
-        simp only [allHold, holds, PathCondition.holds, hbindU, hbindC, Bool.and_true] at hc'
-        exact hc'
-      have hmemwalk : fct.id ∈ (Graph.authGraph store f).walk cid c.rolesRight := by
-        rw [List.any_eq_true] at hcondTrue
-        obtain ⟨a, ha, hcontains⟩ := hcondTrue
-        simp only [Graph.walk, List.mem_singleton] at ha
-        subst ha
-        simpa using hcontains
-      have hne : c.rolesRight ≠ [] := by
-        intro h; rw [h] at hl; simp at hl
-      obtain ⟨role0, rest0, hrr⟩ := List.exists_cons_of_ne_nil hne
-      have hfctInStore : InStore store fct.id := by
-        rw [hrr] at hmemwalk
-        rcases hsafeC with hfid | hstoreid
-        · subst hfid
-          exact walk_from_f_sub_store hclosed hfnotin hfpred role0 rest0 fct.id hmemwalk
-        · rw [(walk_authGraph_eq (f := f) hclosed (role0 :: rest0) hstoreid).1] at hmemwalk
-          exact (walk_authGraph_eq (f := f) hclosed (role0 :: rest0) hstoreid).2 fct.id hmemwalk
-      rcases hx with rfl | hx
-      · have hfresh : splitLabel i ∉ (splitPaths (i + 1) cs).1.map (·.unknown.name) := by
-          intro hmem
-          obtain ⟨m, hm, hmn⟩ := List.mem_map.mp hmem
-          obtain ⟨j, hj, hn⟩ := splitPaths_head_index cs (i + 1) m hm
-          rw [hn] at hmn
-          exact absurd (splitLabel_injective hmn) (by omega)
-        refine ⟨fct.id, ?_, hfctInStore⟩
-        show e2 (splitLabel i) = some fct.id
-        rw [evalMatches_frame he2' (splitLabel i) hfresh]
-        exact hbindU
-      · have hsafeC' : ∀ c' ∈ cs, ∃ id, (eB.bind (splitLabel i) fct.id) c'.labelRight = some id ∧
-            SafeId store f id := by
-          intro c' hc'
-          obtain ⟨id, heq, hor⟩ := hsafe' c' hc'
-          refine ⟨id, ?_, hor⟩
-          have hne' : c'.labelRight ≠ splitLabel i := by
-            intro h
-            have hres2 := hres' c' hc'
-            rw [h, isReserved_splitLabel] at hres2
-            exact absurd hres2 (by simp)
-          simp [Env.bind, hne', heq]
-        exact splitPaths_head_binds_store hclosed hfnotin hfpred (i + 1) cs
-          (eB.bind (splitLabel i) fct.id) hres' hsafeC' e2 he2' x hx
-
-/-! ## Every label in scope at the pivot is safely bound -/
 
 /-- Every label in scope at the pivot is bound, by the time the head reaches
 it, to a safe id: the given itself is `f`, and everything else is an ordinary
@@ -458,309 +331,7 @@ theorem safeAt_before {s : Specification} {g0 : Label} (hg : s.given = [g0])
     rw [evalMatches_frame heB g0.name hg0notin]
     exact henv
 
-/-! ## Ordinary types survive the tail's own rewriting -/
-
-theorem ordinaryTypesConditions_append {cs1 cs2 : List Condition} :
-    OrdinaryTypesConditions (cs1 ++ cs2) ↔ OrdinaryTypesConditions cs1 ∧ OrdinaryTypesConditions cs2 := by
-  induction cs1 with
-  | nil => simp [OrdinaryTypesConditions]
-  | cons c cs ih => simp only [List.cons_append, OrdinaryTypesConditions, ih]; grind
-
-theorem ordinaryTypesConditions_existentialsOf {cs : List Condition}
-    (h : OrdinaryTypesConditions cs) : OrdinaryTypesConditions (existentialsOf cs) := by
-  induction cs with
-  | nil => simpa [existentialsOf] using h
-  | cons c cs ih =>
-    obtain ⟨hc, hcs⟩ : OrdinaryTypesCondition c ∧ OrdinaryTypesConditions cs := h
-    cases c with
-    | path p => simpa [existentialsOf_cons_path] using ih hcs
-    | existential e ms => rw [existentialsOf_cons_ex]; exact ⟨hc, ih hcs⟩
-
-theorem ordinaryTypesConditions_map_path {ps : List PathCondition} :
-    OrdinaryTypesConditions (ps.map .path) := by
-  induction ps with
-  | nil => simp [OrdinaryTypesConditions]
-  | cons p ps ih => simp [OrdinaryTypesConditions, OrdinaryTypesCondition, ih]
-
-/-- Rewriting the pivot's path conditions for the tail does not touch any
-unknown's type: only the head's split matches, whose own binding never needs
-an ordinary type (`splitPaths_head_binds_store`), are new. -/
-theorem ordinaryTypesMatches_tailMatchesAt {pivot : Match} {tps : List PathCondition}
-    {after : List Match} (h : OrdinaryTypesMatches (pivot :: after)) :
-    OrdinaryTypesMatches (tailMatchesAt pivot tps after) := by
-  obtain ⟨u, cs⟩ := pivot
-  obtain ⟨hu, hcs, hafter⟩ : u.type ≠ batchType ∧ OrdinaryTypesConditions cs ∧
-      OrdinaryTypesMatches after := h
-  refine ⟨hu, ?_, hafter⟩
-  show OrdinaryTypesConditions (tps.map .path ++ existentialsOf cs)
-  rw [ordinaryTypesConditions_append]
-  exact ⟨ordinaryTypesConditions_map_path, ordinaryTypesConditions_existentialsOf hcs⟩
-
-/-! ## Shared by both algorithms' boundary theorems
-
-`store_denies`/`store_denies_hoist` and `store_correct`/`store_correct_hoist`
-each differ from their sibling only in which algorithm (`splitBeforeFirstSuccessor`
-or `hoist`) produces the head and tail; the argument once the pieces it produces
-are in hand is identical. `store_denies_of` and `tailGiven_pointwise` state that
-shared argument once, each parameterized over exactly what the two algorithms
-produce differently. -/
-
-/-- A rule whose tail is given the fact under authorization admits nobody,
-given only that `split`'s head never rebinds it: every head tuple then seeds
-the tail with `f.id`, which the store does not have. -/
-theorem store_denies_of {s : Specification} {g0 : Label} {store : Graph} {f : Fact} {env : Env}
-    (split : Specification → Split)
-    (hgnotin : g0.name ∉ (split s).head.matchList.map (·.unknown.name))
-    (hfnotin : ¬ InStore store f.id) (henv : env g0.name = some f.id)
-    (h : tailReadsGiven (split s) g0.name = true) :
-    (split s).evaluateStore store f env = [] := by
-  have hFactNone : store.factOf f.id = none := by
-    cases hfo : store.factOf f.id with
-    | none => rfl
-    | some fact =>
-      have hmem : fact ∈ store := Graph.mem_of_factOf_eq_some hfo
-      have heq : fact.id = f.id := by
-        have h1 := hfo
-        unfold Graph.factOf at h1
-        simpa using List.find?_some h1
-      exact absurd ⟨fact, hmem, heq⟩ hfnotin
-  unfold tailReadsGiven at h
-  cases htail : (split s).tail with
-  | none => rw [htail] at h; simp at h
-  | some tail =>
-    rw [htail] at h
-    simp only [List.any_eq_true, beq_iff_eq] at h
-    obtain ⟨l, hl, hln⟩ := h
-    unfold Split.evaluateStore
-    rw [htail]
-    apply List.flatMap_eq_nil_iff.mpr
-    intro tuple htuple
-    have htg : tuple g0.name = env g0.name := evalMatches_frame htuple g0.name hgnotin
-    have hcontains : (tail.given.map (·.name)).contains l.name = true := by
-      rw [List.contains_iff_mem]
-      exact List.mem_map_of_mem hl
-    have hlval : (tuple.restrictTo (tail.given.map (·.name))) l.name = some f.id := by
-      simp only [Env.restrictTo, hcontains, ite_true]
-      rw [hln, htg]
-      exact henv
-    show (if (tail.given.all fun l => match (tuple.restrictTo (tail.given.map (·.name))) l.name with
-            | some id => store.hasFact id
-            | none => false) = true
-          then tail.evaluate store (tuple.restrictTo (tail.given.map (·.name)))
-          else []) = []
-    split
-    · rename_i hcondTrue
-      exfalso
-      rw [List.all_eq_true] at hcondTrue
-      have hbad := hcondTrue l hl
-      simp [hlval, Graph.hasFact, hFactNone] at hbad
-    · rfl
-
-/-- Once every tail given a head hands the tail is known to be in the store,
-the guard `evaluateStore` checks on it always passes, and the tail's own
-evaluation then agrees on `store` and on `authGraph store f`
-(`evalMatches_authGraph_agree`). -/
-theorem tailGiven_pointwise {store : Graph} {f : Fact} {env : Env}
-    (hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
-    (headMatches : List Match) (tailGiven : List Label) (tailMatches : List Match) (proj : Projection)
-    (hordTail : OrdinaryTypesMatches tailMatches)
-    (hheadStore : ∀ tuple ∈ evalMatches (Graph.authGraph store f) env headMatches,
-      ∀ l ∈ tailGiven, ∃ id, tuple l.name = some id ∧ InStore store id) :
-    ∀ tuple ∈ evalMatches (Graph.authGraph store f) env headMatches,
-      (if tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
-            | some id => store.hasFact id
-            | none => false) = true
-        then Specification.evaluate (Specification.mk tailGiven tailMatches proj) store
-              (tuple.restrictTo (tailGiven.map (·.name)))
-        else [])
-      = Specification.evaluate (Specification.mk tailGiven tailMatches proj)
-          (Graph.authGraph store f) (tuple.restrictTo (tailGiven.map (·.name))) := by
-  intro tuple htuple
-  have hallTrue : tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
-      | some id => store.hasFact id
-      | none => false) = true := by
-    rw [List.all_eq_true]
-    intro l hl
-    obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
-    have hcontains : (tailGiven.map (·.name)).contains l.name = true := by
-      rw [List.contains_iff_mem]
-      exact List.mem_map_of_mem hl
-    have hrestr : (tuple.restrictTo (tailGiven.map (·.name))) l.name = some id := by
-      simp only [Env.restrictTo, hcontains, ite_true]
-      exact heq
-    rw [hrestr]
-    obtain ⟨ff, hff, hffeq⟩ := hInStore
-    show store.hasFact id = true
-    unfold Graph.hasFact
-    exact List.find?_isSome.mpr ⟨ff, hff, by simp [hffeq]⟩
-  simp only [hallTrue, ite_true]
-  have hclosedEnv : EnvClosed store (tuple.restrictTo (tailGiven.map (·.name))) := by
-    intro x xid hx
-    have hxmemBool : (tailGiven.map (·.name)).contains x = true := by
-      cases hc : (tailGiven.map (·.name)).contains x with
-      | true => rfl
-      | false =>
-        exfalso
-        have hxnone : (tuple.restrictTo (tailGiven.map (·.name))) x = none := by
-          unfold Env.restrictTo
-          rw [hc]
-          simp
-        rw [hxnone] at hx
-        simp at hx
-    have hxmem : x ∈ tailGiven.map (·.name) := List.contains_iff_mem.mp hxmemBool
-    obtain ⟨l, hl, hln⟩ := List.mem_map.mp hxmem
-    obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
-    have hxval : (tuple.restrictTo (tailGiven.map (·.name))) x = some id := by
-      simp only [Env.restrictTo, hxmemBool, ite_true]
-      rw [← hln]
-      exact heq
-    rw [hxval] at hx
-    exact (Option.some.inj hx) ▸ hInStore
-  unfold Specification.evaluate
-  congr 1
-  exact (evalMatches_authGraph_agree hclosed hfnotin tailMatches hordTail _ hclosedEnv).symm
-
-/-! ## The boundary theorems -/
-
-section Boundary
-
-variable {s : Specification} {g0 : Label} {store : Graph} {f : Fact} {env : Env}
-
-/-- A rule whose tail is given the fact under authorization admits nobody: the
-head never rebinds the given (it is not one of its own declared labels), so
-every head tuple seeds the tail with `f.id`, which the store does not have. -/
-theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : OrdinaryTypes s)
-    (_hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
-    (_hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
-    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = true) :
-    (splitBeforeFirstSuccessor s).evaluateStore store f env = [] :=
-  store_denies_of splitBeforeFirstSuccessor
-    (given_notin_headMatchList hwf (by rw [hg]; simp)) hfnotin henv h
-
-/-- A rule whose tail is not given the fact under authorization means, on the
-store, exactly what the whole specification means on `authGraph store f`: every
-tail given the head hands it is already in the store (`ordinary_binds_store` for
-labels the "before" matches bind, `splitPaths_head_binds_store` for the head's
-own split labels), so the guard `evaluateStore` checks always passes, and once
-it does, the tail's own evaluation agrees on `store` and on `authGraph store f`
-(`evalMatches_authGraph_agree`). -/
-theorem store_correct (hwf : WellFormed s) (hg : s.given = [g0]) (hord : OrdinaryTypes s)
-    (hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
-    (hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
-    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = false) (r : List (Option FactId)) :
-    r ∈ (splitBeforeFirstSuccessor s).evaluateStore store f env ↔
-      r ∈ s.evaluate (Graph.authGraph store f) env := by
-  rw [← split_correct s hwf (Graph.authGraph store f) env r]
-  rcases hspan : s.matchList.span matchIsDeterministic with ⟨before, rest⟩
-  cases rest with
-  | nil =>
-    have hsplit_eq : splitBeforeFirstSuccessor s = { head := s, tail := none } := by
-      rw [splitBeforeFirstSuccessor, hspan]
-    rw [hsplit_eq]
-    simp [Split.evaluateStore, Split.evaluate]
-  | cons pivot after =>
-    have hs : s.matchList = before ++ pivot :: after := by
-      have h1 := span_loop_append matchIsDeterministic s.matchList []
-      unfold List.span at hspan
-      rw [hspan] at h1
-      simpa using h1.symm
-    have hsplit_eq : splitBeforeFirstSuccessor s = splitAt s before pivot after := by
-      rw [splitBeforeFirstSuccessor, hspan]
-    rcases hsp : splitPaths 0 (pathsOf pivot.conditions) with ⟨sm, tps⟩
-    let tailMatches := tailMatchesAt pivot tps after
-    let tailGiven := tailGivenAt s (before ++ sm) tailMatches
-    have htail_eq : (splitAt s before pivot after).tail =
-        some { given := tailGiven, matchList := tailMatches, projection := s.projection } := by
-      unfold splitAt
-      simp only [hsp]
-      rfl
-    have hhead_eq : (splitAt s before pivot after).head =
-        { given := s.given, matchList := before ++ sm,
-          projection := .composite (tailGiven.map fun l => { name := l.name, label := l.name }) } := by
-      unfold splitAt
-      simp only [hsp]
-      rfl
-    rw [hsplit_eq] at h ⊢
-    unfold tailReadsGiven at h
-    rw [htail_eq] at h
-    rw [List.any_eq_false] at h
-    have hgn : ∀ l ∈ tailGiven, l.name ≠ g0.name := by
-      intro l hl heq
-      exact h l hl (by simp [heq])
-    -- `before`'s own unknowns, and every split label, are ordinary or bind into
-    -- the store, and the given itself is `f`.
-    have hordBoth : OrdinaryTypesMatches before ∧ OrdinaryTypesMatches (pivot :: after) := by
-      have h1 : OrdinaryTypesMatches s.matchList := hord
-      rw [hs, ordinaryTypesMatches_append] at h1
-      exact h1
-    have hg0notin_before : g0.name ∉ before.map (·.unknown.name) := by
-      have h1 := given_notin_headMatchList (s := s) hwf (g0 := g0) (by rw [hg]; simp)
-      rw [hsplit_eq, hhead_eq] at h1
-      simp only [List.map_append, List.mem_append] at h1
-      intro hmem
-      exact h1 (Or.inl hmem)
-    have hpivotScoped := pivot_scoped hwf hs
-    have hpivotOrd := pivot_labels_ordinary hwf hs
-    -- Every id the head binds for a label the tail is given is in the store.
-    have hheadStore : ∀ tuple ∈ evalMatches (Graph.authGraph store f) env (before ++ sm),
-        ∀ l ∈ tailGiven, ∃ id, tuple l.name = some id ∧ InStore store id := by
-      intro tuple htuple l hl
-      have hlmem : l = g0 ∨ l ∈ (before ++ sm).map (·.unknown) := by
-        have h1 := hl
-        change l ∈ tailGivenAt s (before ++ sm) tailMatches at h1
-        unfold tailGivenAt at h1
-        simp only [List.mem_filter, List.mem_append, hg, List.mem_singleton] at h1
-        exact h1.1
-      have hlname : l.name ∈ before.map (·.unknown.name) ++ sm.map (·.unknown.name) := by
-        rcases hlmem with rfl | hlmem
-        · exact absurd rfl (hgn l hl)
-        · simp only [List.map_append, List.mem_append] at hlmem ⊢
-          rcases hlmem with hlmem | hlmem
-          · obtain ⟨m, hm, hmn⟩ := List.mem_map.mp hlmem
-            exact Or.inl (hmn ▸ List.mem_map_of_mem hm)
-          · obtain ⟨m, hm, hmn⟩ := List.mem_map.mp hlmem
-            exact Or.inr (hmn ▸ List.mem_map_of_mem hm)
-      obtain ⟨eB, heB, htupleSm⟩ := mem_evalMatches_append.mp htuple
-      have hsafe : ∀ c ∈ pathsOf pivot.conditions, ∃ id, eB c.labelRight = some id ∧ SafeId store f id :=
-        fun c hc => safeAt_before hg hordBoth.1 henv hg0notin_before heB c.labelRight (hpivotScoped.1 c hc)
-      have hres : ∀ c ∈ pathsOf pivot.conditions, isReserved c.labelRight = false :=
-        fun c hc => hpivotOrd c.labelRight (List.mem_cons_of_mem _ (List.mem_map_of_mem hc))
-      rw [List.mem_append] at hlname
-      rcases hlname with hlname | hlname
-      · have hlord : isReserved l.name = false := by
-          obtain ⟨m, hm, hmn⟩ := List.mem_map.mp hlname
-          exact hmn ▸ wellNamed_ordinary (by
-            have h1 := hwf.wellNamed
-            rw [hs, wellNamedMatches_append] at h1
-            exact h1.1) m hm
-        have hsmres : l.name ∉ sm.map (·.unknown.name) := by
-          intro hmem
-          obtain ⟨m, hm, hmn⟩ := List.mem_map.mp hmem
-          have := (splitPaths_names 0 (pathsOf pivot.conditions)).1 m (hsp ▸ hm)
-          rw [hmn] at this
-          rw [hlord] at this
-          exact absurd this (by simp)
-        have hframe : tuple l.name = eB l.name := evalMatches_frame htupleSm l.name hsmres
-        obtain ⟨id, heq, hInStore⟩ := ordinary_binds_store before hordBoth.1 env eB heB l.name hlname
-        exact ⟨id, hframe ▸ heq, hInStore⟩
-      · exact splitPaths_head_binds_store hclosed hfnotin hfpred 0 (pathsOf pivot.conditions) eB
-          hres hsafe tuple (hsp ▸ htupleSm) l.name (hsp ▸ hlname)
-    simp only [Split.evaluateStore, Split.evaluate, htail_eq, hhead_eq]
-    exact Iff.of_eq (congrArg (r ∈ ·) (flatMap_congr
-      (tailGiven_pointwise hclosed hfnotin (before ++ sm) tailGiven tailMatches s.projection
-        (ordinaryTypesMatches_tailMatchesAt hordBoth.2) hheadStore)))
-
-end Boundary
-
-/-! ## The boundary theorems, for `hoist`
-
-The same two theorems, for `hoist` in place of `splitBeforeFirstSuccessor`.
-Hoisting only ever rewrites conditions, never a match's own unknown or its
-type, so `OrdinaryTypes` survives it outright (`hoistMatches_ordinaryTypes`);
-and every id the (possibly much deeper) head binds is still in the store, by
-the same argument as `splitPaths_head_binds_store`, generalized to
-`hoistMatches`/`hoistConditions`/`hoistCondition`'s own recursion
-(`hoistMatches_head_binds_store`). -/
+/-! ## Ordinary types survive hoisting -/
 
 mutual
   /-- Hoisting rewrites only conditions: a match's own unknown, and its type,
@@ -824,14 +395,14 @@ mutual
       simpa using h1
 end
 
-/-- No given a well-formed specification declares is a label `hoist`'s own head
-splits into: every hoisted head match binds a reserved name (`hoistMatches_reserved`),
-and no given is reserved. -/
-theorem given_notin_headMatchList_hoist {s : Specification} (hwf : WellFormed s) {g0 : Label}
+/-- No given a well-formed specification declares is a label its own head
+splits into: every hoisted head match binds a reserved name
+(`hoistMatches_reserved`), and no given is reserved. -/
+theorem given_notin_headMatchList {s : Specification} (hwf : WellFormed s) {g0 : Label}
     (hg0 : g0 ∈ s.given) :
-    g0.name ∉ (hoist s).head.matchList.map (·.unknown.name) := by
+    g0.name ∉ (splitBeforeFirstSuccessor s).head.matchList.map (·.unknown.name) := by
   have hg0given : g0.name ∈ s.given.map (·.name) := List.mem_map_of_mem hg0
-  unfold hoist
+  unfold splitBeforeFirstSuccessor
   generalize hspan : s.matchList.span matchIsDeterministic = sp
   obtain ⟨before, rest⟩ := sp
   have hs : s.matchList = before ++ rest := by
@@ -868,9 +439,12 @@ theorem given_notin_headMatchList_hoist {s : Specification} (hwf : WellFormed s)
 
 mutual
   /-- Every id a hoisted head match binds, while its head runs on
-  `authGraph store f`, is the id of a fact in the store, at any depth: the same
-  argument as `splitPaths_head_binds_store`, generalized to `hoistMatches`'s own
-  recursion. The eligibility scope stays fixed throughout, so the same safety
+  `authGraph store f`, is the id of a fact in the store, at any depth: its own
+  path condition needs its candidate's id to be in the walk from whatever
+  label it joins, and that walk (of at least one step, since a hoisted match
+  only exists when the walk is nonempty) never reaches outside the store,
+  whether it starts at a label already there or at `f` itself. The eligibility
+  scope stays fixed throughout, so the same safety
   hypothesis (`hsafe`) threads through every level unchanged; only the
   environment it is checked against grows, as each level's own hoisted matches
   run in turn. -/
@@ -1035,35 +609,80 @@ mutual
         (by rw [hgenM]; rw [heq] at he2; exact he2) x (by rw [hgenM]; rw [heq] at hx; exact hx)
 end
 
-section BoundaryHoist
+section Boundary
 
 variable {s : Specification} {g0 : Label} {store : Graph} {f : Fact} {env : Env}
 
-/-- A rule whose tail is given the fact under authorization admits nobody:
-`hoist`'s general form of `store_denies`. -/
-theorem store_denies_hoist (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : OrdinaryTypes s)
+/-- A rule whose tail is given the fact under authorization admits nobody: the
+head never rebinds the given (it is not one of its own declared labels), so
+every head tuple seeds the tail with `f.id`, which the store does not have. -/
+theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : OrdinaryTypes s)
     (_hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
     (_hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
-    (h : tailReadsGiven (hoist s) g0.name = true) :
-    (hoist s).evaluateStore store f env = [] :=
-  store_denies_of hoist
-    (given_notin_headMatchList_hoist hwf (by rw [hg]; simp)) hfnotin henv h
+    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = true) :
+    (splitBeforeFirstSuccessor s).evaluateStore store f env = [] := by
+  have hgnotin := given_notin_headMatchList (s := s) hwf (g0 := g0) (by rw [hg]; simp)
+  have hFactNone : store.factOf f.id = none := by
+    cases hfo : store.factOf f.id with
+    | none => rfl
+    | some fact =>
+      have hmem : fact ∈ store := Graph.mem_of_factOf_eq_some hfo
+      have heq : fact.id = f.id := by
+        have h1 := hfo
+        unfold Graph.factOf at h1
+        simpa using List.find?_some h1
+      exact absurd ⟨fact, hmem, heq⟩ hfnotin
+  unfold tailReadsGiven at h
+  cases htail : (splitBeforeFirstSuccessor s).tail with
+  | none => rw [htail] at h; simp at h
+  | some tail =>
+    rw [htail] at h
+    simp only [List.any_eq_true, beq_iff_eq] at h
+    obtain ⟨l, hl, hln⟩ := h
+    unfold Split.evaluateStore
+    rw [htail]
+    apply List.flatMap_eq_nil_iff.mpr
+    intro tuple htuple
+    have htg : tuple g0.name = env g0.name := evalMatches_frame htuple g0.name hgnotin
+    have hcontains : (tail.given.map (·.name)).contains l.name = true := by
+      rw [List.contains_iff_mem]
+      exact List.mem_map_of_mem hl
+    have hlval : (tuple.restrictTo (tail.given.map (·.name))) l.name = some f.id := by
+      simp only [Env.restrictTo, hcontains, ite_true]
+      rw [hln, htg]
+      exact henv
+    show (if (tail.given.all fun l => match (tuple.restrictTo (tail.given.map (·.name))) l.name with
+            | some id => store.hasFact id
+            | none => false) = true
+          then tail.evaluate store (tuple.restrictTo (tail.given.map (·.name)))
+          else []) = []
+    split
+    · rename_i hcondTrue
+      exfalso
+      rw [List.all_eq_true] at hcondTrue
+      have hbad := hcondTrue l hl
+      simp [hlval, Graph.hasFact, hFactNone] at hbad
+    · rfl
 
 /-- A rule whose tail is not given the fact under authorization means, on the
-store, exactly what the whole specification means on `authGraph store f`:
-`hoist`'s general form of `store_correct`. -/
-theorem store_correct_hoist (hwf : WellFormed s) (hg : s.given = [g0]) (hord : OrdinaryTypes s)
+store, exactly what the whole specification means on `authGraph store f`: every
+tail given the head hands it is already in the store (`ordinary_binds_store` for
+labels the "before" matches bind, `hoistMatches_head_binds_store` for the head's
+own hoisted matches, at any depth), so the guard `evaluateStore` checks always
+passes, and once it does, the tail's own evaluation agrees on `store` and on
+`authGraph store f` (`evalMatches_authGraph_agree`). -/
+theorem store_correct (hwf : WellFormed s) (hg : s.given = [g0]) (hord : OrdinaryTypes s)
     (hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
     (hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
-    (h : tailReadsGiven (hoist s) g0.name = false) (r : List (Option FactId)) :
-    r ∈ (hoist s).evaluateStore store f env ↔
+    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = false) (r : List (Option FactId)) :
+    r ∈ (splitBeforeFirstSuccessor s).evaluateStore store f env ↔
       r ∈ s.evaluate (Graph.authGraph store f) env := by
-  rw [← hoist_correct s hwf (Graph.authGraph store f) env r]
+  rw [← split_correct s hwf (Graph.authGraph store f) env r]
   rcases hspan : s.matchList.span matchIsDeterministic with ⟨before, rest⟩
   cases rest with
   | nil =>
-    have hsplit_eq : hoist s = { head := s, tail := none } := by
-      rw [hoist, hspan]
+    have hsplit_eq : splitBeforeFirstSuccessor s = { head := s, tail := none } := by
+      rw [splitBeforeFirstSuccessor, hspan]
     rw [hsplit_eq]
     simp [Split.evaluateStore, Split.evaluate]
   | cons pivot after =>
@@ -1072,8 +691,8 @@ theorem store_correct_hoist (hwf : WellFormed s) (hg : s.given = [g0]) (hord : O
       unfold List.span at hspan
       rw [hspan] at h1
       simpa using h1.symm
-    have hsplit_eq : hoist s = hoistAt s before pivot after := by
-      rw [hoist, hspan]
+    have hsplit_eq : splitBeforeFirstSuccessor s = hoistAt s before pivot after := by
+      rw [splitBeforeFirstSuccessor, hspan]
     rcases hgenM : hoistMatches (scopeAt s before) 0 true (pivot :: after) with ⟨n, hm, tailMatches⟩
     have htail_eq : (hoistAt s before pivot after).tail =
         some (Specification.mk (tailGivenAt s (before ++ hm) tailMatches) tailMatches s.projection) := by
@@ -1098,7 +717,7 @@ theorem store_correct_hoist (hwf : WellFormed s) (hg : s.given = [g0]) (hord : O
       rw [hs, ordinaryTypesMatches_append] at h1
       exact h1
     have hg0notin_before : g0.name ∉ before.map (·.unknown.name) := by
-      have h1 := given_notin_headMatchList_hoist (s := s) hwf (g0 := g0) (by rw [hg]; simp)
+      have h1 := given_notin_headMatchList (s := s) hwf (g0 := g0) (by rw [hg]; simp)
       rw [hsplit_eq, hhead_eq] at h1
       simp only [List.map_append, List.mem_append] at h1
       intro hmem
@@ -1151,10 +770,61 @@ theorem store_correct_hoist (hwf : WellFormed s) (hg : s.given = [g0]) (hord : O
       have h1 := hoistMatches_ordinaryTypes (scopeAt s before) 0 true (pivot :: after) hordBoth.2
       rw [hgenM] at h1
       simpa using h1
-    exact Iff.of_eq (congrArg (r ∈ ·) (flatMap_congr
-      (tailGiven_pointwise hclosed hfnotin (before ++ hm) tailGiven tailMatches s.projection
-        hordTailMatches hheadStore)))
+    have hpointwise : ∀ tuple ∈ evalMatches (Graph.authGraph store f) env (before ++ hm),
+        (if tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
+              | some id => store.hasFact id
+              | none => false) = true
+          then Specification.evaluate (Specification.mk tailGiven tailMatches s.projection) store
+                (tuple.restrictTo (tailGiven.map (·.name)))
+          else [])
+        = Specification.evaluate (Specification.mk tailGiven tailMatches s.projection)
+            (Graph.authGraph store f) (tuple.restrictTo (tailGiven.map (·.name))) := by
+      intro tuple htuple
+      have hallTrue : tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
+          | some id => store.hasFact id
+          | none => false) = true := by
+        rw [List.all_eq_true]
+        intro l hl
+        obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
+        have hcontains : (tailGiven.map (·.name)).contains l.name = true := by
+          rw [List.contains_iff_mem]
+          exact List.mem_map_of_mem hl
+        have hrestr : (tuple.restrictTo (tailGiven.map (·.name))) l.name = some id := by
+          simp only [Env.restrictTo, hcontains, ite_true]
+          exact heq
+        rw [hrestr]
+        obtain ⟨ff, hff, hffeq⟩ := hInStore
+        show store.hasFact id = true
+        unfold Graph.hasFact
+        exact List.find?_isSome.mpr ⟨ff, hff, by simp [hffeq]⟩
+      simp only [hallTrue, ite_true]
+      have hclosedEnv : EnvClosed store (tuple.restrictTo (tailGiven.map (·.name))) := by
+        intro x xid hx
+        have hxmemBool : (tailGiven.map (·.name)).contains x = true := by
+          cases hc : (tailGiven.map (·.name)).contains x with
+          | true => rfl
+          | false =>
+            exfalso
+            have hxnone : (tuple.restrictTo (tailGiven.map (·.name))) x = none := by
+              unfold Env.restrictTo
+              rw [hc]
+              simp
+            rw [hxnone] at hx
+            simp at hx
+        have hxmem : x ∈ tailGiven.map (·.name) := List.contains_iff_mem.mp hxmemBool
+        obtain ⟨l, hl, hln⟩ := List.mem_map.mp hxmem
+        obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
+        have hxval : (tuple.restrictTo (tailGiven.map (·.name))) x = some id := by
+          simp only [Env.restrictTo, hxmemBool, ite_true]
+          rw [← hln]
+          exact heq
+        rw [hxval] at hx
+        exact (Option.some.inj hx) ▸ hInStore
+      unfold Specification.evaluate
+      congr 1
+      exact (evalMatches_authGraph_agree hclosed hfnotin tailMatches hordTailMatches _ hclosedEnv).symm
+    exact Iff.of_eq (congrArg (r ∈ ·) (flatMap_congr hpointwise))
 
-end BoundaryHoist
+end Boundary
 
 end JinagaSpec

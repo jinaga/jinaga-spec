@@ -292,16 +292,16 @@ def mutationScore (specs : List Specification) (graphs : Nat) (gen : StdGen × N
 
 /-! ## Hoisting: the polarity experiment
 
-`hoist` (`Hoist.lean`) hoists an eligible path condition only when it sits at
-positive polarity, tracking polarity as it recurses into existential
-conditions: a fresh polarity for the matches inside one, from the polarity
-outside it and whether it is negative. Two wrong ways to track that are kept
-here as permanent mutation checks, both found unsound by the randomized check
-below before `hoist` had the rule it does now: `hoistNoPolarity` hoists
-regardless of polarity (`nextPos := fun _ _ => true`, so the starting polarity
-`true` never changes); `hoistNaiveParity` toggles polarity on every
-existential (`nextPos := fun pos e => if e then pos else !pos`), reasoning
-that two negative existentials cancel back to positive. -/
+`splitBeforeFirstSuccessor` (`Hoist.lean`) hoists an eligible path condition
+only when it sits at positive polarity, tracking polarity as it recurses into
+existential conditions: a fresh polarity for the matches inside one, from the
+polarity outside it and whether it is negative. Two wrong ways to track that
+are kept here as permanent mutation checks, both found unsound by the
+randomized check below before the split had the rule it does now:
+`hoistNoPolarity` hoists regardless of polarity (`nextPos := fun _ _ => true`,
+so the starting polarity `true` never changes); `hoistNaiveParity` toggles
+polarity on every existential (`nextPos := fun pos e => if e then pos else
+!pos`), reasoning that two negative existentials cancel back to positive. -/
 
 mutual
   def hoistMatchesGen (nextPos : Bool → Bool → Bool) (scope : List Name) :
@@ -379,7 +379,7 @@ def polarityCounterexample : Specification × Graph :=
 /-- `hoistNaiveParity` (above) found unsound too, on random specifications
 with *two* nested negative existentials sharing a multi-valued label — one
 level deeper than `polarityCounterexample`. Reasoning that two negative
-existentials cancel back to positive is wrong; `hoist` makes polarity
+existentials cancel back to positive is wrong; the split makes polarity
 monotone instead (`Hoist.lean`): a negative existential's matches are
 negative regardless of the polarity outside them, and nothing nested inside a
 negative existential ever recovers positive polarity.
@@ -483,12 +483,12 @@ def main (args : List String) : IO UInt32 := do
     if firstFailure.isNone then firstFailure := r.map (s!"store check, random spec\n" ++ ·)
   IO.println s!"store check:   {storeTotal.checks} checks, {storeTotal.tailReadsTrue} tailReadsGiven=true (must be empty), {storeTotal.tailReadsFalse} tailReadsGiven=false (must agree with the reference semantics), {storeTotal.failures} failures"
   -- The polarity experiment: hoisting under a negative existential disagrees;
-  -- hoisting only at positive polarity (the real `hoist`) does not.
+  -- hoisting only at positive polarity (the real split) does not.
   let (cx, gx) := polarityCounterexample
   let cxEnv : Env := fun n => if n = "p1" then some 0 else none
   let cxExpected := cx.evaluate gx cxEnv
   let cxNoPolarity := (hoistNoPolarity cx).evaluate gx cxEnv
-  let cxHoist := (hoist cx).evaluate gx cxEnv
+  let cxHoist := (splitBeforeFirstSuccessor cx).evaluate gx cxEnv
   IO.println s!"hoist counterexample: reference {repr cxExpected}, ignoring polarity {repr cxNoPolarity}, hoist {repr cxHoist}"
   unless !sameSet cxExpected cxNoPolarity do
     throw <| IO.userError "the polarity counterexample no longer disagrees when polarity is ignored"
@@ -498,7 +498,7 @@ def main (args : List String) : IO UInt32 := do
   let cx2Env : Env := fun n => if n = "p1" then some 0 else none
   let cx2Expected := cx2.evaluate gx2 cx2Env
   let cx2NaiveParity := (hoistNaiveParity cx2).evaluate gx2 cx2Env
-  let cx2Hoist := (hoist cx2).evaluate gx2 cx2Env
+  let cx2Hoist := (splitBeforeFirstSuccessor cx2).evaluate gx2 cx2Env
   IO.println s!"hoist double-negation counterexample: reference {repr cx2Expected}, naive parity {repr cx2NaiveParity}, hoist {repr cx2Hoist}"
   unless !sameSet cx2Expected cx2NaiveParity do
     throw <| IO.userError "the double-negation counterexample no longer disagrees under naive parity"
@@ -514,7 +514,7 @@ def main (args : List String) : IO UInt32 := do
     let ((t3, _), g3) := (checkHoistSpec hoistNaiveParity c.spec 30).run g
     g := g3
     hoistNaiveTotal := add hoistNaiveTotal t3
-    let ((t2, r2), g'') := (checkHoistSpec hoist c.spec 30).run g
+    let ((t2, r2), g'') := (checkHoistSpec splitBeforeFirstSuccessor c.spec 30).run g
     g := g''
     hoistTotal := add hoistTotal t2
     if firstFailure.isNone then firstFailure := r2.map (s!"hoist check, case {c.name}\n" ++ ·)
@@ -525,7 +525,7 @@ def main (args : List String) : IO UInt32 := do
     let ((t3, _), g3) := (checkHoistSpec hoistNaiveParity s 10).run g
     g := g3
     hoistNaiveTotal := add hoistNaiveTotal t3
-    let ((t2, r2), g'') := (checkHoistSpec hoist s 10).run g
+    let ((t2, r2), g'') := (checkHoistSpec splitBeforeFirstSuccessor s 10).run g
     g := g''
     hoistTotal := add hoistTotal t2
     if firstFailure.isNone then firstFailure := r2.map (s!"hoist check, random spec\n" ++ ·)

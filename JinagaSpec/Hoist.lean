@@ -2,16 +2,19 @@ import JinagaSpec.Split
 import JinagaSpec.Proofs.Scoped
 
 /-!
-# Hoisting
+# Splitting a specification, reaching into existential conditions
+
+`splitBeforeFirstSuccessor`. The graph can run a *head* of predecessor walks. A
+*tail* needs the store. The split cuts at the first match the graph cannot run,
+which is the *pivot*, and reaches into the tail's existential conditions, at
+any depth, not only the pivot's own top level, hoisting into the head every
+path condition that walks predecessors of a label already in scope at the
+pivot, wherever doing so is sound.
 
 Formulation D of jinaga/jinaga.js#231 is a rule whose tail's existential
 condition walks predecessors of the given: the given is used after the first
-successor join, so `tailReadsGiven` refuses it (`Store.lean`). The intended fix
-is to hoist such walks into the head, wherever in the tail they occur, not only
-at the pivot's own top level: `splitPaths` already hoists the pivot's own path
-conditions; `hoist` reaches into its existential conditions, and into the
-matches after it, for every path condition that walks predecessors of a label
-already in scope at the pivot.
+successor join, so `tailReadsGiven` refuses it (`Store.lean`) unless that walk
+is hoisted into the head.
 
 Not every such condition can be hoisted soundly. Under a positive existential,
 an existential over a union is the union of the existentials, and the head's
@@ -19,7 +22,7 @@ enumeration of split labels is a union, so hoisting agrees. Under a negative
 existential this can fail when the walk is multi-valued: the split evaluates
 the negative existential once per value the walk could take, and excludes the
 pivot's solution if *any* of them witnesses it, where the original evaluates it
-once, against the whole set (`docs/findings.md`). `hoist` only hoists a
+once, against the whole set (`docs/findings.md`). The split only hoists a
 condition at positive polarity: *not enclosed by any negative existential*,
 however deep. Polarity is not simply the parity of the enclosing negations
 (`docs/findings.md` records a second counterexample, found by the randomized
@@ -74,7 +77,7 @@ end
 
 /-- Split at a pivot, hoisting every eligible path condition in the tail, not
 only the pivot's own. The tail's givens and the head's projection are derived
-as `splitAt` derives them. -/
+the same way regardless of how the tail's matches were produced. -/
 def hoistAt (s : Specification) (before : List Match) (pivot : Match) (after : List Match) : Split :=
   let scope := scopeAt s before
   let (_, headExtra, tailMatches) := hoistMatches scope 0 true (pivot :: after)
@@ -84,7 +87,7 @@ def hoistAt (s : Specification) (before : List Match) (pivot : Match) (after : L
               projection := .composite (tailGiven.map fun l => { name := l.name, label := l.name }) },
     tail := some { given := tailGiven, matchList := tailMatches, projection := s.projection } }
 
-def hoist (s : Specification) : Split :=
+def splitBeforeFirstSuccessor (s : Specification) : Split :=
   match s.matchList.span matchIsDeterministic with
   | (_, []) => { head := s, tail := none }
   | (before, pivot :: after) => hoistAt s before pivot after

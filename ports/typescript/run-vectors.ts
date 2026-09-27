@@ -39,11 +39,12 @@ for (const file of files) {
         const check = (label: string, fn: () => void) => {
             try { fn(); } catch (e: any) { problems.push(`${label}: ${e.message.split("\n").slice(0, 12).join("\n")}`); }
         };
-        // jinaga.js runs `hoist` as its split (jinaga/jinaga.js#325).
-        check("head", () => deepStrictEqual(normalize(head), vector.hoisted.head));
-        check("tail", () => deepStrictEqual(normalize(tail), vector.hoisted.tail));
-        check("headText", () => deepStrictEqual(text(head), vector.hoisted.headText));
-        check("tailText", () => deepStrictEqual(text(tail), vector.hoisted.tailText));
+        // `splitBeforeFirstSuccessor` is jinaga.js's export of this split
+        // (jinaga/jinaga.js#325).
+        check("head", () => deepStrictEqual(normalize(head), vector.expected.head));
+        check("tail", () => deepStrictEqual(normalize(tail), vector.expected.tail));
+        check("headText", () => deepStrictEqual(text(head), vector.expected.headText));
+        check("tailText", () => deepStrictEqual(text(tail), vector.expected.tailText));
         check("text", () => deepStrictEqual(describeSpecification(structuredClone(vector.specification), 0), vector.text));
     } catch (e: any) {
         problems.push(`threw: ${e.message}`);
@@ -74,9 +75,9 @@ for (const file of files) {
     } catch {
         threw = true;
     }
-    if (threw !== vector.hoisted.tailReadsGiven) {
+    if (threw !== vector.expected.tailReadsGiven) {
         tailReadsGivenFailed++;
-        console.log(`  FAIL  ${vector.name}   (${vector.source}): tailReadsGiven=${vector.hoisted.tailReadsGiven}, constructor ${threw ? "threw" : "did not throw"}`);
+        console.log(`  FAIL  ${vector.name}   (${vector.source}): tailReadsGiven=${vector.expected.tailReadsGiven}, constructor ${threw ? "threw" : "did not throw"}`);
     }
 }
 console.log(`\n${tailReadsGivenChecked - tailReadsGivenFailed} of ${tailReadsGivenChecked} tailReadsGiven vectors agree with the constructor's check`);

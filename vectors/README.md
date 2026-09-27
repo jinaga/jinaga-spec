@@ -35,21 +35,11 @@ authorization, absent from the store when the rule runs (`docs/contracts.md`,
 `Store.lean`). A port that builds an authorization rule (not just a split) should
 throw exactly when this is `true`.
 
-`hoisted` is the same envelope (`head`, `tail`, `headText`, `tailText`,
-`tailReadsGiven`), computed by `hoist` (`JinagaSpec/Hoist.lean`) instead of
-`splitBeforeFirstSuccessor`. `jinaga.js` runs `hoist` as its split
-(jinaga/jinaga.js#325), so the TypeScript port checks it against `hoisted`, by
-the same rules. Hoisting changes the split in two vectors:
-
-- `existential-reads-the-given`, formulation D: the walk to the parent's
-  workspace moves out of a positive existential condition and into the head,
-  and `tailReadsGiven` becomes `false`.
-- `several-paths-one-reuses-a-head-label`, formulation C: the split label is
-  `__s0` rather than `__s1`, because `hoist` numbers the walks it takes where
-  `splitPaths` numbers the pivot's path conditions.
-
 `tailReadsGiven` stays `true` for a rule that walks the given's predecessors
-inside a negative existential condition, or seeks the given's successors.
+inside a negative existential condition, or seeks the given's successors. It is
+`false` for `existential-reads-the-given`, formulation D of jinaga/jinaga.js#231:
+the walk to the parent's workspace sits inside a positive existential
+condition, so the split hoists it into the head.
 
 The JSON shapes are those of `Specification` in `jinaga.js`
 (`src/specification/specification.ts`). Givens carry `conditions: []`; conditions

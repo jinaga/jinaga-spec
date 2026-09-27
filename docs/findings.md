@@ -238,18 +238,45 @@ a match's own unknown or its type.
 All sixteen named cases, and thousands of random specifications, pass the
 randomized check, and now also the proof.
 
+## Hoisting becomes the split
+
+The spec once had two algorithms: `splitBeforeFirstSuccessor`, confined to the
+pivot's own path conditions, and `hoist`, reaching any depth, kept and proved
+separately (`hoist_correct`, `store_denies_hoist`, `store_correct_hoist`) once
+the general proof above landed. `jinaga.js` ports `hoist` as its own
+`splitBeforeFirstSuccessor` (jinaga/jinaga.js#325), so the spec had one
+algorithm and two names for it. Adopting `hoist` as *the* split collapses that:
+`hoist` is renamed `splitBeforeFirstSuccessor`, and `hoist_correct`,
+`store_denies_hoist`, `store_correct_hoist` are renamed `split_correct`,
+`store_denies`, `store_correct`. The narrower, pivot-only split
+(`splitPaths`, `splitAt`, `tailMatchesAt`, `pivot_step`, `tail_scoped`, and the
+theorems stated only for them) is deleted, along with `pathsOf`/`existentialsOf`
+and everything that existed only to separate a match's path conditions from
+its existential ones for that split's benefit; `hoistMatches`/`hoistConditions`/
+`hoistCondition` keep their names, since they still do the same hoisting
+regardless of what the outer driver is called.
+
+This changes what the split does, not just what it is called: formulation D of
+jinaga/jinaga.js#231 is admitted (`tailReadsGiven` is `false` for it), because
+the walk to the parent's workspace now moves out of its enclosing positive
+existential and into the head. And a split label's number no longer counts the
+pivot's own top-level path conditions; it counts the walks actually hoisted, at
+any depth, in the order `hoistMatches`/`hoistConditions`/`hoistCondition`
+visits them — the same reason the general proof above did not need
+`splitPaths`' numbering to begin with.
+
 ## Where the proof effort went
 
 | file | what it proves |
 |---|---|
 | `Locality.lean` | Evaluating matches depends only on the labels they use. |
-| `SplitPaths.lean` | Splitting the pivot's path conditions preserves them. |
+| `SplitPaths.lean` | A step, and a walk of at least one step, land on a fact of a known type. |
 | `Derivation.lean` | The tail's givens, derived as used labels in scope, are closed; every label a well-formed, scoped list of matches uses is ordinary. |
-| `Main.lean` | The pivot step, and the theorem. |
+| `Main.lean` | Two environments agreeing on a scope give the same projected results. |
 | `WellFormedCheck.lean` | The executable check decides `WellFormed`. |
 | `Basic.lean`, `Scoped.lean` | Helper facts, and the definitions of well-formedness. |
-| `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies`/`store_correct` and their `hoist` counterparts. |
-| `Proofs/Hoist.lean` | `hoist` agrees with the reference semantics, for every well-formed specification, at any nesting depth. |
+| `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies`/`store_correct`. |
+| `Proofs/Hoist.lean` | The split agrees with the reference semantics, for every well-formed specification, at any nesting depth. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs

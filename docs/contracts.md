@@ -9,6 +9,11 @@ composes the steps.
 
 ## The split's contract
 
+The split (`splitBeforeFirstSuccessor`, `JinagaSpec/Hoist.lean`) reaches into
+the tail's existential conditions, at any depth, not only the pivot's own top
+level, for a predecessor walk of a label already in scope, and hoists it into
+the head wherever doing so is sound.
+
 **Precondition** (`WellFormed`, `JinagaSpec/Proofs/Scoped.lean`; executable as
 `isWellFormed`, `JinagaSpec/WellFormed.lean`):
 
@@ -26,8 +31,8 @@ composes the steps.
 |---|---|
 | The split returns the same results as the whole specification (as sets). | Proved: `split_correct`. |
 | The split is total. It has a head, possibly with no matches, and a tail only when a match seeks successors. | By construction: `Split.head` is not optional. |
-| The tail's path conditions and projection name only the tail's givens or labels the tail declares earlier. | Proved: `tail_scoped`. |
-| Every split label is reserved, so it differs from every label the specification declares. | Proved: `splitPaths_names`, `isReserved_splitLabel`. |
+| The tail's path conditions and projection name only the tail's givens or labels the tail declares earlier, at any depth. | Proved: `hoist_tail_scoped`. |
+| Every split label is reserved, so it differs from every label the specification declares. | Proved: `hoistMatches_reserved`, `isReserved_splitLabel`. |
 | The head is deterministic (the graph can run it). | True by construction, **not proved**. |
 | The head and tail are themselves `WellFormed`, so they can be split or transformed again. | **Not stated, not proved.** |
 | A rule whose tail is not given the fact under authorization means the same on the store as the specification means. | Proved: `store_correct`. |
@@ -73,35 +78,14 @@ means the rule admits nobody, false means the store means what the graph means.
 
 `jinaga.js` checks it in the same constructor, and throws
 `AuthorizationRuleError` when it is true
-([#324](https://github.com/jinaga/jinaga.js/pull/324)). The split it checks is
-`hoist` ([#325](https://github.com/jinaga/jinaga.js/pull/325), next section),
-so the rules it refuses are those that seek successors of the given, or walk
-the given's predecessors beneath a negative existential condition. Formulation
-D of jinaga/jinaga.js#231, which walks the given's predecessors inside a
-positive existential condition, is admitted.
-
-## `hoist`'s contract
-
-`hoist` (`JinagaSpec/Hoist.lean`) is an alternative to
-`splitBeforeFirstSuccessor` that reaches into the tail's existential
-conditions, at any depth, for a predecessor walk of a label already in scope,
-and hoists it into the head wherever doing so is sound. Its precondition is
-exactly the split's (`WellFormed`, above) — no reduced scope, no extra
-condition.
-
-**Postconditions.**
-
-| | Status |
-|---|---|
-| `hoist` returns the same results as the whole specification (as sets). | Proved: `hoist_correct`. |
-| A rule whose tail is not given the fact under authorization means the same on the store as the specification means, with `hoist` in place of the split. | Proved: `store_correct_hoist`. |
-| A rule whose tail is given it admits nobody, with `hoist` in place of the split. | Proved: `store_denies_hoist`. |
-
-`jinaga.js` runs `hoist` as its split
-([#325](https://github.com/jinaga/jinaga.js/pull/325)), so these are the
-postconditions its authorization rules rely on. See the previous section and
-`docs/findings.md` for the commutation argument the general proof
-turns on.
+([#324](https://github.com/jinaga/jinaga.js/pull/324)). The split it checks
+reaches into existential conditions at any depth
+([#325](https://github.com/jinaga/jinaga.js/pull/325)), so the rules it
+refuses are those that seek successors of the given, or walk the given's
+predecessors beneath a negative existential condition. Formulation D of
+jinaga/jinaga.js#231, which walks the given's predecessors inside a positive
+existential condition, is admitted. See `docs/findings.md` for the
+commutation argument the proof turns on.
 
 ## Who can hand the split a specification
 

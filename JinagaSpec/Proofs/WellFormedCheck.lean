@@ -1,5 +1,5 @@
 import JinagaSpec.WellFormed
-import JinagaSpec.Proofs.Main
+import JinagaSpec.Proofs.Hoist
 
 /-!
 # The check decides `WellFormed`
