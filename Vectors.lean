@@ -13,6 +13,7 @@ open JinagaSpec
 
 def caseToJson (c : Case) : Json :=
   let split := splitBeforeFirstSuccessor c.spec
+  let hoisted := hoist c.spec
   let text : Option Specification → Json
     | none => Json.null
     | some s => Json.str (describeSpecification s)
@@ -32,7 +33,19 @@ def caseToJson (c : Case) : Json :=
       ("tail", optionToJson specificationToJson split.tail),
       ("headText", text split.head),
       ("tailText", text split.tail),
-      ("tailReadsGiven", tailReadsGiven split given0Name)])]
+      ("tailReadsGiven", tailReadsGiven split given0Name)]),
+    -- Not part of the split's own contract: `hoist` (Hoist.lean, still
+    -- unproved in general) reaches into the tail's existential conditions for
+    -- predecessor walks of labels in scope at the pivot, at positive
+    -- polarity. Recorded so a reader can see where it changes `expected`
+    -- (it does not, for any of these cases) and where it changes
+    -- `tailReadsGiven`.
+    ("hoisted", Json.mkObj [
+      ("head", optionToJson specificationToJson hoisted.head),
+      ("tail", optionToJson specificationToJson hoisted.tail),
+      ("headText", text hoisted.head),
+      ("tailText", text hoisted.tail),
+      ("tailReadsGiven", tailReadsGiven hoisted given0Name)])]
 
 def wellFormedCaseToJson (c : WellFormedCase) : Json :=
   Json.mkObj [

@@ -121,6 +121,14 @@ def cases : List Case :=
          exists' [unknown "u2" "Owner" [path [workspace] "p1" [parent, workspace], path [user] "u1" [user]]]],
        unknown "u3" "Jinaga.User" [path [] "u1" [user]]]
       (fact "u3") },
+  { name := "existential-negation-reads-the-given"
+    description := "The pivot's NEGATIVE existential condition walks predecessors of the given. Hoisting only ever moves a positive-polarity walk into the head (docs/findings.md): this one stays, so the given stays a tail given, and the rule is refused exactly as it was without hoisting."
+    source := "the polarity experiment: hoist's limit"
+    spec := spec [("p1", "Company")]
+      [unknown "u1" "Office"
+        [path [company] "p1" [],
+         notExists [unknown "u2" "Ban" [path [office] "p1" [company]]]]]
+      (fact "u1") },
   { name := "given-only-an-existential-uses"
     description := "The pivot's existential condition reads a second given that no head match mentions. The head is given every given, and projects the one the tail needs."
     source := "#297: the head's own projection takes part in deriving its givens"

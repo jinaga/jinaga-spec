@@ -290,6 +290,188 @@ def mutationScore (specs : List Specification) (graphs : Nat) (gen : StdGen × N
         if found then caught := caught + 1
     IO.println s!"  mutant \"{label}\": caught on {caught} of {applicable} split specifications"
 
+/-! ## Hoisting: the polarity experiment
+
+`hoistMatchesNoPolarity` hoists every eligible path condition regardless of the
+polarity it sits at, unlike `hoist`, which only hoists at positive polarity
+(`Hoist.lean`). The randomized check below runs both against the reference
+semantics on random specifications with a multi-valued predecessor role: it is
+how the polarity restriction was found necessary, and it is kept as a mutation
+check now that `hoist` has it. -/
+
+mutual
+  def hoistMatchesNoPolarity (scope : List Name) : Nat → List Match → Nat × List Match × List Match
+    | i, [] => (i, [], [])
+    | i, .mk u cs :: rest =>
+      let (i1, headCs, cs') := hoistConditionsNoPolarity scope i cs
+      let (i2, headRest, rest') := hoistMatchesNoPolarity scope i1 rest
+      (i2, headCs ++ headRest, .mk u cs' :: rest')
+
+  def hoistConditionsNoPolarity (scope : List Name) : Nat → List Condition → Nat × List Match × List Condition
+    | i, [] => (i, [], [])
+    | i, c :: cs =>
+      let (i1, headC, c') := hoistConditionNoPolarity scope i c
+      let (i2, headCs, cs') := hoistConditionsNoPolarity scope i1 cs
+      (i2, headC ++ headCs, c' :: cs')
+
+  def hoistConditionNoPolarity (scope : List Name) : Nat → Condition → Nat × List Match × Condition
+    | i, .path pc =>
+      match pc.rolesRight.getLast?, scope.contains pc.labelRight with
+      | some last, true =>
+        (i + 1,
+         [.mk { name := splitLabel i, type := last.predecessorType }
+             [.path { rolesLeft := [], labelRight := pc.labelRight, rolesRight := pc.rolesRight }]],
+         .path { rolesLeft := pc.rolesLeft, labelRight := splitLabel i, rolesRight := [] })
+      | _, _ => (i, [], .path pc)
+    | i, .existential e ms =>
+      let (i1, headMs, ms') := hoistMatchesNoPolarity scope i ms
+      (i1, headMs, .existential e ms')
+end
+
+def hoistAtNoPolarity (s : Specification) (before : List Match) (pivot : Match) (after : List Match) : Split :=
+  let scope := scopeAt s before
+  let (_, headExtra, tailMatches) := hoistMatchesNoPolarity scope 0 (pivot :: after)
+  let headMatches := before ++ headExtra
+  let tailGiven := tailGivenAt s headMatches tailMatches
+  { head := { given := s.given, matchList := headMatches,
+              projection := .composite (tailGiven.map fun l => { name := l.name, label := l.name }) },
+    tail := some { given := tailGiven, matchList := tailMatches, projection := s.projection } }
+
+def hoistNoPolarity (s : Specification) : Split :=
+  match s.matchList.span matchIsDeterministic with
+  | (_, []) => { head := s, tail := none }
+  | (before, pivot :: after) => hoistAtNoPolarity s before pivot after
+
+/-- The counterexample `docs/findings.md` describes: given `p1` with a
+multi-valued predecessor role `y`, and a pivot carrying a negative existential
+`!E { u2: T [ u2->x = p1->y ] }`. A fact of type `T` reaches one of `p1->y`'s
+two values (`a`) but not the other (`b`). The whole specification excludes the
+pivot's solution, because that fact witnesses the existential; hoisting the
+walk regardless of polarity runs the tail once per value and unions the
+results, which does not. -/
+def polarityCounterexample : Specification × Graph :=
+  let y := role "y" "A"
+  let x := role "x" "A"
+  let z := role "z" "P"
+  let s := spec [("p1", "P")]
+    [unknown "u1" "Q" [path [z] "p1" [],
+       notExists [unknown "u2" "T" [path [x] "p1" [y]]]]]
+    (fact "u1")
+  let g : Graph := [
+    { id := 0, type := "P", predecessors := [("y", 2), ("y", 3)] },
+    { id := 1, type := "Q", predecessors := [("z", 0)] },
+    { id := 2, type := "A", predecessors := [] },
+    { id := 3, type := "A", predecessors := [] },
+    { id := 4, type := "T", predecessors := [("x", 2)] }]
+  (s, g)
+
+/-! ## Polarity is not parity
+
+A first version of `hoist` toggled polarity on every existential, positive or
+negative, so that two negative existentials cancelled back to positive. The
+randomized check below found this unsound too, on random specifications with
+*two* nested negative existentials sharing a multi-valued label — one level
+deeper than `polarityCounterexample`. `hoistMatchesNaiveParity` is that
+version, kept as a permanent mutation check; `hoist` fixed it by making
+polarity monotone (`Hoist.lean`): a negative existential's matches are
+negative regardless of the polarity outside them, and nothing nested inside a
+negative existential ever recovers positive polarity. -/
+
+mutual
+  def hoistMatchesNaiveParity (scope : List Name) : Nat → Bool → List Match → Nat × List Match × List Match
+    | i, _, [] => (i, [], [])
+    | i, pos, .mk u cs :: rest =>
+      let (i1, headCs, cs') := hoistConditionsNaiveParity scope i pos cs
+      let (i2, headRest, rest') := hoistMatchesNaiveParity scope i1 pos rest
+      (i2, headCs ++ headRest, .mk u cs' :: rest')
+
+  def hoistConditionsNaiveParity (scope : List Name) : Nat → Bool → List Condition → Nat × List Match × List Condition
+    | i, _, [] => (i, [], [])
+    | i, pos, c :: cs =>
+      let (i1, headC, c') := hoistConditionNaiveParity scope i pos c
+      let (i2, headCs, cs') := hoistConditionsNaiveParity scope i1 pos cs
+      (i2, headC ++ headCs, c' :: cs')
+
+  def hoistConditionNaiveParity (scope : List Name) : Nat → Bool → Condition → Nat × List Match × Condition
+    | i, pos, .path pc =>
+      match pos, pc.rolesRight.getLast?, scope.contains pc.labelRight with
+      | true, some last, true =>
+        (i + 1,
+         [.mk { name := splitLabel i, type := last.predecessorType }
+             [.path { rolesLeft := [], labelRight := pc.labelRight, rolesRight := pc.rolesRight }]],
+         .path { rolesLeft := pc.rolesLeft, labelRight := splitLabel i, rolesRight := [] })
+      | _, _, _ => (i, [], .path pc)
+    | i, pos, .existential e ms =>
+      let (i1, headMs, ms') := hoistMatchesNaiveParity scope i (if e then pos else !pos) ms
+      (i1, headMs, .existential e ms')
+end
+
+def hoistAtNaiveParity (s : Specification) (before : List Match) (pivot : Match) (after : List Match) : Split :=
+  let scope := scopeAt s before
+  let (_, headExtra, tailMatches) := hoistMatchesNaiveParity scope 0 true (pivot :: after)
+  let headMatches := before ++ headExtra
+  let tailGiven := tailGivenAt s headMatches tailMatches
+  { head := { given := s.given, matchList := headMatches,
+              projection := .composite (tailGiven.map fun l => { name := l.name, label := l.name }) },
+    tail := some { given := tailGiven, matchList := tailMatches, projection := s.projection } }
+
+def hoistNaiveParity (s : Specification) : Split :=
+  match s.matchList.span matchIsDeterministic with
+  | (_, []) => { head := s, tail := none }
+  | (before, pivot :: after) => hoistAtNaiveParity s before pivot after
+
+/-- Two `e1` candidates, `e1A` and `e1B`, each rescued by a different value of
+the given's multi-valued `x` role (`e2A` witnesses `e1A` only at `20`, `e2B`
+witnesses `e1B` only at `21`), so the whole specification excludes `s1`'s
+solution (every `e1` finds *some* rescuing value, `∀e1 ∃v`), but no single
+value rescues both at once (no `v` has `∀e1`): naive-parity hoisting picks one
+value for the whole head and unions afterward (`∃v ∀e1`), which is strictly
+stronger, and empty here. -/
+def polarityDoubleNegCounterexample : Specification × Graph :=
+  let z := role "z" "P"
+  let w := role "w" "A"
+  let y := role "y" "A"
+  let x := role "x" "A"
+  let vR := role "v" "R"
+  let vA := role "v" "A"
+  let s := spec [("p1", "P")]
+    [unknown "s1" "Q" [path [z] "p1" [],
+       notExists [unknown "e1" "R" [path [w] "p1" [y],
+         notExists [unknown "e2" "S" [path [vR] "e1" [], path [vA] "p1" [x]]]]]]]
+    (fact "p1")
+  let g : Graph := [
+    { id := 0, type := "P", predecessors := [("y", 10), ("x", 20), ("x", 21)] },
+    { id := 1, type := "Q", predecessors := [("z", 0)] },
+    { id := 2, type := "R", predecessors := [("w", 10)] },
+    { id := 3, type := "R", predecessors := [("w", 10)] },
+    { id := 4, type := "S", predecessors := [("v", 2), ("v", 20)] },
+    { id := 5, type := "S", predecessors := [("v", 3), ("v", 21)] },
+    { id := 10, type := "A", predecessors := [] },
+    { id := 20, type := "A", predecessors := [] },
+    { id := 21, type := "A", predecessors := [] }]
+  (s, g)
+
+/-- Compares an arbitrary split-producing function against the reference
+semantics, the way `checkSpec` does for `splitBeforeFirstSuccessor`. -/
+def checkHoistSpec (split : Specification → Split) (s : Specification) (graphs : Nat) : Gen (Tally × Option String) := do
+  let mut tally : Tally := {}
+  let sp := split s
+  let mut report := none
+  for _ in [0:graphs] do
+    let g ← genGraph s 10
+    let env ← genEnv s g
+    let expected := s.evaluate g env
+    let actual := sp.evaluate g env
+    tally := { tally with checks := tally.checks + 1,
+                          nonEmpty := tally.nonEmpty + (if expected.isEmpty then 0 else 1),
+                          split := tally.split + (if sp.tail.isSome then 1 else 0) }
+    if !sameSet expected actual && report.isNone then
+      tally := { tally with failures := tally.failures + 1 }
+      report := some s!"{describeSpecification s}\nexpected {repr expected}\nactual   {repr actual}"
+    else if !sameSet expected actual then
+      tally := { tally with failures := tally.failures + 1 }
+  return (tally, report)
+
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
   let duplicates := args.contains "duplicates"
@@ -336,6 +518,56 @@ def main (args : List String) : IO UInt32 := do
     storeTotal := addStore storeTotal t
     if firstFailure.isNone then firstFailure := r.map (s!"store check, random spec\n" ++ ·)
   IO.println s!"store check:   {storeTotal.checks} checks, {storeTotal.tailReadsTrue} tailReadsGiven=true (must be empty), {storeTotal.tailReadsFalse} tailReadsGiven=false (must agree with the reference semantics), {storeTotal.failures} failures"
+  -- The polarity experiment: hoisting under a negative existential disagrees;
+  -- hoisting only at positive polarity (the real `hoist`) does not.
+  let (cx, gx) := polarityCounterexample
+  let cxEnv : Env := fun n => if n = "p1" then some 0 else none
+  let cxExpected := cx.evaluate gx cxEnv
+  let cxNoPolarity := (hoistNoPolarity cx).evaluate gx cxEnv
+  let cxHoist := (hoist cx).evaluate gx cxEnv
+  IO.println s!"hoist counterexample: reference {repr cxExpected}, ignoring polarity {repr cxNoPolarity}, hoist {repr cxHoist}"
+  unless !sameSet cxExpected cxNoPolarity do
+    throw <| IO.userError "the polarity counterexample no longer disagrees when polarity is ignored"
+  unless sameSet cxExpected cxHoist do
+    throw <| IO.userError "hoist (respecting polarity) disagreed on the polarity counterexample"
+  let (cx2, gx2) := polarityDoubleNegCounterexample
+  let cx2Env : Env := fun n => if n = "p1" then some 0 else none
+  let cx2Expected := cx2.evaluate gx2 cx2Env
+  let cx2NaiveParity := (hoistNaiveParity cx2).evaluate gx2 cx2Env
+  let cx2Hoist := (hoist cx2).evaluate gx2 cx2Env
+  IO.println s!"hoist double-negation counterexample: reference {repr cx2Expected}, naive parity {repr cx2NaiveParity}, hoist {repr cx2Hoist}"
+  unless !sameSet cx2Expected cx2NaiveParity do
+    throw <| IO.userError "the double-negation counterexample no longer disagrees under naive parity"
+  unless sameSet cx2Expected cx2Hoist do
+    throw <| IO.userError "hoist (monotone polarity) disagreed on the double-negation counterexample"
+  let mut hoistNoPolTotal : Tally := {}
+  let mut hoistNaiveTotal : Tally := {}
+  let mut hoistTotal : Tally := {}
+  for c in cases do
+    let ((t1, _), g') := (checkHoistSpec hoistNoPolarity c.spec 30).run g
+    g := g'
+    hoistNoPolTotal := add hoistNoPolTotal t1
+    let ((t3, _), g3) := (checkHoistSpec hoistNaiveParity c.spec 30).run g
+    g := g3
+    hoistNaiveTotal := add hoistNaiveTotal t3
+    let ((t2, r2), g'') := (checkHoistSpec hoist c.spec 30).run g
+    g := g''
+    hoistTotal := add hoistTotal t2
+    if firstFailure.isNone then firstFailure := r2.map (s!"hoist check, case {c.name}\n" ++ ·)
+  for s in pool do
+    let ((t1, _), g') := (checkHoistSpec hoistNoPolarity s 10).run g
+    g := g'
+    hoistNoPolTotal := add hoistNoPolTotal t1
+    let ((t3, _), g3) := (checkHoistSpec hoistNaiveParity s 10).run g
+    g := g3
+    hoistNaiveTotal := add hoistNaiveTotal t3
+    let ((t2, r2), g'') := (checkHoistSpec hoist s 10).run g
+    g := g''
+    hoistTotal := add hoistTotal t2
+    if firstFailure.isNone then firstFailure := r2.map (s!"hoist check, random spec\n" ++ ·)
+  IO.println s!"hoist, ignoring polarity: {hoistNoPolTotal.checks} checks, {hoistNoPolTotal.failures} failures"
+  IO.println s!"hoist, naive parity: {hoistNaiveTotal.checks} checks, {hoistNaiveTotal.failures} failures"
+  IO.println s!"hoist, respecting polarity (monotone): {hoistTotal.checks} checks, {hoistTotal.failures} failures"
   IO.println "mutation check (each wrong split must be caught):"
   mutationScore (cases.map (·.spec) ++ pool) 30 g
   storeMutationScore (cases.map (·.spec) ++ pool) 30 g

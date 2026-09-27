@@ -134,6 +134,76 @@ genuine but small minority of `tailReadsGiven` specifications — most such
 walks fail on their own once the given is retyped, and the guard's real work is
 catching the rule's given passed straight through to the tail's projection.
 
+## Hoisting: polarity is not parity
+
+Formulation D of #231 is fixed by hoisting a tail condition that walks
+predecessors of the given, inside a *positive* existential, into the head
+(`JinagaSpec/Hoist.lean`). The first version of the rule toggled polarity on
+every existential, positive or negative, on the theory that two negative
+existentials cancel: an existential over a union is the union of the
+existentials (positive case), and negating that twice returns a union again.
+
+`lake exe check` disproves this at one level of nesting deeper than the
+single-negation counterexample already known. With a given `p1` whose role `x`
+is multi-valued (`{20, 21}`), two candidates for an outer match `e1` (`e1A`,
+`e1B`), and two candidates for a doubly-nested match `e2` (`e2A` witnessing
+`e1A` only at the value `20`, `e2B` witnessing `e1B` only at `21`), the whole
+specification's pivot `s1` has a solution: *for every* `e1` candidate, *some*
+value of `x` rescues it (`∀e1 ∃x`). Naive-parity hoisting computes the
+opposite quantifier order: it picks *one* value of `x` for the whole head and
+unions the tail's evaluation over that one value afterward (`∃x ∀e1`), which
+is strictly stronger and is empty here, because no single value rescues both
+`e1A` and `e1B` at once. The bug needs two matches at the *same* nesting depth
+each satisfiable only by a *different* value the hoisted condition could take,
+which needs depth two to set up — one match to vary over, one to be hoisted
+out of a second, nested negation — so it does not show up at the depth the
+single-negation counterexample already exercises.
+
+The fix makes polarity monotone instead of alternating: a negative
+existential's matches are negative regardless of the polarity outside them,
+and nothing nested inside a negative existential ever recovers positive
+polarity, however many further existentials, positive or negative, it passes
+through. `hoistConditionNaiveParity` (the disproved rule) is kept as a
+permanent mutation check alongside `hoistConditionNoPolarity` (the original,
+single-negation one): across ten random seeds, the naive-parity mutant
+disagreed on 0–2 of 3,480 checks per seed (rarer than the single-negation
+mutant's failures, because it needs the deeper shape above), and the fixed
+`hoist` disagreed on none, over the same specifications and the two
+handcrafted counterexamples. This is the same shape of finding as the
+shadowing experiment above: a plausible-sounding rule, refuted by the
+randomized check before it reached a proof.
+
+## Hoisting: the proof covers a reduced scope
+
+`hoist_correct` in full generality needs the argument above stated for actual
+existentials, not just tested against them: hoisting a positive-polarity
+condition into the head does not change whether the enclosing existentials
+have a solution. That argument is not proved; `docs/contracts.md` and
+`JinagaSpec/Proofs/Hoist.lean`'s module doc record what it would need.
+
+What is proved (`hoist_correct_reduced`) is narrower than the "depth zero and
+one positive existential" scope the task suggested attempting: it covers a
+pivot whose own top-level path conditions are *all* individually eligible for
+hoisting (or has none to hoist at all), with nothing eligible anywhere below
+that top level, and nothing eligible in the matches after the pivot. The extra
+condition — *all* of the pivot's own conditions eligible, not just the ones
+that are — is not needed for soundness; it is needed only so that `hoist`'s
+split-label numbering (which advances only when a condition is actually
+hoisted) lines up exactly with `splitPaths`' numbering (which advances once
+per top-level path condition regardless), so that the two computed splits are
+equal enough for `split_correct` to close the gap directly. A pivot with a
+*mix* of hoistable and non-hoistable top-level conditions — common among the
+named cases, and not covered here — picks the same split labels under a
+different, merely differently-numbered, name; closing that gap needs a
+renaming-invariance lemma (`hoist s` and `splitBeforeFirstSuccessor s` agree up
+to a bijection on reserved labels), which was not attempted. Of the sixteen
+named cases, six are in the proved scope
+(`predecessor-and-successor-in-one-match`, `existential-on-the-pivot`,
+`several-paths-each-walk-predecessors`, `projected-label-reaches-the-tail`,
+and the two with no pivot at all); formulation D needs the general argument;
+the rest need the renaming lemma. All sixteen, and thousands of random
+specifications, pass the randomized check regardless.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -145,6 +215,7 @@ catching the rule's given passed straight through to the tail's projection.
 | `WellFormedCheck.lean` | The executable check decides `WellFormed`. |
 | `Basic.lean`, `Scoped.lean` | Helper facts, and the definitions of well-formedness. |
 | `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies` and `store_correct`. |
+| `Proofs/Hoist.lean` | `hoist` agrees with `splitPaths`' numbering, and with the reference semantics, in the reduced scope above. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs

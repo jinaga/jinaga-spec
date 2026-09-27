@@ -34,6 +34,16 @@ authorization, absent from the store when the rule runs (`docs/contracts.md`,
 `Store.lean`). A port that builds an authorization rule (not just a split) should
 throw exactly when this is `true`.
 
+`hoisted` is the same envelope (`head`, `tail`, `headText`, `tailText`,
+`tailReadsGiven`), computed by `hoist` (`JinagaSpec/Hoist.lean`) instead of
+`splitBeforeFirstSuccessor`. It is not part of the split's own contract, and no
+port needs to implement it yet: `hoist_correct` is proved only in a reduced
+scope (`docs/findings.md`). It is recorded so a reader can see where hoisting
+changes `expected` (nowhere, in these vectors) and where it changes
+`tailReadsGiven` (from `true` to `false` for a rule that reads the given inside
+a *positive* existential; unchanged for one that reads it inside a negative
+existential, or by walking the given's own successors directly).
+
 The JSON shapes are those of `Specification` in `jinaga.js`
 (`src/specification/specification.ts`). Givens carry `conditions: []`; conditions
 on givens are not modelled yet.

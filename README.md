@@ -22,6 +22,7 @@ tractable, and the ports checkable. The answer so far is yes. Nothing in `jinaga
 | `docs/contracts.md` | What the split expects, who must provide it, and how to check a sequence of steps. |
 | `JinagaSpec/WellFormed.lean` | `isWellFormed`: an executable check of the split's preconditions, proved to agree with `WellFormed`. |
 | `JinagaSpec/Store.lean`, `JinagaSpec/Proofs/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary theorem `tailReadsGiven` decides. |
+| `JinagaSpec/Hoist.lean`, `JinagaSpec/Proofs/Hoist.lean` | `hoist`: the fix for formulation D of #231, and how far the proof that it is sound reaches. |
 
 ## Try it
 
@@ -91,6 +92,16 @@ A rule with one given, whose tail reads that given, admits nobody
 specification means on the graph that holds the given (`store_correct`). See
 `docs/findings.md` for the retyping trick both proofs lean on.
 
+`hoist` (`JinagaSpec/Hoist.lean`) is the intended fix for formulation D of
+jinaga/jinaga.js#231, the shape `tailReadsGiven` refuses that this split alone
+cannot admit: it reaches into the tail's existential conditions, not only the
+pivot's own top level, for a predecessor walk of a label already in scope,
+hoisting it only where doing so is sound. `hoist_correct_reduced` proves this
+sound in a reduced scope; the general case, and where hoisting stops being
+sound at all, are in `docs/findings.md` — including a second unsoundness the
+randomized check found in an earlier version of the rule, one level of
+nesting deeper than the first.
+
 ## Reading the definitions
 
 `Split.lean` is in a deliberately **portable subset**: inductive types, total
@@ -112,6 +123,7 @@ A port should read line for line. Names match TypeScript, with these exceptions:
 | `Graph.authGraph` | the in-memory write batch, with the fact under authorization added |
 | `Split.evaluateStore` | `AuthorizationRuleSpecification.isAuthorized`/`getAuthorizedPopulation`, running the tail on the store |
 | `tailReadsGiven` | the check in `AuthorizationRuleSpecification`'s constructor that throws `AuthorizationRuleError` |
+| `hoist` | not implemented in `jinaga.js` yet; the intended fix for jinaga/jinaga.js#297 |
 
 
 ## Conformance vectors
@@ -147,9 +159,10 @@ harder to hide, but they are not a proof about the TypeScript.
 2. Given conditions and the remaining projections, and a .NET runner for the vectors.
 3. Vectors that check evaluation (a specification, a graph, and the expected
    results), so a port is checked on meaning as well as on shape.
-4. Hoist a tail's predecessor walks of the given into the head (issue #297), so
-   fewer rules trip `tailReadsGiven`; see `docs/findings.md` for where it stops
-   being sound.
+4. `hoist_correct` in full generality (`docs/findings.md`), and the
+   renaming-invariance lemma that would extend the reduced scope to a pivot
+   with a mix of hoistable and non-hoistable top-level conditions; then wire
+   `hoist` into `jinaga.js`'s split, so fewer rules trip `tailReadsGiven`.
 5. `buildFeeds`, then skeleton canonicity, then distribution soundness.
 
 ## License

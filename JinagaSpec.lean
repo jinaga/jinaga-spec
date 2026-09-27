@@ -1,6 +1,7 @@
 import JinagaSpec.Syntax
 import JinagaSpec.Semantics
 import JinagaSpec.Split
+import JinagaSpec.Hoist
 import JinagaSpec.Store
 import JinagaSpec.WellFormed
 import JinagaSpec.Build
@@ -15,3 +16,4 @@ import JinagaSpec.Proofs.Derivation
 import JinagaSpec.Proofs.Main
 import JinagaSpec.Proofs.WellFormedCheck
 import JinagaSpec.Proofs.Store
+import JinagaSpec.Proofs.Hoist
