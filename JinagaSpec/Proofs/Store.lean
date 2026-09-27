@@ -496,21 +496,24 @@ theorem ordinaryTypesMatches_tailMatchesAt {pivot : Match} {tps : List PathCondi
   rw [ordinaryTypesConditions_append]
   exact ⟨ordinaryTypesConditions_map_path, ordinaryTypesConditions_existentialsOf hcs⟩
 
-/-! ## The boundary theorems -/
+/-! ## Shared by both algorithms' boundary theorems
 
-section Boundary
+`store_denies`/`store_denies_hoist` and `store_correct`/`store_correct_hoist`
+each differ from their sibling only in which algorithm (`splitBeforeFirstSuccessor`
+or `hoist`) produces the head and tail; the argument once the pieces it produces
+are in hand is identical. `store_denies_of` and `tailGiven_pointwise` state that
+shared argument once, each parameterized over exactly what the two algorithms
+produce differently. -/
 
-variable {s : Specification} {g0 : Label} {store : Graph} {f : Fact} {env : Env}
-
-/-- A rule whose tail is given the fact under authorization admits nobody: the
-head never rebinds the given (it is not one of its own declared labels), so
-every head tuple seeds the tail with `f.id`, which the store does not have. -/
-theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : OrdinaryTypes s)
-    (_hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
-    (_hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
-    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = true) :
-    (splitBeforeFirstSuccessor s).evaluateStore store f env = [] := by
-  have hgnotin := given_notin_headMatchList (s := s) hwf (g0 := g0) (by rw [hg]; simp)
+/-- A rule whose tail is given the fact under authorization admits nobody,
+given only that `split`'s head never rebinds it: every head tuple then seeds
+the tail with `f.id`, which the store does not have. -/
+theorem store_denies_of {s : Specification} {g0 : Label} {store : Graph} {f : Fact} {env : Env}
+    (split : Specification → Split)
+    (hgnotin : g0.name ∉ (split s).head.matchList.map (·.unknown.name))
+    (hfnotin : ¬ InStore store f.id) (henv : env g0.name = some f.id)
+    (h : tailReadsGiven (split s) g0.name = true) :
+    (split s).evaluateStore store f env = [] := by
   have hFactNone : store.factOf f.id = none := by
     cases hfo : store.factOf f.id with
     | none => rfl
@@ -522,7 +525,7 @@ theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : Ordinar
         simpa using List.find?_some h1
       exact absurd ⟨fact, hmem, heq⟩ hfnotin
   unfold tailReadsGiven at h
-  cases htail : (splitBeforeFirstSuccessor s).tail with
+  cases htail : (split s).tail with
   | none => rw [htail] at h; simp at h
   | some tail =>
     rw [htail] at h
@@ -552,6 +555,87 @@ theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : Ordinar
       have hbad := hcondTrue l hl
       simp [hlval, Graph.hasFact, hFactNone] at hbad
     · rfl
+
+/-- Once every tail given a head hands the tail is known to be in the store,
+the guard `evaluateStore` checks on it always passes, and the tail's own
+evaluation then agrees on `store` and on `authGraph store f`
+(`evalMatches_authGraph_agree`). -/
+theorem tailGiven_pointwise {store : Graph} {f : Fact} {env : Env}
+    (hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
+    (headMatches : List Match) (tailGiven : List Label) (tailMatches : List Match) (proj : Projection)
+    (hordTail : OrdinaryTypesMatches tailMatches)
+    (hheadStore : ∀ tuple ∈ evalMatches (Graph.authGraph store f) env headMatches,
+      ∀ l ∈ tailGiven, ∃ id, tuple l.name = some id ∧ InStore store id) :
+    ∀ tuple ∈ evalMatches (Graph.authGraph store f) env headMatches,
+      (if tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
+            | some id => store.hasFact id
+            | none => false) = true
+        then Specification.evaluate (Specification.mk tailGiven tailMatches proj) store
+              (tuple.restrictTo (tailGiven.map (·.name)))
+        else [])
+      = Specification.evaluate (Specification.mk tailGiven tailMatches proj)
+          (Graph.authGraph store f) (tuple.restrictTo (tailGiven.map (·.name))) := by
+  intro tuple htuple
+  have hallTrue : tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
+      | some id => store.hasFact id
+      | none => false) = true := by
+    rw [List.all_eq_true]
+    intro l hl
+    obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
+    have hcontains : (tailGiven.map (·.name)).contains l.name = true := by
+      rw [List.contains_iff_mem]
+      exact List.mem_map_of_mem hl
+    have hrestr : (tuple.restrictTo (tailGiven.map (·.name))) l.name = some id := by
+      simp only [Env.restrictTo, hcontains, ite_true]
+      exact heq
+    rw [hrestr]
+    obtain ⟨ff, hff, hffeq⟩ := hInStore
+    show store.hasFact id = true
+    unfold Graph.hasFact
+    exact List.find?_isSome.mpr ⟨ff, hff, by simp [hffeq]⟩
+  simp only [hallTrue, ite_true]
+  have hclosedEnv : EnvClosed store (tuple.restrictTo (tailGiven.map (·.name))) := by
+    intro x xid hx
+    have hxmemBool : (tailGiven.map (·.name)).contains x = true := by
+      cases hc : (tailGiven.map (·.name)).contains x with
+      | true => rfl
+      | false =>
+        exfalso
+        have hxnone : (tuple.restrictTo (tailGiven.map (·.name))) x = none := by
+          unfold Env.restrictTo
+          rw [hc]
+          simp
+        rw [hxnone] at hx
+        simp at hx
+    have hxmem : x ∈ tailGiven.map (·.name) := List.contains_iff_mem.mp hxmemBool
+    obtain ⟨l, hl, hln⟩ := List.mem_map.mp hxmem
+    obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
+    have hxval : (tuple.restrictTo (tailGiven.map (·.name))) x = some id := by
+      simp only [Env.restrictTo, hxmemBool, ite_true]
+      rw [← hln]
+      exact heq
+    rw [hxval] at hx
+    exact (Option.some.inj hx) ▸ hInStore
+  unfold Specification.evaluate
+  congr 1
+  exact (evalMatches_authGraph_agree hclosed hfnotin tailMatches hordTail _ hclosedEnv).symm
+
+/-! ## The boundary theorems -/
+
+section Boundary
+
+variable {s : Specification} {g0 : Label} {store : Graph} {f : Fact} {env : Env}
+
+/-- A rule whose tail is given the fact under authorization admits nobody: the
+head never rebinds the given (it is not one of its own declared labels), so
+every head tuple seeds the tail with `f.id`, which the store does not have. -/
+theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : OrdinaryTypes s)
+    (_hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
+    (_hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
+    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = true) :
+    (splitBeforeFirstSuccessor s).evaluateStore store f env = [] :=
+  store_denies_of splitBeforeFirstSuccessor
+    (given_notin_headMatchList hwf (by rw [hg]; simp)) hfnotin henv h
 
 /-- A rule whose tail is not given the fact under authorization means, on the
 store, exactly what the whole specification means on `authGraph store f`: every
@@ -662,61 +746,9 @@ theorem store_correct (hwf : WellFormed s) (hg : s.given = [g0]) (hord : Ordinar
       · exact splitPaths_head_binds_store hclosed hfnotin hfpred 0 (pathsOf pivot.conditions) eB
           hres hsafe tuple (hsp ▸ htupleSm) l.name (hsp ▸ hlname)
     simp only [Split.evaluateStore, Split.evaluate, htail_eq, hhead_eq]
-    have hpointwise : ∀ tuple ∈ evalMatches (Graph.authGraph store f) env (before ++ sm),
-        (if tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
-              | some id => store.hasFact id
-              | none => false) = true
-          then Specification.evaluate (Specification.mk tailGiven tailMatches s.projection) store
-                (tuple.restrictTo (tailGiven.map (·.name)))
-          else [])
-        = Specification.evaluate (Specification.mk tailGiven tailMatches s.projection)
-            (Graph.authGraph store f) (tuple.restrictTo (tailGiven.map (·.name))) := by
-      intro tuple htuple
-      have hallTrue : tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
-          | some id => store.hasFact id
-          | none => false) = true := by
-        rw [List.all_eq_true]
-        intro l hl
-        obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
-        have hcontains : (tailGiven.map (·.name)).contains l.name = true := by
-          rw [List.contains_iff_mem]
-          exact List.mem_map_of_mem hl
-        have hrestr : (tuple.restrictTo (tailGiven.map (·.name))) l.name = some id := by
-          simp only [Env.restrictTo, hcontains, ite_true]
-          exact heq
-        rw [hrestr]
-        obtain ⟨ff, hff, hffeq⟩ := hInStore
-        show store.hasFact id = true
-        unfold Graph.hasFact
-        exact List.find?_isSome.mpr ⟨ff, hff, by simp [hffeq]⟩
-      simp only [hallTrue, ite_true]
-      have hclosedEnv : EnvClosed store (tuple.restrictTo (tailGiven.map (·.name))) := by
-        intro x xid hx
-        have hxmemBool : (tailGiven.map (·.name)).contains x = true := by
-          cases hc : (tailGiven.map (·.name)).contains x with
-          | true => rfl
-          | false =>
-            exfalso
-            have hxnone : (tuple.restrictTo (tailGiven.map (·.name))) x = none := by
-              unfold Env.restrictTo
-              rw [hc]
-              simp
-            rw [hxnone] at hx
-            simp at hx
-        have hxmem : x ∈ tailGiven.map (·.name) := List.contains_iff_mem.mp hxmemBool
-        obtain ⟨l, hl, hln⟩ := List.mem_map.mp hxmem
-        obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
-        have hxval : (tuple.restrictTo (tailGiven.map (·.name))) x = some id := by
-          simp only [Env.restrictTo, hxmemBool, ite_true]
-          rw [← hln]
-          exact heq
-        rw [hxval] at hx
-        exact (Option.some.inj hx) ▸ hInStore
-      unfold Specification.evaluate
-      congr 1
-      exact (evalMatches_authGraph_agree hclosed hfnotin tailMatches
-        (ordinaryTypesMatches_tailMatchesAt hordBoth.2) _ hclosedEnv).symm
-    exact Iff.of_eq (congrArg (r ∈ ·) (flatMap_congr hpointwise))
+    exact Iff.of_eq (congrArg (r ∈ ·) (flatMap_congr
+      (tailGiven_pointwise hclosed hfnotin (before ++ sm) tailGiven tailMatches s.projection
+        (ordinaryTypesMatches_tailMatchesAt hordBoth.2) hheadStore)))
 
 end Boundary
 
@@ -1013,49 +1045,9 @@ theorem store_denies_hoist (hwf : WellFormed s) (hg : s.given = [g0]) (_hord : O
     (_hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
     (_hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
     (h : tailReadsGiven (hoist s) g0.name = true) :
-    (hoist s).evaluateStore store f env = [] := by
-  have hgnotin := given_notin_headMatchList_hoist (s := s) hwf (g0 := g0) (by rw [hg]; simp)
-  have hFactNone : store.factOf f.id = none := by
-    cases hfo : store.factOf f.id with
-    | none => rfl
-    | some fact =>
-      have hmem : fact ∈ store := Graph.mem_of_factOf_eq_some hfo
-      have heq : fact.id = f.id := by
-        have h1 := hfo
-        unfold Graph.factOf at h1
-        simpa using List.find?_some h1
-      exact absurd ⟨fact, hmem, heq⟩ hfnotin
-  unfold tailReadsGiven at h
-  cases htail : (hoist s).tail with
-  | none => rw [htail] at h; simp at h
-  | some tail =>
-    rw [htail] at h
-    simp only [List.any_eq_true, beq_iff_eq] at h
-    obtain ⟨l, hl, hln⟩ := h
-    unfold Split.evaluateStore
-    rw [htail]
-    apply List.flatMap_eq_nil_iff.mpr
-    intro tuple htuple
-    have htg : tuple g0.name = env g0.name := evalMatches_frame htuple g0.name hgnotin
-    have hcontains : (tail.given.map (·.name)).contains l.name = true := by
-      rw [List.contains_iff_mem]
-      exact List.mem_map_of_mem hl
-    have hlval : (tuple.restrictTo (tail.given.map (·.name))) l.name = some f.id := by
-      simp only [Env.restrictTo, hcontains, ite_true]
-      rw [hln, htg]
-      exact henv
-    show (if (tail.given.all fun l => match (tuple.restrictTo (tail.given.map (·.name))) l.name with
-            | some id => store.hasFact id
-            | none => false) = true
-          then tail.evaluate store (tuple.restrictTo (tail.given.map (·.name)))
-          else []) = []
-    split
-    · rename_i hcondTrue
-      exfalso
-      rw [List.all_eq_true] at hcondTrue
-      have hbad := hcondTrue l hl
-      simp [hlval, Graph.hasFact, hFactNone] at hbad
-    · rfl
+    (hoist s).evaluateStore store f env = [] :=
+  store_denies_of hoist
+    (given_notin_headMatchList_hoist hwf (by rw [hg]; simp)) hfnotin henv h
 
 /-- A rule whose tail is not given the fact under authorization means, on the
 store, exactly what the whole specification means on `authGraph store f`:
@@ -1155,64 +1147,13 @@ theorem store_correct_hoist (hwf : WellFormed s) (hg : s.given = [g0]) (hord : O
       · exact hoistMatches_head_binds_store hclosed hfnotin hfpred (scopeAt s before) hordScope 0 true
           (pivot :: after) eB hsafe tuple (by rw [hgenM]; exact htupleSm) l.name (by rw [hgenM]; exact hlname)
     simp only [Split.evaluateStore, Split.evaluate, htail_eq, hhead_eq]
-    have hpointwise : ∀ tuple ∈ evalMatches (Graph.authGraph store f) env (before ++ hm),
-        (if tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
-              | some id => store.hasFact id
-              | none => false) = true
-          then Specification.evaluate (Specification.mk tailGiven tailMatches s.projection) store
-                (tuple.restrictTo (tailGiven.map (·.name)))
-          else [])
-        = Specification.evaluate (Specification.mk tailGiven tailMatches s.projection)
-            (Graph.authGraph store f) (tuple.restrictTo (tailGiven.map (·.name))) := by
-      intro tuple htuple
-      have hallTrue : tailGiven.all (fun l => match (tuple.restrictTo (tailGiven.map (·.name))) l.name with
-          | some id => store.hasFact id
-          | none => false) = true := by
-        rw [List.all_eq_true]
-        intro l hl
-        obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
-        have hcontains : (tailGiven.map (·.name)).contains l.name = true := by
-          rw [List.contains_iff_mem]
-          exact List.mem_map_of_mem hl
-        have hrestr : (tuple.restrictTo (tailGiven.map (·.name))) l.name = some id := by
-          simp only [Env.restrictTo, hcontains, ite_true]
-          exact heq
-        rw [hrestr]
-        obtain ⟨ff, hff, hffeq⟩ := hInStore
-        show store.hasFact id = true
-        unfold Graph.hasFact
-        exact List.find?_isSome.mpr ⟨ff, hff, by simp [hffeq]⟩
-      simp only [hallTrue, ite_true]
-      have hclosedEnv : EnvClosed store (tuple.restrictTo (tailGiven.map (·.name))) := by
-        intro x xid hx
-        have hxmemBool : (tailGiven.map (·.name)).contains x = true := by
-          cases hc : (tailGiven.map (·.name)).contains x with
-          | true => rfl
-          | false =>
-            exfalso
-            have hxnone : (tuple.restrictTo (tailGiven.map (·.name))) x = none := by
-              unfold Env.restrictTo
-              rw [hc]
-              simp
-            rw [hxnone] at hx
-            simp at hx
-        have hxmem : x ∈ tailGiven.map (·.name) := List.contains_iff_mem.mp hxmemBool
-        obtain ⟨l, hl, hln⟩ := List.mem_map.mp hxmem
-        obtain ⟨id, heq, hInStore⟩ := hheadStore tuple htuple l hl
-        have hxval : (tuple.restrictTo (tailGiven.map (·.name))) x = some id := by
-          simp only [Env.restrictTo, hxmemBool, ite_true]
-          rw [← hln]
-          exact heq
-        rw [hxval] at hx
-        exact (Option.some.inj hx) ▸ hInStore
-      unfold Specification.evaluate
-      congr 1
-      exact (evalMatches_authGraph_agree hclosed hfnotin tailMatches
-        (by
-          have h1 := hoistMatches_ordinaryTypes (scopeAt s before) 0 true (pivot :: after) hordBoth.2
-          rw [hgenM] at h1
-          simpa using h1) _ hclosedEnv).symm
-    exact Iff.of_eq (congrArg (r ∈ ·) (flatMap_congr hpointwise))
+    have hordTailMatches : OrdinaryTypesMatches tailMatches := by
+      have h1 := hoistMatches_ordinaryTypes (scopeAt s before) 0 true (pivot :: after) hordBoth.2
+      rw [hgenM] at h1
+      simpa using h1
+    exact Iff.of_eq (congrArg (r ∈ ·) (flatMap_congr
+      (tailGiven_pointwise hclosed hfnotin (before ++ hm) tailGiven tailMatches s.projection
+        hordTailMatches hheadStore)))
 
 end BoundaryHoist
 
