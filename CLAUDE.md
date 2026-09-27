@@ -6,8 +6,14 @@ Prefer the simplest theorem that is still true and useful: minimal hypotheses,
 the narrowest scope that still covers the motivating case, a hypothesis named
 for what it means rather than a conjunction of ad hoc conditions. This project
 already does this — `store_denies`/`store_correct` take only the hypotheses
-their proofs actually use; `hoist_correct_reduced` states a reduced scope
-rather than a general theorem with a `sorry` in it.
+their proofs actually use, and `hoist_correct` holds for every well-formed
+specification, with no hypothesis beyond `WellFormed s`, because that turned
+out to be the narrowest scope that was actually true: an earlier version
+(`hoist_correct_reduced`, since deleted) covered only specifications where
+`hoist`'s split-label numbering happened to match `splitPaths`', and was
+replaced rather than kept once the general argument was found — a narrower
+theorem earns its keep only while it is genuinely simpler to prove, not
+merely because it was proved first.
 
 The same preference applies to the *proof*, not only the statement. Measure
 proof simplicity in lines of code / information complexity — "does it
@@ -37,11 +43,13 @@ compile" is not the bar. Concretely:
   harder to prove.
 - When two true theorems are both available, prefer the one whose proof is
   shorter, even at a small cost to generality — this is why
-  `hoist_correct_reduced` requires *all* of the pivot's own top-level
-  conditions to be eligible for hoisting, rather than stating the fact
-  condition-by-condition: the stronger hypothesis keeps `hoist`'s split-label
-  numbering identical to `splitPaths`', so the proof reduces directly to
-  `split_correct` instead of needing a renaming-invariance argument.
+  `hoistMatches_agree`/`hoistConditions_agree`/`hoistCondition_agree`
+  (`Proofs/Hoist.lean`) are separate, non-recursive corollaries built from
+  `evalMatches_frame` and each function's own `_reserved` fact, rather than
+  folded into `hoistMatches_correct`'s own conclusion: bundling the
+  environment-agreement result into the main mutual induction would need it
+  threaded through every recursive call, where stating it separately needs
+  only that a hoisted head match's own name is reserved.
 
 When asked to simplify existing proofs, look first for: (1) lemmas restating
 the same fact in more than one file, (2) hand-duplicated recursive
