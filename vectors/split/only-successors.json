@@ -16,6 +16,7 @@
  "expected":
  {"tailText":
   "(p1: Company) {\n    u1: Office [\n        u1->company: Company = p1\n    ]\n} => u1\n",
+  "tailReadsGiven": true,
   "tail":
   {"projection": {"type": "fact", "label": "u1"},
    "matches":

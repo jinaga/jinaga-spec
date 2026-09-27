@@ -30,6 +30,8 @@ composes the steps.
 | Every split label is reserved, so it differs from every label the specification declares. | Proved: `splitPaths_names`, `isReserved_splitLabel`. |
 | The head is deterministic (the graph can run it). | True by construction, **not proved**. |
 | The head and tail are themselves `WellFormed`, so they can be split or transformed again. | **Not stated, not proved.** |
+| A rule whose tail is not given the fact under authorization means the same on the store as the specification means. | Proved: `store_correct`. |
+| A rule whose tail is given it admits nobody. | Proved: `store_denies`. |
 
 The last two matter only if a head or tail is fed to another algorithm that
 assumes well-formedness. Nothing does today.
@@ -61,6 +63,17 @@ one given, and a projection of a single fact. The split does not need them, but
 the evaluator does: it seeds the head from `head.given[0]`, which seeds every
 given exactly when there is one. Checked once in the constructor, the evaluator
 does not check them per call.
+
+A third rule-level condition belongs at the same boundary: the tail must not be
+given the rule's own given. A rule runs while its fact is being authorized,
+before that fact is saved, so the store the tail runs on does not have it
+(`JinagaSpec/Store.lean`, `docs/findings.md`). `tailReadsGiven` decides this
+from the split alone, and `jinaga.js`'s constructor throws
+`AuthorizationRuleError` when it is true (commit "Refuse an authorization rule
+whose tail is given the fact under authorization", branch
+`claude/quirky-einstein-ixwwgj`). `store_denies` and `store_correct` say the
+check is exact: false means the store means what the graph means, true means
+the rule admits nobody.
 
 ## Who can hand the split a specification
 

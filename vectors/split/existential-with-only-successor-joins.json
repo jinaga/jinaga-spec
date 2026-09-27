@@ -33,6 +33,7 @@
  "expected":
  {"tailText":
   "(u1: Company) {\n    u2: Administrator [\n        u2->company: Company = u1\n        !E {\n            u3: Administrator.Revoked [\n                u3->administrator: Administrator = u2\n            ]\n        }\n    ]\n} => u2\n",
+  "tailReadsGiven": false,
   "tail":
   {"projection": {"type": "fact", "label": "u2"},
    "matches":

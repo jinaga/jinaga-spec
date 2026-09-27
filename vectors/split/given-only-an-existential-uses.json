@@ -32,6 +32,7 @@
  "expected":
  {"tailText":
   "(p2: Jinaga.User, u1: Blog) {\n    u2: Post [\n        u2->blog: Blog = u1\n        !E {\n            u3: Ban [\n                u3->user: Jinaga.User = p2\n            ]\n        }\n    ]\n} => u2\n",
+  "tailReadsGiven": false,
   "tail":
   {"projection": {"type": "fact", "label": "u2"},
    "matches":

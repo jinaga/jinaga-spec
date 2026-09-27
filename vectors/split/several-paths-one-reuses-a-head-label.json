@@ -35,6 +35,7 @@
  "expected":
  {"tailText":
   "(u1: Workspace, __s1: Workspace) {\n    u2: Owner [\n        u2->workspace: Workspace = u1\n        u2->workspace: Workspace = __s1\n    ]\n    u3: Jinaga.User [\n        u3 = u2->user: Jinaga.User\n    ]\n} => u3\n",
+  "tailReadsGiven": false,
   "tail":
   {"projection": {"type": "fact", "label": "u3"},
    "matches":

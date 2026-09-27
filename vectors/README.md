@@ -16,7 +16,8 @@ and regenerate. `scripts/verify.sh` fails if these files are out of date.
     "head": { ... } | null,              // null when the split has no head
     "tail": { ... } | null,              // null when the whole specification is the head
     "headText": "..." | null,
-    "tailText": "..." | null
+    "tailText": "..." | null,
+    "tailReadsGiven": false              // is the rule's own given (given[0]) a tail given?
   }
 }
 ```
@@ -25,6 +26,13 @@ A port passes a vector when `splitBeforeFirstSuccessor(specification)` deep-equa
 `expected.head` and `expected.tail` (a missing head or tail is `null`), and, if it
 has a text printer, when printing the input, the head, and the tail gives `text`,
 `headText`, and `tailText`.
+
+`expected.tailReadsGiven` is whether the tail's givens include the specification's
+own first given (`given[0]`): the shape `AuthorizationRuleSpecification`'s
+constructor in `jinaga.js` refuses, because that given is the fact under
+authorization, absent from the store when the rule runs (`docs/contracts.md`,
+`Store.lean`). A port that builds an authorization rule (not just a split) should
+throw exactly when this is `true`.
 
 The JSON shapes are those of `Specification` in `jinaga.js`
 (`src/specification/specification.ts`). Givens carry `conditions: []`; conditions

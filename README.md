@@ -21,6 +21,7 @@ tractable, and the ports checkable. The answer so far is yes. Nothing in `jinaga
 | `docs/findings.md` | What the spike turned up. Read this after the theorem. |
 | `docs/contracts.md` | What the split expects, who must provide it, and how to check a sequence of steps. |
 | `JinagaSpec/WellFormed.lean` | `isWellFormed`: an executable check of the split's preconditions, proved to agree with `WellFormed`. |
+| `JinagaSpec/Store.lean`, `JinagaSpec/Proofs/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary theorem `tailReadsGiven` decides. |
 
 ## Try it
 
@@ -64,6 +65,32 @@ The theorem is about sets of results. It does not claim the split returns them
 in the same order or with the same multiplicity, which authorization does not
 need (it asks whether any result is the user).
 
+`split_correct` runs the head and the tail on the same graph. A rule does not:
+it runs while its fact is being authorized, before that fact is saved, so the
+store the tail runs on does not have it. `JinagaSpec/Store.lean` models this —
+`Split.evaluateStore` is the runner's behaviour, and `tailReadsGiven` is what
+`jinaga.js`'s constructor checks — and two theorems say the check is exact:
+
+```lean
+theorem store_denies (hwf : WellFormed s) (hg : s.given = [g0]) (hord : OrdinaryTypes s)
+    (hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
+    (hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
+    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = true) :
+    (splitBeforeFirstSuccessor s).evaluateStore store f env = []
+
+theorem store_correct (hwf : WellFormed s) (hg : s.given = [g0]) (hord : OrdinaryTypes s)
+    (hclosed : store.closed) (hfnotin : ¬ InStore store f.id)
+    (hfpred : ∀ p ∈ f.predecessors, InStore store p.2) (henv : env g0.name = some f.id)
+    (h : tailReadsGiven (splitBeforeFirstSuccessor s) g0.name = false) (r : List (Option FactId)) :
+    r ∈ (splitBeforeFirstSuccessor s).evaluateStore store f env ↔
+      r ∈ s.evaluate (Graph.authGraph store f) env
+```
+
+A rule with one given, whose tail reads that given, admits nobody
+(`store_denies`). One that does not means, on the store, exactly what the whole
+specification means on the graph that holds the given (`store_correct`). See
+`docs/findings.md` for the retyping trick both proofs lean on.
+
 ## Reading the definitions
 
 `Split.lean` is in a deliberately **portable subset**: inductive types, total
@@ -82,6 +109,9 @@ A port should read line for line. Names match TypeScript, with these exceptions:
 | `tailGivenAt` | `referencedLabels(tailMatches, inScope, projection)` |
 | `splitPaths`, `splitLabel` | the two `map`s over the pivot's path conditions, and `splitLabel(i)` |
 | `WellFormed` | what `SpecificationParser` and `validateSpecification` enforce |
+| `Graph.authGraph` | the in-memory write batch, with the fact under authorization added |
+| `Split.evaluateStore` | `AuthorizationRuleSpecification.isAuthorized`/`getAuthorizedPopulation`, running the tail on the store |
+| `tailReadsGiven` | the check in `AuthorizationRuleSpecification`'s constructor that throws `AuthorizationRuleError` |
 
 
 ## Conformance vectors
@@ -112,11 +142,15 @@ harder to hide, but they are not a proof about the TypeScript.
 ## Next
 
 1. Wire `isWellFormed` into the `AuthorizationRuleSpecification` constructors in
-   `jinaga.js` and `jinaga.net` (`docs/contracts.md`).
+   `jinaga.net` (`docs/contracts.md`); `jinaga.js` now does both this and the
+   `tailReadsGiven` check (branch `claude/quirky-einstein-ixwwgj`, not yet merged).
 2. Given conditions and the remaining projections, and a .NET runner for the vectors.
 3. Vectors that check evaluation (a specification, a graph, and the expected
    results), so a port is checked on meaning as well as on shape.
-4. `buildFeeds`, then skeleton canonicity, then distribution soundness.
+4. Hoist a tail's predecessor walks of the given into the head (issue #297), so
+   fewer rules trip `tailReadsGiven`; see `docs/findings.md` for where it stops
+   being sound.
+5. `buildFeeds`, then skeleton canonicity, then distribution soundness.
 
 ## License
 

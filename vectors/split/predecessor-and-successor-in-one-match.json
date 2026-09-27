@@ -16,6 +16,7 @@
  "expected":
  {"tailText":
   "(__s0: Office) {\n    u1: President [\n        u1->office: Office = __s0\n    ]\n} => u1\n",
+  "tailReadsGiven": false,
   "tail":
   {"projection": {"type": "fact", "label": "u1"},
    "matches":

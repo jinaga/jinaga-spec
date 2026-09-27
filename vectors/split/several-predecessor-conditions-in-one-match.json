@@ -21,6 +21,7 @@
  "name": "several-predecessor-conditions-in-one-match",
  "expected":
  {"tailText": null,
+  "tailReadsGiven": false,
   "tail": null,
   "headText":
   "(p1: Comment) {\n    u1: Jinaga.User [\n        u1 = p1->author: Jinaga.User\n        u1 = p1->post: Post->blog: Blog->creator: Jinaga.User\n    ]\n} => u1\n",

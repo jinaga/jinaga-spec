@@ -28,6 +28,7 @@
  "expected":
  {"tailText":
   "(u1: Jinaga.User) {\n    u2: Blog [\n        u2->creator: Jinaga.User = u1\n    ]\n} => u2\n",
+  "tailReadsGiven": false,
   "tail":
   {"projection": {"type": "fact", "label": "u2"},
    "matches":

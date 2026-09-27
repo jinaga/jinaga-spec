@@ -16,6 +16,11 @@ def caseToJson (c : Case) : Json :=
   let text : Option Specification → Json
     | none => Json.null
     | some s => Json.str (describeSpecification s)
+  -- The rule's own given, `given[0]` in `jinaga.js`: the fact under
+  -- authorization, which the constructor refuses to let the tail read.
+  let given0Name := match c.spec.given with
+    | g0 :: _ => g0.name
+    | [] => ""
   Json.mkObj [
     ("name", c.name),
     ("description", c.description),
@@ -26,7 +31,8 @@ def caseToJson (c : Case) : Json :=
       ("head", optionToJson specificationToJson split.head),
       ("tail", optionToJson specificationToJson split.tail),
       ("headText", text split.head),
-      ("tailText", text split.tail)])]
+      ("tailText", text split.tail),
+      ("tailReadsGiven", tailReadsGiven split given0Name)])]
 
 def wellFormedCaseToJson (c : WellFormedCase) : Json :=
   Json.mkObj [

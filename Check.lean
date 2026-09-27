@@ -81,6 +81,21 @@ def genEnv (s : Specification) (g : Graph) : Gen Env := do
     ids := ids ++ [id]
   return s.bindGivens ids
 
+/-- A fact of the given's type, under authorization: an id fresh with respect to
+`store` (one past every id `genGraph` can produce), with predecessors chosen
+from `store`'s own facts, so that `store.closed`, `f.id` absent from `store`, and
+every predecessor of `f` present in `store` all hold by construction. -/
+def genBatchFact (s : Specification) (g0 : Label) (store : Graph) (size : Nat) : Gen Fact := do
+  let roles := (rolesInMatches s.matchList).eraseDups
+  let mut preds : List (Name × Nat) := []
+  for role in roles do
+    if ← chance 3 4 then
+      let targets := (store.filter fun sf => sf.type == role.predecessorType).map (·.id)
+      if !targets.isEmpty then
+        preds := (role.name, ← pick targets) :: preds
+        if ← chance 1 4 then preds := (role.name, ← pick targets) :: preds
+  return { id := size, type := g0.type, predecessors := preds }
+
 /-! ## Random specifications, well scoped by construction -/
 
 /-- Most specifications use one fact type, so that two walks often meet. -/
@@ -181,6 +196,81 @@ def checkSpec (s : Specification) (graphs : Nat) : Gen (Tally × Option String) 
       tally := { tally with failures := tally.failures + 1 }
   return (tally, report)
 
+/-! ## Store check
+
+Compares `Split.evaluateStore` against the reference semantics of authorization
+(`s.evaluate (Graph.authGraph store f) env`) on random closed stores, split by
+`tailReadsGiven`: agreement everywhere it is false, empty results everywhere it
+is true. Only single-given specifications: `Store.lean`'s theorems are stated
+for one given. -/
+
+structure StoreTally where
+  checks : Nat := 0
+  tailReadsTrue : Nat := 0
+  tailReadsFalse : Nat := 0
+  failures : Nat := 0
+
+def addStore (t u : StoreTally) : StoreTally :=
+  { checks := t.checks + u.checks, tailReadsTrue := t.tailReadsTrue + u.tailReadsTrue,
+    tailReadsFalse := t.tailReadsFalse + u.tailReadsFalse, failures := t.failures + u.failures }
+
+def checkStoreSpec (s : Specification) (graphs : Nat) : Gen (StoreTally × Option String) := do
+  match s.given with
+  | [g0] =>
+    let split := splitBeforeFirstSuccessor s
+    let reads := tailReadsGiven split g0.name
+    let mut tally : StoreTally := {}
+    let mut report := none
+    for _ in [0:graphs] do
+      let store ← genGraph s 8
+      let f ← genBatchFact s g0 store 8
+      let env : Env := fun n => if n = g0.name then some f.id else none
+      let expected := s.evaluate (Graph.authGraph store f) env
+      let actual := split.evaluateStore store f env
+      let ok := if reads then actual.isEmpty else sameSet expected actual
+      tally := { tally with checks := tally.checks + 1,
+                             tailReadsTrue := tally.tailReadsTrue + (if reads then 1 else 0),
+                             tailReadsFalse := tally.tailReadsFalse + (if reads then 0 else 1),
+                             failures := tally.failures + (if ok then 0 else 1) }
+      if !ok && report.isNone then
+        report := some s!"{describeSpecification s}\ntailReadsGiven={reads}\nexpected {repr expected}\nactual   {repr actual}"
+    return (tally, report)
+  | _ => return ({}, none)
+
+/-- Without the absent-given rule, the tail would run on `store` regardless of
+whether it is seeded with a fact the store does not have. -/
+def evaluateStoreNoGuard (split : Split) (store : Graph) (f : Fact) (env : Env) :
+    List (List (Option FactId)) :=
+  match split.tail with
+  | none => split.head.evaluate (Graph.authGraph store f) env
+  | some tail =>
+    (evalMatches (Graph.authGraph store f) env split.head.matchList).flatMap fun tuple =>
+      tail.evaluate store (tuple.restrictTo (tail.given.map (·.name)))
+
+/-- How often does dropping the absent-given rule change the result of a
+specification whose tail reads the given? It must, every time, or the guard is
+not doing anything `evaluateStore` didn't already do for free. -/
+def storeMutationScore (specs : List Specification) (graphs : Nat) (gen : StdGen × Nat) : IO Unit := do
+  let mut caught := 0
+  let mut applicable := 0
+  let mut g := gen
+  for s in specs do
+    match s.given with
+    | [g0] =>
+      let split := splitBeforeFirstSuccessor s
+      if tailReadsGiven split g0.name then
+        applicable := applicable + 1
+        let mut found := false
+        for _ in [0:graphs] do
+          let ((store, f), g') :=
+            (do let st ← genGraph s 8; return (st, ← genBatchFact s g0 st 8)).run g
+          g := g'
+          let env : Env := fun n => if n = g0.name then some f.id else none
+          if !(evaluateStoreNoGuard split store f env).isEmpty then found := true
+        if found then caught := caught + 1
+    | _ => pure ()
+  IO.println s!"  mutant \"drop the absent-given rule\": caught on {caught} of {applicable} tailReadsGiven specifications"
+
 /-- How many of the specifications does a mutant get caught on? -/
 def mutationScore (specs : List Specification) (graphs : Nat) (gen : StdGen × Nat) : IO Unit := do
   for (label, mutate) in mutants do
@@ -226,14 +316,29 @@ def main (args : List String) : IO UInt32 := do
     random := add random t
     if firstFailure.isNone then firstFailure := r.map (s!"random spec\n" ++ ·)
   IO.println s!"random specs:  {random.checks} checks, {random.nonEmpty} with results, {random.split} split, {random.failures} failures"
-  IO.println "mutation check (each wrong split must be caught):"
   let mut pool := []
   let mut g := gen
   for _ in [0:300] do
     let (s, g') := genSpec.run g
     g := g'
     pool := pool ++ [s]
+  -- The store check: Split.evaluateStore against the reference semantics on
+  -- random closed stores, split by tailReadsGiven.
+  let mut storeTotal : StoreTally := {}
+  for c in cases do
+    let ((t, r), g') := (checkStoreSpec c.spec 30).run g
+    g := g'
+    storeTotal := addStore storeTotal t
+    if firstFailure.isNone then firstFailure := r.map (s!"store check, case {c.name}\n" ++ ·)
+  for s in pool do
+    let ((t, r), g') := (checkStoreSpec s 10).run g
+    g := g'
+    storeTotal := addStore storeTotal t
+    if firstFailure.isNone then firstFailure := r.map (s!"store check, random spec\n" ++ ·)
+  IO.println s!"store check:   {storeTotal.checks} checks, {storeTotal.tailReadsTrue} tailReadsGiven=true (must be empty), {storeTotal.tailReadsFalse} tailReadsGiven=false (must agree with the reference semantics), {storeTotal.failures} failures"
+  IO.println "mutation check (each wrong split must be caught):"
   mutationScore (cases.map (·.spec) ++ pool) 30 g
+  storeMutationScore (cases.map (·.spec) ++ pool) 30 g
   match firstFailure with
   | none => return 0
   | some report => IO.println s!"\nFIRST FAILURE\n{report}"; return 1

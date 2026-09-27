@@ -21,6 +21,7 @@ const { splitBeforeFirstSuccessor } = await import(pathToFileURL(join(jinagaJs, 
 const { describeSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/description.ts")).href);
 // Earlier commits of jinaga.js have no well-formedness check, so it is optional.
 const { wellFormedErrors } = await import(pathToFileURL(join(jinagaJs, "src/specification/specification-validation.ts")).href);
+const { AuthorizationRules } = await import(pathToFileURL(join(jinagaJs, "src/authorization/authorizationRules.ts")).href);
 
 // A missing head or tail is `undefined` in TypeScript and `null` in a vector.
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
@@ -56,6 +57,29 @@ for (const file of files) {
 }
 console.log(`\n${files.length - failed} of ${files.length} split vectors pass against ${jinagaJs}`);
 
+// The rule-level check: a rule with one given and a fact projection is what
+// `AuthorizationRuleSpecification`'s constructor accepts. It throws exactly
+// when the tail is given the rule's own given, which the store cannot supply
+// while the fact is under authorization (`docs/contracts.md`, `Store.lean`).
+let tailReadsGivenChecked = 0;
+let tailReadsGivenFailed = 0;
+for (const file of files) {
+    const vector = JSON.parse(readFileSync(join(vectorsDir, file), "utf8"));
+    if (vector.specification.given.length !== 1 || vector.specification.projection.type !== "fact") continue;
+    tailReadsGivenChecked++;
+    let threw = false;
+    try {
+        AuthorizationRules.loadFromDescription("authorization {\n" + vector.text + "}\n");
+    } catch {
+        threw = true;
+    }
+    if (threw !== vector.expected.tailReadsGiven) {
+        tailReadsGivenFailed++;
+        console.log(`  FAIL  ${vector.name}   (${vector.source}): tailReadsGiven=${vector.expected.tailReadsGiven}, constructor ${threw ? "threw" : "did not throw"}`);
+    }
+}
+console.log(`\n${tailReadsGivenChecked - tailReadsGivenFailed} of ${tailReadsGivenChecked} tailReadsGiven vectors agree with the constructor's check`);
+
 let wellFormedFailed = 0;
 const checkers: [string, (specification: any) => boolean][] = [["reference", isWellFormed]];
 if (wellFormedErrors) checkers.push(["jinaga.js", specification => wellFormedErrors(structuredClone(specification)).length === 0]);
@@ -71,4 +95,4 @@ for (const file of wellFormedFiles) {
     }
 }
 console.log(`\n${wellFormedFiles.length - wellFormedFailed} of ${wellFormedFiles.length} well-formedness vectors pass (${checkers.map(([name]) => name).join(", ")})`);
-process.exit(failed === 0 && wellFormedFailed === 0 ? 0 : 1);
+process.exit(failed === 0 && tailReadsGivenFailed === 0 && wellFormedFailed === 0 ? 0 : 1);

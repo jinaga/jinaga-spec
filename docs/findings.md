@@ -100,6 +100,40 @@ mechanisms in one case, and is now two vectors.
   echo` does not trip `set -e`). It now does, and the check is shown to fail on a
   corrupted vector.
 
+## The store is a graph with the given retyped, not a second semantics
+
+`Split.evaluate` runs the head and the tail over the *same* graph, so it cannot
+see either consequence of a rule running before its own fact is saved: that the
+fact is absent from the store, and that it must still be reachable by walking
+predecessors from it. Modelling this with a second, store-shaped semantics
+would have meant re-proving locality and the pivot step against it. Instead
+`Graph.authGraph store f := store ++ [{ f with type := batchType }]` reuses
+`Split.evaluate` and `split_correct` unchanged: it is one call of `evaluate` on
+one graph, just built to make the two consequences true by construction.
+
+The reserved batch type is the whole trick. `Graph.step` looks a start fact up
+by id, so a walk that starts at `f` (because some label is already bound to it)
+still reaches its predecessors — the graph must hold `f` for that. But
+`evalMatches` filters every candidate by type before it ever binds one, and no
+ordinary type is the batch type, so `f` can never be *bound* to a fresh
+unknown — the graph must hide `f` from that. Retyping the one fact gets both
+for free: present to a walk that already knows where it starts, invisible to a
+scan that does not.
+
+`store_denies` and `store_correct` (`JinagaSpec/Proofs/Store.lean`) show
+`tailReadsGiven` is exactly the boundary. The harder direction,
+`store_correct`, needed one more fact that was not free: a walk of at least one
+step, whether it starts at `f` or at a fact already in the store, never lands
+outside a closed store. Without it, `f` could in principle be reached by a
+walk two hops from the given, `authGraph`'s retyping would not stop that, and
+a split label bound to `f` would leak into a tail given that the store cannot
+resolve. The empirical check (`checkStoreSpec` in `Check.lean`) agreed on every
+graph across three seeds before the proof was attempted, and the mutation
+check (dropping the absent-given rule from `evaluateStore`) is caught on a
+genuine but small minority of `tailReadsGiven` specifications — most such
+walks fail on their own once the given is retyped, and the guard's real work is
+catching the rule's given passed straight through to the tail's projection.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -110,6 +144,7 @@ mechanisms in one case, and is now two vectors.
 | `Main.lean` | The pivot step, and the theorem. |
 | `WellFormedCheck.lean` | The executable check decides `WellFormed`. |
 | `Basic.lean`, `Scoped.lean` | Helper facts, and the definitions of well-formedness. |
+| `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies` and `store_correct`. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs

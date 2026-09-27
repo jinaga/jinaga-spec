@@ -15,6 +15,7 @@
  "name": "only-predecessors",
  "expected":
  {"tailText": null,
+  "tailReadsGiven": false,
   "tail": null,
   "headText":
   "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n    ]\n} => u1\n",
