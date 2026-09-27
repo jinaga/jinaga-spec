@@ -1,0 +1,53 @@
+{"text":
+ "(p1: Employee) {\n    s1: Office [\n        s1 = p1->office: Office\n    ]\n    u1: President [\n        u1->office: Office = p1->office: Office\n    ]\n} => u1\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "u1"},
+  "matches":
+  [{"unknown": {"type": "Office", "name": "s1"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [{"predecessorType": "Office", "name": "office"}],
+      "rolesLeft": [],
+      "labelRight": "p1"}]},
+   {"unknown": {"type": "President", "name": "u1"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [{"predecessorType": "Office", "name": "office"}],
+      "rolesLeft": [{"predecessorType": "Office", "name": "office"}],
+      "labelRight": "p1"}]}],
+  "given": [{"label": {"type": "Employee", "name": "p1"}, "conditions": []}]},
+ "source": "the naming rule of #231",
+ "name": "split-label-avoids-an-unknown",
+ "expected":
+ {"tailText":
+  "(s2: Office) {\n    u1: President [\n        u1->office: Office = s2\n    ]\n} => u1\n",
+  "tail":
+  {"projection": {"type": "fact", "label": "u1"},
+   "matches":
+   [{"unknown": {"type": "President", "name": "u1"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Office", "name": "office"}],
+       "labelRight": "s2"}]}],
+   "given": [{"label": {"type": "Office", "name": "s2"}, "conditions": []}]},
+  "headText":
+  "(p1: Employee) {\n    s1: Office [\n        s1 = p1->office: Office\n    ]\n    s2: Office [\n        s2 = p1->office: Office\n    ]\n} => s2\n",
+  "head":
+  {"projection": {"type": "fact", "label": "s2"},
+   "matches":
+   [{"unknown": {"type": "Office", "name": "s1"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [{"predecessorType": "Office", "name": "office"}],
+       "rolesLeft": [],
+       "labelRight": "p1"}]},
+    {"unknown": {"type": "Office", "name": "s2"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [{"predecessorType": "Office", "name": "office"}],
+       "rolesLeft": [],
+       "labelRight": "p1"}]}],
+   "given": [{"label": {"type": "Employee", "name": "p1"}, "conditions": []}]}},
+ "description":
+ "An earlier match is already named s1, so the split label is s2."}

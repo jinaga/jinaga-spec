@@ -1,0 +1,63 @@
+{"text":
+ "(p1: Post) {\n    u1: Jinaga.User [\n        u1 = p1->blog: Blog->creator: Jinaga.User\n    ]\n    u2: Post [\n        u2->blog: Blog = p1->blog: Blog\n    ]\n} => u1\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "u1"},
+  "matches":
+  [{"unknown": {"type": "Jinaga.User", "name": "u1"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight":
+      [{"predecessorType": "Blog", "name": "blog"},
+       {"predecessorType": "Jinaga.User", "name": "creator"}],
+      "rolesLeft": [],
+      "labelRight": "p1"}]},
+   {"unknown": {"type": "Post", "name": "u2"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [{"predecessorType": "Blog", "name": "blog"}],
+      "rolesLeft": [{"predecessorType": "Blog", "name": "blog"}],
+      "labelRight": "p1"}]}],
+  "given": [{"label": {"type": "Post", "name": "p1"}, "conditions": []}]},
+ "source": "#297, the blog rule",
+ "name": "projected-label-reaches-the-tail",
+ "expected":
+ {"tailText":
+  "(u1: Jinaga.User, s1: Blog) {\n    u2: Post [\n        u2->blog: Blog = s1\n    ]\n} => u1\n",
+  "tail":
+  {"projection": {"type": "fact", "label": "u1"},
+   "matches":
+   [{"unknown": {"type": "Post", "name": "u2"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Blog", "name": "blog"}],
+       "labelRight": "s1"}]}],
+   "given":
+   [{"label": {"type": "Jinaga.User", "name": "u1"}, "conditions": []},
+    {"label": {"type": "Blog", "name": "s1"}, "conditions": []}]},
+  "headText":
+  "(p1: Post) {\n    u1: Jinaga.User [\n        u1 = p1->blog: Blog->creator: Jinaga.User\n    ]\n    s1: Blog [\n        s1 = p1->blog: Blog\n    ]\n} => {\n    s1 = s1\n    u1 = u1\n}\n",
+  "head":
+  {"projection":
+   {"type": "composite",
+    "components":
+    [{"type": "fact", "name": "u1", "label": "u1"},
+     {"type": "fact", "name": "s1", "label": "s1"}]},
+   "matches":
+   [{"unknown": {"type": "Jinaga.User", "name": "u1"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight":
+       [{"predecessorType": "Blog", "name": "blog"},
+        {"predecessorType": "Jinaga.User", "name": "creator"}],
+       "rolesLeft": [],
+       "labelRight": "p1"}]},
+    {"unknown": {"type": "Blog", "name": "s1"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [{"predecessorType": "Blog", "name": "blog"}],
+       "rolesLeft": [],
+       "labelRight": "p1"}]}],
+   "given": [{"label": {"type": "Post", "name": "p1"}, "conditions": []}]}},
+ "description":
+ "The rule projects a label the head binds. It is a given of the tail, next to the split label."}

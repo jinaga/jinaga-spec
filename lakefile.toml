@@ -1,0 +1,14 @@
+name = "jinaga_spec"
+version = "0.1.0"
+defaultTargets = ["JinagaSpec"]
+
+[[lean_lib]]
+name = "JinagaSpec"
+
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"
+
+[[lean_exe]]
+name = "check"
+root = "Check"

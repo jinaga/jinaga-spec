@@ -1,0 +1,64 @@
+{"text":
+ "(p1: Administrator) {\n    u1: Administrator [\n        u1->company: Company = p1->company: Company\n        !E {\n            u2: Administrator.Revoked [\n                u2->administrator: Administrator = u1\n            ]\n        }\n    ]\n} => u1\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "u1"},
+  "matches":
+  [{"unknown": {"type": "Administrator", "name": "u1"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [{"predecessorType": "Company", "name": "company"}],
+      "rolesLeft": [{"predecessorType": "Company", "name": "company"}],
+      "labelRight": "p1"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Administrator.Revoked", "name": "u2"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft":
+          [{"predecessorType": "Administrator", "name": "administrator"}],
+          "labelRight": "u1"}]}],
+      "exists": false}]}],
+  "given":
+  [{"label": {"type": "Administrator", "name": "p1"}, "conditions": []}]},
+ "source":
+ "splitSpecificationSpec: should split path when existential condition exists",
+ "name": "existential-on-the-pivot",
+ "expected":
+ {"tailText":
+  "(s1: Company) {\n    u1: Administrator [\n        u1->company: Company = s1\n        !E {\n            u2: Administrator.Revoked [\n                u2->administrator: Administrator = u1\n            ]\n        }\n    ]\n} => u1\n",
+  "tail":
+  {"projection": {"type": "fact", "label": "u1"},
+   "matches":
+   [{"unknown": {"type": "Administrator", "name": "u1"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Company", "name": "company"}],
+       "labelRight": "s1"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Administrator.Revoked", "name": "u2"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft":
+           [{"predecessorType": "Administrator", "name": "administrator"}],
+           "labelRight": "u1"}]}],
+       "exists": false}]}],
+   "given": [{"label": {"type": "Company", "name": "s1"}, "conditions": []}]},
+  "headText":
+  "(p1: Administrator) {\n    s1: Company [\n        s1 = p1->company: Company\n    ]\n} => s1\n",
+  "head":
+  {"projection": {"type": "fact", "label": "s1"},
+   "matches":
+   [{"unknown": {"type": "Company", "name": "s1"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [{"predecessorType": "Company", "name": "company"}],
+       "rolesLeft": [],
+       "labelRight": "p1"}]}],
+   "given":
+   [{"label": {"type": "Administrator", "name": "p1"}, "conditions": []}]}},
+ "description":
+ "The pivot carries a negative existential. It stays with the tail."}
