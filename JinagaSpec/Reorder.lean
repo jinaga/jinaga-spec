@@ -92,21 +92,22 @@ structure Pending where
   edges : List Edge
   filters : List Condition
 
-/-- An edge that reaches `u` from a label in `reach`, written on `u`. -/
-def reaching (reach : List Name) (u : Name) (e : Edge) : Option Edge :=
-  if e.1 == u && reach.contains e.2.labelRight then some e
-  else if e.2.labelRight == u && reach.contains e.1 then some e.reverse
+/-- An edge that reaches `u` from a label in `reach`: the edge as it is
+pending, and as it is written on `u`. -/
+def reaching (reach : List Name) (u : Name) (e : Edge) : Option (Edge × Edge) :=
+  if e.1 == u && reach.contains e.2.labelRight then some (e, e)
+  else if e.2.labelRight == u && reach.contains e.1 then some (e, e.reverse)
   else none
 
-/-- Bind `u`, leading with `lead`, and attach every edge and filter whose
-labels are now all bound. -/
-def place (bound : List Name) (p : Pending) (u : Label) (lead : Edge) : Pending × Match :=
+/-- Bind `u`, leading with `lead` (pending as `lead.1`, written as `lead.2`),
+and attach every edge and filter whose labels are now all bound. -/
+def place (bound : List Name) (p : Pending) (u : Label) (lead : Edge × Edge) : Pending × Match :=
   let bound := u.name :: bound
   let ready (e : Edge) := bound.contains e.1 && bound.contains e.2.labelRight
-  let edges := p.edges.erase lead
+  let edges := p.edges.erase lead.1
   let attached := edges.filter ready
   let filters := p.filters.filter fun c => c.freeLabels.all bound.contains
-  let conditions := (lead :: attached.map fun e => if e.1 == u.name then e else e.reverse).map (.path ·.2)
+  let conditions := (lead.2 :: attached.map fun e => if e.1 == u.name then e else e.reverse).map (.path ·.2)
   ({ labels := p.labels.erase u, edges := edges.filter (!ready ·),
      filters := p.filters.filter fun c => !c.freeLabels.all bound.contains },
    .mk u (conditions ++ filters))

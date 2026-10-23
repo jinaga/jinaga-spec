@@ -141,5 +141,22 @@ def genSpec (duplicates : Bool := false) (maxDepth : Nat := 2) (reuse : Bool := 
     | ls => Projection.composite (ls.map fun l => { name := l, label := l })
   return { given := givens given, matchList := matchList, projection := projection }
 
+/-- A fact of a type the specification names, with a new id, pointing only into
+`store`. Two times in three its type is one the matches' conditions name, so
+that it often witnesses an existential condition and removes a result. -/
+def genFreshFact (s : Specification) (store : Graph) (id : Nat) : Gen Fact := do
+  let types := (s.given.map (·.type) ++ typesInMatches s.matchList).eraseDups
+  let inConditions := (s.matchList.flatMap fun m => typesInConditions m.conditions).eraseDups
+  let types := if !inConditions.isEmpty && (← chance 2 3) then inConditions else types
+  let type ← pick (if types.isEmpty then ["A"] else types)
+  let mut preds : List (Name × Nat) := []
+  for role in (rolesInMatches s.matchList).eraseDups do
+    if ← chance 3 4 then
+      let targets := (store.filter (·.type == role.predecessorType)).map (·.id)
+      if !targets.isEmpty then
+        preds := (role.name, ← pick targets) :: preds
+        if ← chance 1 4 then preds := (role.name, ← pick targets) :: preds
+  return { id := id, type := type, predecessors := preds }
+
 def sameSet [BEq α] (a b : List α) : Bool :=
   a.all (b.contains ·) && b.all (a.contains ·)

@@ -24,7 +24,7 @@ if grep -q sorryAx "$tmp/out.txt"; then echo "one of the checked theorems depend
 echo "== Vectors are up to date"
 lake build vectors
 tmp="$(mktemp -d)"; lake exe vectors "$tmp" > /dev/null
-for kind in split well-formed; do
+for kind in split well-formed inverse; do
   diff -r "$tmp/$kind" "vectors/$kind" || { echo "vectors/$kind is out of date: run lake exe vectors"; exit 1; }
 done
 echo "vectors match the oracle"
@@ -51,6 +51,7 @@ if [ -d "$jinaga/src/specification" ]; then
     dump="$(mktemp -d)/inverse-dump.json"
     (cd ../.. && lake exe check-inverse dump "$dump" 1 > /dev/null)
     JINAGA_JS="$jinaga" npx tsx inverse-diff.ts "$dump" | grep -E "specifications|FAIL"
+    JINAGA_JS="$jinaga" npm run --silent inverse | grep -E "inverse vectors|FAIL|misses changes"
     npm run --silent audit | tail -2
   )
 else

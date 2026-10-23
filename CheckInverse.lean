@@ -30,23 +30,6 @@ def JinagaSpec.Operation.name : Operation → String
 def JinagaSpec.Inverse.describe (ι : Inverse) : String :=
   s!"{ι.operation.name}\n" ++ describeMatch 0 ι.given ++ describeMatches 1 ι.matchList
 
-/-- A fact of a type the specification names, with a new id, pointing only into
-`store`. Two times in three its type is one the matches' conditions name, so
-that it often witnesses an existential condition and removes a result. -/
-def genFreshFact (s : Specification) (store : Graph) (id : Nat) : Gen Fact := do
-  let types := (s.given.map (·.type) ++ typesInMatches s.matchList).eraseDups
-  let inConditions := (s.matchList.flatMap fun m => typesInConditions m.conditions).eraseDups
-  let types := if !inConditions.isEmpty && (← chance 2 3) then inConditions else types
-  let type ← pick (if types.isEmpty then ["A"] else types)
-  let mut preds : List (Name × Nat) := []
-  for role in (rolesInMatches s.matchList).eraseDups do
-    if ← chance 3 4 then
-      let targets := (store.filter (·.type == role.predecessorType)).map (·.id)
-      if !targets.isEmpty then
-        preds := (role.name, ← pick targets) :: preds
-        if ← chance 1 4 then preds := (role.name, ← pick targets) :: preds
-  return { id := id, type := type, predecessors := preds }
-
 /-! ## Counting -/
 
 structure Tally where
@@ -338,7 +321,10 @@ def dump (path : System.FilePath) (seed : Nat) : IO Unit := do
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
   let mut out : Array Json := #[]
   for _ in [0:400] do
-    let (s, g) := (genSpec false 3 true).run gen
+    -- No reused names: with them, two matches of one name can carry the same
+    -- condition, and the TypeScript removes it by identity where the port
+    -- removes it by equality (`Inverse.lean`). jinaga.js#343 is that case.
+    let (s, g) := (genSpec false 3 false).run gen
     gen := g
     let inverses := match invertSpecification s with
       | .ok is => Json.arr (is.map fun ι => Json.str ι.describe).toArray

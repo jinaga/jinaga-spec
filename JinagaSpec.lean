@@ -8,6 +8,7 @@ import JinagaSpec.Build
 import JinagaSpec.Describe
 import JinagaSpec.Json
 import JinagaSpec.Cases
+import JinagaSpec.InverseCases
 import JinagaSpec.Maintain
 import JinagaSpec.Inverse
 import JinagaSpec.Candidates
