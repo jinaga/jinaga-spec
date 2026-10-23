@@ -11,8 +11,9 @@ inverse so that reading starts at the new fact and walks to its row:
 1. **Flatten the path.** Each existential condition the path passes through is
    `exists` and holds the pin. Its matches become ordinary matches, right after
    the match that held it. The specification's own projection names only its
-   top-level labels, so the results do not change, provided no label is
-   declared twice (`DistinctLabels`).
+   top-level labels, so the results do not change. A lifted label is renamed
+   (`liftLabel`): the parser scopes an existential condition's labels to the
+   condition, so a later match may reuse the name (jinaga/jinaga.js#343).
 2. **Order from the new fact.** Bind first whatever path conditions reach from
    `__f`, then the givens, then whatever reaches from those. Each match leads
    with the path condition that reached it, reversed if it was written on the
@@ -43,9 +44,32 @@ mutual
     | .existential _ ms => pinnedMatches ms
 end
 
+/-- What a lifted label is renamed to. Reserved, so it cannot collide with a
+label the specification declares, and distinct from `pinLabel`. -/
+def liftLabel (n : Name) : Name := "__l" ++ n
+
+def renameLabel (names : List Name) (n : Name) : Name := if names.contains n then liftLabel n else n
+
+mutual
+  /-- Rename `names`, wherever they are declared or named. -/
+  def renameMatches (names : List Name) : List Match → List Match
+    | [] => []
+    | .mk u cs :: rest =>
+      .mk { u with name := renameLabel names u.name } (renameConditions names cs) :: renameMatches names rest
+
+  def renameConditions (names : List Name) : List Condition → List Condition
+    | [] => []
+    | c :: cs => renameCondition names c :: renameConditions names cs
+
+  def renameCondition (names : List Name) : Condition → Condition
+    | .path pc => .path { pc with labelRight := renameLabel names pc.labelRight }
+    | .existential e ms => .existential e (renameMatches names ms)
+end
+
 mutual
   /-- Lift the matches of every existential condition that holds the pin into
-  the list, after the match that held it. -/
+  the list, after the match that held it, renamed so that no later label of the
+  same name captures them. -/
   def flattenMatches : List Match → List Match
     | [] => []
     | .mk u cs :: rest =>
@@ -57,7 +81,9 @@ mutual
     | c :: cs =>
       let (keep, lifted) := flattenConditions cs
       match c with
-      | .existential true ms => if pinnedMatches ms then (keep, flattenMatches ms ++ lifted) else (c :: keep, lifted)
+      | .existential true ms =>
+        if pinnedMatches ms then (keep, renameMatches (ms.map (·.unknown.name)) (flattenMatches ms) ++ lifted)
+        else (c :: keep, lifted)
       | c => (c :: keep, lifted)
 end
 

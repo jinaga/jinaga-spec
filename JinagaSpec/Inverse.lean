@@ -198,17 +198,19 @@ def inferOperation : Operation → Bool → Operation
 def removeCondition (ms : List Match) (c : Condition) : List Match :=
   ms.map fun m => if m.conditions.contains c then .mk m.unknown (m.conditions.filter (· != c)) else m
 
-/-- The inverse whose given is the first of `ordered`. The given keeps only its
-existential conditions. -/
-def mkInverse (op : Operation) : List Match → List Inverse
+/-- The inverse given `label`, with the existential conditions of the first of
+`ordered`. As in the TypeScript, the label is the one asked for and the
+conditions are those of whatever match `shakeTree` put first; they differ when
+a later label of the same name captured the lookup (jinaga/jinaga.js#343). -/
+def mkInverse (op : Operation) (label : Label) : List Match → List Inverse
   | [] => []
-  | m :: rest => [{ given := .mk m.unknown (m.conditions.filter (!·.isPath)), matchList := rest, operation := op }]
+  | m :: rest => [{ given := .mk label (m.conditions.filter (!·.isPath)), matchList := rest, operation := op }]
 
 /-- Shake, simplify and relocate for `label`; nothing if unsatisfiable. -/
-def inverseAt (op : Operation) (ms : List Match) (label : Name) : List Inverse :=
-  match simplifyMatches label ms with
+def inverseAt (op : Operation) (ms : List Match) (label : Label) : List Inverse :=
+  match simplifyMatches label.name ms with
   | none => []
-  | some simplified => mkInverse op (relocateConditions simplified)
+  | some simplified => mkInverse op label (relocateConditions simplified)
 
 mutual
   /-- `invertExistentialConditions`: an inverse for each match inside each
@@ -232,7 +234,7 @@ mutual
           -- `inverse.ts:505`: the recursion is given `acc`, which still holds
           -- `condition` (jinaga/jinaga.js#338).
           let nested ← invertConditions acc op cs
-          pure (mkInverse op (relocateConditions simplified) ++ nested)
+          pure (mkInverse op u (relocateConditions simplified) ++ nested)
       let more ← invertInner condition op acc rest
       pure (here ++ more)
 end
@@ -245,7 +247,7 @@ def invertLabels : List Match → List Label → Except InverseError (List Inver
     let ms ← shakeTree ms l.name
     let existential ← invertConditions ms .add ((ms.head?.map (·.conditions)).getD [])
     let more ← invertLabels ms ls
-    pure (inverseAt .add ms l.name ++ existential ++ more)
+    pure (inverseAt .add ms l ++ existential ++ more)
 
 /-! ## The connectivity check that runs first (`UnionFind.ts`) -/
 

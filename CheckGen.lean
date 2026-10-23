@@ -104,8 +104,20 @@ partial def genMatch (maxDepth : Nat) (types scope : List Name) (name type : Nam
       conditions := conditions ++ [← genPath types scope]
   return .mk { name := name, type := type } conditions
 
-/-- `maxDepth` bounds how deeply existential conditions nest. -/
-def genSpec (duplicates : Bool := false) (maxDepth : Nat := 2) : Gen Specification := do
+mutual
+  /-- Labels declared inside existential conditions, at any depth. -/
+  partial def innerNamesMatches : List Match → List Name
+    | [] => []
+    | .mk _ cs :: rest => cs.flatMap innerNamesCondition ++ innerNamesMatches rest
+  partial def innerNamesCondition : Condition → List Name
+    | .path _ => []
+    | .existential _ ms => ms.map (·.unknown.name) ++ innerNamesMatches ms
+end
+
+/-- `maxDepth` bounds how deeply existential conditions nest. With `reuse`, a
+match sometimes takes a name an earlier existential condition declared, which
+the parser allows because that name went out of scope with the condition. -/
+def genSpec (duplicates : Bool := false) (maxDepth : Nat := 2) (reuse : Bool := false) : Gen Specification := do
   let types ← factTypes
   let count ← below 2
   let given := (List.range (count + 1)).map fun i => (s!"p{i + 1}", "A")
@@ -115,8 +127,10 @@ def genSpec (duplicates : Bool := false) (maxDepth : Nat := 2) : Gen Specificati
     -- Sometimes name an unknown `s{i}`, so that split labels must avoid it.
     let collide ← chance 1 5
     let duplicate ← pick ["p1", "u1", "u2", "s1"]
-    let name := if duplicates then duplicate
-      else if collide then s!"s{i + 1}" else s!"u{i + 1}"
+    let outOfScope := (innerNamesMatches matchList).filter (!scope.contains ·)
+    let name ← if duplicates then pure duplicate
+      else if reuse && !outOfScope.isEmpty && (← chance 1 3) then pick outOfScope
+      else pure (if collide then s!"s{i + 1}" else s!"u{i + 1}")
     matchList := matchList ++ [← genMatch maxDepth types scope name (← pick types) 0]
     scope := scope ++ [name]
   let labels := (← repeatGen ((← below 2) + 1) (pick scope))

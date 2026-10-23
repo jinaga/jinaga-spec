@@ -340,7 +340,7 @@ def dump (path : System.FilePath) (seed : Nat) : IO Unit := do
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
   let mut out : Array Json := #[]
   for _ in [0:400] do
-    let (s, g) := (genSpec false 3).run gen
+    let (s, g) := (genSpec false 3 true).run gen
     gen := g
     let inverses := match invertSpecification s with
       | .ok is => Json.arr (is.map fun ι => Json.str ι.describe).toArray
@@ -357,7 +357,7 @@ def main (args : List String) : IO UInt32 := do
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
   let mut specs : List Specification := cases.map (·.spec)
   for _ in [0:1500] do
-    let (s, g) := (genSpec false 3).run gen
+    let (s, g) := (genSpec false 3 true).run gen
     gen := g
     unless isWellFormed s do
       throw <| IO.userError s!"the generator made a specification that is not well-formed:\n{describeSpecification s}"
