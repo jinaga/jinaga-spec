@@ -277,6 +277,63 @@ def namedCase (label : String) (c : Specification × Graph × Fact) : IO Unit :=
     let missedBy (produce : Producer) := (changed.filter (!(produce s env g f).contains ·)).length
     IO.println s!"  {label}: gained {t.gained} (missed {t.missedGained}), lost {t.lost} (missed {t.missedLost}); #338 as proposed misses {missedBy (byRule rule338)}, `candidates` {missedBy candidates}"
 
+/-! ## Reordering (layer 4) -/
+
+/-- Every match leads with a path condition from a label already bound, so a
+reader can walk to it. -/
+def navigable (bound : List Name) : List Match → Bool
+  | [] => true
+  | .mk u cs :: rest =>
+    (match cs.head? with
+      | some (.path pc) => bound.contains pc.labelRight
+      | _ => false) && navigable (u.name :: bound) rest
+
+structure ReorderTally where
+  inverses : Nat := 0
+  refused : Nat := 0
+  notNavigable : Nat := 0
+  startsAtPin : Nat := 0
+  disagree : Nat := 0
+  withResults : Nat := 0
+  mutantCaught : Nat := 0
+
+/-- Reorder every inverse of `s`; compare each with the original on random graphs. -/
+def checkReorder (s : Specification) (graphs : Nat) : Gen (ReorderTally × Option String) := do
+  let mut t : ReorderTally := {}
+  let mut report := none
+  let givens := s.given.map (·.name)
+  for i in inverses s do
+    t := { t with inverses := t.inverses + 1 }
+    match reorder i with
+    | none =>
+      t := { t with refused := t.refused + 1 }
+      if report.isNone then report := some s!"refused to reorder\n{describeSpecification i}"
+    | some r =>
+      if !navigable (pinLabel :: givens) r.matchList then
+        t := { t with notNavigable := t.notNavigable + 1 }
+        if report.isNone then report := some s!"not navigable\n{describeSpecification i}reordered\n{describeSpecification r}"
+      if (r.matchList.head?.bind (·.conditions.head?)) == some pinCondition then
+        t := { t with startsAtPin := t.startsAtPin + 1 }
+      for _ in [0:graphs] do
+        let store ← genGraph s 8
+        let env ← genEnv s store
+        let f ← genFreshFact s store 8
+        let g' := store ++ [f]
+        let e := pinEnv s env f
+        let expected := i.evaluate g' e
+        if !expected.isEmpty then t := { t with withResults := t.withResults + 1 }
+        -- Mutant: a reordering that forgets to reverse the edges it moves.
+        let unreversed := r.matchList.map fun
+          | .mk u cs => .mk u (cs.map fun
+            | .path pc => .path { rolesLeft := pc.rolesRight, labelRight := pc.labelRight, rolesRight := pc.rolesLeft }
+            | c => c)
+        if !sameSet expected ({ r with matchList := unreversed }.evaluate g' e) then
+          t := { t with mutantCaught := t.mutantCaught + 1 }
+        if !sameSet expected (r.evaluate g' e) then
+          t := { t with disagree := t.disagree + 1 }
+          if report.isNone then report := some s!"reordering changed the results\n{describeSpecification i}reordered\n{describeSpecification r}"
+  return (t, report)
+
 /-! ## Dump for the TypeScript comparison -/
 
 def dump (path : System.FilePath) (seed : Nat) : IO Unit := do
@@ -344,6 +401,17 @@ def main (args : List String) : IO UInt32 := do
     gen := g
     missCoarse := missCoarse + m
     if firstCoarse.isNone then firstCoarse := r
+  let mut rt : ReorderTally := {}
+  let mut firstReorder : Option String := none
+  for s in specs do
+    let ((t, r), g) := (checkReorder s 10).run gen
+    gen := g
+    rt := { inverses := rt.inverses + t.inverses, refused := rt.refused + t.refused,
+            notNavigable := rt.notNavigable + t.notNavigable, startsAtPin := rt.startsAtPin + t.startsAtPin,
+            disagree := rt.disagree + t.disagree, withResults := rt.withResults + t.withResults,
+            mutantCaught := rt.mutantCaught + t.mutantCaught }
+    if firstReorder.isNone then firstReorder := r
+  IO.println s!"reorder: {rt.inverses} inverses, {rt.refused} refused, {rt.notNavigable} not navigable, {rt.startsAtPin} start at the new fact, {rt.disagree} graphs where the results changed ({rt.withResults} with results); mutant \"swap roles of every path condition\" caught on {rt.mutantCaught} graphs"
   IO.println s!"specifications: {inverted} inverted, {refusals.length} refused"
   for reason in (refusals.map (·.1)).eraseDups do
     let these := refusals.filter (·.1 == reason)
@@ -363,9 +431,11 @@ def main (args : List String) : IO UInt32 := do
   -- and every mutant must be caught.
   if let some r := firstGained then IO.println s!"\nFIRST GAIN JINAGA.JS'S INVERSES MISS\n{r}"
   if let some r := firstLost then IO.println s!"\nFIRST LOSS JINAGA.JS'S INVERSES MISS\n{r}"
+  if let some r := firstReorder then IO.println s!"\nFIRST REORDER PROBLEM\n{r}"
   if let some r := firstCoarse then IO.println s!"\nFIRST MISS BY `candidates`\n{r}"
   let uncaught := (if notFresh.1 == 0 then ["notify a fact the store already has"] else []) ++
     (if dropped.1 == 0 then ["drop existential conditions"] else []) ++
     (if miss338 == 0 then ["#338 as proposed"] else [])
   unless uncaught.isEmpty do IO.println s!"\nMUTANTS NOT CAUGHT: {uncaught}"
-  return if missCoarse == 0 && uncaught.isEmpty then 0 else 1
+  let uncaught := uncaught ++ (if rt.mutantCaught == 0 then ["swap roles of every path condition"] else [])
+  return if missCoarse == 0 && uncaught.isEmpty && firstReorder.isNone then 0 else 1

@@ -11,6 +11,7 @@ import JinagaSpec.Cases
 import JinagaSpec.Maintain
 import JinagaSpec.Inverse
 import JinagaSpec.Candidates
+import JinagaSpec.Reorder
 import JinagaSpec.Proofs.Scoped
 import JinagaSpec.Proofs.Basic
 import JinagaSpec.Proofs.Locality

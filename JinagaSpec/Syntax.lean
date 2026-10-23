@@ -69,6 +69,21 @@ structure Specification where
   matchList : List Match
   projection : Projection
 
+mutual
+  /-- Labels the matches name but do not bind. `inner` holds the labels bound
+  around them, including their own unknowns. -/
+  def freeInMatches (inner : List Name) : List Match → List Name
+    | [] => []
+    | .mk _ cs :: rest => freeInConditions inner cs ++ freeInMatches inner rest
+
+  def freeInConditions (inner : List Name) : List Condition → List Name
+    | [] => []
+    | .path pc :: cs =>
+      (if inner.contains pc.labelRight then [] else [pc.labelRight]) ++ freeInConditions inner cs
+    | .existential _ ms :: cs =>
+      freeInMatches (inner ++ ms.map (·.unknown.name)) ms ++ freeInConditions inner cs
+end
+
 /-- Labels that begin with `__` belong to the split, which names the facts it
 hands from the head to the tail. A specification may not declare one, so a
 split label can never collide with a label the specification declares. -/

@@ -166,21 +166,6 @@ end
 
 /-! ## Relocating existential conditions to where their labels are bound -/
 
-mutual
-  /-- Labels the matches name but do not bind. `inner` holds the labels bound
-  around them, including their own unknowns. -/
-  def freeInMatches (inner : List Name) : List Match → List Name
-    | [] => []
-    | .mk _ cs :: rest => freeInConditions inner cs ++ freeInMatches inner rest
-
-  def freeInConditions (inner : List Name) : List Condition → List Name
-    | [] => []
-    | .path pc :: cs =>
-      (if inner.contains pc.labelRight then [] else [pc.labelRight]) ++ freeInConditions inner cs
-    | .existential _ ms :: cs =>
-      freeInMatches (inner ++ ms.map (·.unknown.name)) ms ++ freeInConditions inner cs
-end
-
 /-- The index of the last match that binds `name`. -/
 def bindingIndex (ms : List Match) (name : Name) : Option Nat :=
   (ms.zip (List.range ms.length)).foldl
