@@ -317,6 +317,21 @@ def checkReorder (s : Specification) (graphs : Nat) : Gen (ReorderTally × Optio
 
 /-! ## Dump for the TypeScript comparison -/
 
+/-- Random specifications, reused names included, with the inverses
+`candidates` builds and reorders, for `ports/typescript/reference-diff.ts`. -/
+def dumpCandidates (path : System.FilePath) (seed : Nat) : IO Unit := do
+  let mut gen : StdGen × Nat := (mkStdGen seed, 0)
+  let mut out : Array Json := #[]
+  for _ in [0:400] do
+    let (s, g) := (genSpec false 3 true).run gen
+    gen := g
+    let is := inverses s
+    out := out.push (Json.mkObj [("specification", specificationToJson s),
+      ("inverses", Json.arr (is.map specificationToJson).toArray),
+      ("reordered", Json.arr (is.map (specificationToJson ∘ reorderOrSelf)).toArray)])
+  IO.FS.writeFile path ((Json.arr out).compress ++ "\n")
+  IO.println s!"wrote {out.size} specifications to {path}"
+
 def dump (path : System.FilePath) (seed : Nat) : IO Unit := do
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
   let mut out : Array Json := #[]
@@ -334,6 +349,9 @@ def dump (path : System.FilePath) (seed : Nat) : IO Unit := do
   IO.println s!"wrote {out.size} specifications to {path}"
 
 def main (args : List String) : IO UInt32 := do
+  if args.head? == some "dump-candidates" then
+    dumpCandidates (args.getD 1 "candidates-dump.json") ((args.getD 2 "1").toNat?.getD 1)
+    return 0
   if args.head? == some "dump" then
     dump (args.getD 1 "inverse-dump.json") ((args.getD 2 "1").toNat?.getD 1)
     return 0

@@ -52,6 +52,12 @@ if [ -d "$jinaga/src/specification" ]; then
     (cd ../.. && lake exe check-inverse dump "$dump" 1 > /dev/null)
     JINAGA_JS="$jinaga" npx tsx inverse-diff.ts "$dump" | grep -E "specifications|FAIL"
     JINAGA_JS="$jinaga" npm run --silent inverse | grep -E "inverse vectors|FAIL|misses changes"
+    # The reference TypeScript implementation, against the vectors and against
+    # the Lean definition on random specifications.
+    JINAGA_JS="$jinaga" PORT=./inverse-candidates.ts npm run --silent inverse | grep -E "inverse vectors|FAIL"
+    cands="$(mktemp -d)/candidates-dump.json"
+    (cd ../.. && lake exe check-inverse dump-candidates "$cands" 1 > /dev/null)
+    npx tsx reference-diff.ts "$cands" | grep -E "specifications|FAIL"
     npm run --silent audit | tail -2
   )
 else

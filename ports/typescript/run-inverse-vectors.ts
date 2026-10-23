@@ -31,8 +31,10 @@ const { MemoryStore } = await load("src/memory/memory-store.ts");
 const { invertSpecification } = await load("src/specification/inverse.ts");
 const { Trace } = await load("src/util/trace.ts");
 Trace.off();
-const portPath = "src/specification/inverse-candidates.ts";
-const port = existsSync(join(jinagaJs, portPath)) ? await load(portPath) : undefined;
+// PORT names another implementation to check instead, such as this
+// directory's reference implementation: PORT=./inverse-candidates.ts.
+const portPath = process.env.PORT ? resolve(process.env.PORT) : join(jinagaJs, "src/specification/inverse-candidates.ts");
+const port = existsSync(portPath) ? await import(pathToFileURL(portPath).href) : undefined;
 
 const pinLabel = "__f";
 type Row = (number | null)[];
