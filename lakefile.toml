@@ -9,6 +9,13 @@ name = "JinagaSpec"
 name = "vectors"
 root = "Vectors"
 
+[[lean_lib]]
+name = "CheckGen"
+
 [[lean_exe]]
 name = "check"
 root = "Check"
+
+[[lean_exe]]
+name = "check-inverse"
+root = "CheckInverse"
