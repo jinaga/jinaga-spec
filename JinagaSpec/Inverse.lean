@@ -35,8 +35,6 @@ Differences from the TypeScript, each forced by the language rather than chosen:
 -/
 namespace JinagaSpec
 
-deriving instance BEq for Condition, Match
-
 instance : Inhabited Match := ⟨.mk { name := "", type := "" } []⟩
 
 /-- Why a specification cannot be inverted. -/

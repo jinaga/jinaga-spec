@@ -44,6 +44,28 @@ def Match.unknown : Match → Label
 def Match.conditions : Match → List Condition
   | .mk _ conditions => conditions
 
+mutual
+  /-- Structural equality. Written out, rather than derived, so that a proof
+  can use it (`Proofs/Basic.lean`). -/
+  def Condition.beq : Condition → Condition → Bool
+    | .path a, .path b => a == b
+    | .existential e1 ms1, .existential e2 ms2 => e1 == e2 && Match.beqList ms1 ms2
+    | _, _ => false
+
+  def Match.beqList : List Match → List Match → Bool
+    | [], [] => true
+    | .mk u1 cs1 :: r1, .mk u2 cs2 :: r2 => u1 == u2 && Condition.beqList cs1 cs2 && Match.beqList r1 r2
+    | _, _ => false
+
+  def Condition.beqList : List Condition → List Condition → Bool
+    | [], [] => true
+    | c1 :: r1, c2 :: r2 => Condition.beq c1 c2 && Condition.beqList r1 r2
+    | _, _ => false
+end
+
+instance : BEq Condition := ⟨Condition.beq⟩
+instance : BEq Match := ⟨fun m1 m2 => Match.beqList [m1] [m2]⟩
+
 def Condition.isPath : Condition → Bool
   | .path _ => true
   | .existential .. => false

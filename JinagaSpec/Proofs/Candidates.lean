@@ -2,7 +2,6 @@ import JinagaSpec.Candidates
 import JinagaSpec.Proofs.Fresh
 import JinagaSpec.Proofs.Main
 import JinagaSpec.Proofs.Derivation
-import JinagaSpec.Proofs.Maintain
 
 /-!
 # Layers 2 and 3: every change is touched, so the candidates cover it
@@ -264,13 +263,6 @@ mutual
       exact absurd (holds_path_fresh hf hpin hu pc (Ne.symm hus)).symm hne
     | .existential b ms, env, u, hpin, hu, hus, hds, hne => by
       simp only [usedInCondition, declaredInCondition] at hus hds
-      -- The rewritten condition is `exists`, so a solution of its matches makes it hold.
-      have hex : ∀ ms' e4, e4 ∈ evalMatches (g ++ [f]) env ms' →
-          holds (g ++ [f]) env u (.existential true ms') = true := by
-        intro ms' e4 h
-        cases hE : evalMatches (g ++ [f]) env ms' with
-        | nil => rw [hE] at h; simp at h
-        | cons => simp [holds, hE]
       have hv : holds (g ++ [f]) env u (.existential b ms) =
           (b == !(evalMatches (g ++ [f]) env ms).isEmpty) := rfl
       simp only [holds] at hne
@@ -282,7 +274,7 @@ mutual
         | cons e4 _ =>
           obtain ⟨t, htm, het⟩ := lostMatches hf ms (e3 := e4) hpin hus hds
             (by rw [hB]; exact List.mem_cons_self) (by rw [hA]; simp)
-          refine ⟨(t.1, .existential true t.2), ?_, hex _ _ het⟩
+          refine ⟨(t.1, .existential true t.2), ?_, holds_exists.mpr ⟨_, het⟩⟩
           cases b <;> exact List.mem_map.mpr ⟨t, htm, rfl⟩
       | cons e4 _ =>
         cases hB : evalMatches g env ms with
@@ -290,22 +282,17 @@ mutual
         | nil =>
           obtain ⟨t, htm, het⟩ := gainedMatches hf ms (e3 := e4) hpin hus hds
             (by rw [hA]; exact List.mem_cons_self) (by rw [hB]; simp)
-          refine ⟨(t.1, .existential true t.2), ?_, hex _ _ het⟩
+          refine ⟨(t.1, .existential true t.2), ?_, holds_exists.mpr ⟨_, het⟩⟩
           cases b <;> exact List.mem_map.mpr ⟨t, htm, rfl⟩
 end
 
-/-- **`candidates_complete`.** For a well-formed specification and a fresh fact,
-the candidates include every result the fact adds or removes. With
-`maintain_correct`, a stream that re-checks these candidates after each
-insertion holds exactly the specification's results. -/
-theorem candidates_complete (s : Specification) (hwf : WellFormed s) (hf : Fresh g f) (env : Env) :
-    Covers s env g f (candidates s env g f) := by
-  intro r
-  unfold candidates
-  split
-  · -- `f` is one of the givens: every result old and new is a candidate.
-    by_cases h1 : r ∈ s.evaluate g env <;> by_cases h2 : r ∈ s.evaluate (g ++ [f]) env <;> simp_all
-  rename_i hgiv
+/-- **`inverses_complete`.** For a well-formed specification and a fresh fact
+that is not one of the subscription's givens, every result the fact adds or
+removes is a result of one of the inverses, read on the new graph. -/
+theorem inverses_complete (s : Specification) (hwf : WellFormed s) (hf : Fresh g f) (env : Env)
+    (hgiv : ¬ (s.given.any (env ·.name == some f.id)) = true) (r : Row) :
+    (r ∈ s.evaluate g env ↔ r ∈ s.evaluate (g ++ [f]) env) ∨
+      ∃ ι ∈ inverses s, r ∈ ι.evaluate (g ++ [f]) (pinEnv s env f) := by
   let givens := s.given.map (·.name)
   have hgivOrd : ∀ x ∈ givens, isReserved x = false := by
     intro x hx
@@ -337,9 +324,8 @@ theorem candidates_complete (s : Specification) (hwf : WellFormed s) (hf : Fresh
   -- A changed solution is a solution of an inverse, and projects to the same result.
   have hfound : ∀ t ∈ touchMatches true s.matchList ++ touchMatches false s.matchList,
       ∀ e3 ∈ evalMatches (g ++ [f]) (pinEnv s env f) t.2, s.projection.labels.map e3 = r →
-      r ∈ (inverses s).flatMap (·.evaluate (g ++ [f]) (pinEnv s env f)) := by
-    intro t ht e3 he3 hr
-    exact List.mem_flatMap.mpr ⟨_, List.mem_map.mpr ⟨t, ht, rfl⟩, List.mem_map.mpr ⟨e3, he3, hr⟩⟩
+      ∃ ι ∈ inverses s, r ∈ ι.evaluate (g ++ [f]) (pinEnv s env f) :=
+    fun t ht e3 he3 hr => ⟨_, List.mem_map.mpr ⟨t, ht, rfl⟩, List.mem_map.mpr ⟨e3, he3, hr⟩⟩
   rw [hsame g, hsame (g ++ [f])]
   by_cases h1 : r ∈ s.evaluate g (pinEnv s env f) <;>
     by_cases h2 : r ∈ s.evaluate (g ++ [f]) (pinEnv s env f)
@@ -355,18 +341,5 @@ theorem candidates_complete (s : Specification) (hwf : WellFormed s) (hf : Fresh
       fun h => h1 (List.mem_map.mpr ⟨e3, h, hr⟩)
     exact Or.inr (hfound t (List.mem_append_left _ ht) e3 het hr)
   · exact Or.inl (iff_of_false h1 h2)
-
-/-- **A stream is its specification's result.** Start from a read of the
-result, and after each fact arrives re-check the candidates: the stream then
-holds exactly the specification's results on the replica's graph, provided
-each fact is fresh when it arrives. -/
-theorem stream_correct (s : Specification) (hwf : WellFormed s) (env : Env) :
-    ∀ (fs : List Fact) (g : Graph) (held : List Row),
-      (∀ r, r ∈ held ↔ r ∈ s.evaluate g env) →
-      (∀ pre f post, fs = pre ++ f :: post → Fresh (g ++ pre) f) →
-      ∀ r, r ∈ (fs.foldl (maintainStep s env (candidates s env)) (g, held)).2 ↔ r ∈ s.evaluate (g ++ fs) env :=
-  fun fs g held hheld hfresh =>
-    maintain_correct s env (candidates s env) fs g held hheld
-      fun pre f post h => candidates_complete s hwf (hfresh pre f post h) env
 
 end JinagaSpec

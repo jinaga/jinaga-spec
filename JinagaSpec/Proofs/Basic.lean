@@ -90,10 +90,45 @@ theorem span_loop_append (p : Match → Bool) :
     simp only [List.span.loop]
     cases p a <;> simp [ih]
 
+/-- The labels a list of matches binds. -/
+def names (ms : List Match) : List Name := ms.map (·.unknown.name)
+
 theorem Graph.mem_of_factOf_eq_some {g : Graph} {id : FactId} {fact : Fact}
     (h : g.factOf id = some fact) : fact ∈ g := by
   unfold Graph.factOf at h
   exact List.mem_of_find?_eq_some h
+
+mutual
+  theorem Condition.eq_of_beq : ∀ {a b : Condition}, Condition.beq a b = true → a = b
+    | .path _, .path _, h => by simp [Condition.beq] at h; rw [h]
+    | .existential _ _, .existential _ _, h => by
+      simp only [Condition.beq, Bool.and_eq_true, beq_iff_eq] at h
+      rw [h.1, Match.eq_of_beqList h.2]
+    | .path _, .existential _ _, h | .existential _ _, .path _, h => by simp [Condition.beq] at h
+
+  theorem Match.eq_of_beqList : ∀ {a b : List Match}, Match.beqList a b = true → a = b
+    | [], [], _ => rfl
+    | .mk _ _ :: _, .mk _ _ :: _, h => by
+      simp only [Match.beqList, Bool.and_eq_true, beq_iff_eq] at h
+      rw [h.1.1, Condition.eq_of_beqList h.1.2, Match.eq_of_beqList h.2]
+    | [], _ :: _, h | _ :: _, [], h => by simp [Match.beqList] at h
+
+  theorem Condition.eq_of_beqList : ∀ {a b : List Condition}, Condition.beqList a b = true → a = b
+    | [], [], _ => rfl
+    | _ :: _, _ :: _, h => by
+      simp only [Condition.beqList, Bool.and_eq_true] at h
+      rw [Condition.eq_of_beq h.1, Condition.eq_of_beqList h.2]
+    | [], _ :: _, h | _ :: _, [], h => by simp [Condition.beqList] at h
+end
+
+/-- `==` on conditions is equality. -/
+theorem Condition.eq_of_beq' {a b : Condition} (h : (a == b) = true) : a = b := Condition.eq_of_beq h
+
+/-- `exists ms` holds exactly when `ms` has a solution. -/
+theorem holds_exists {G : Graph} {env : Env} {u : Name} {ms : List Match} :
+    holds G env u (.existential true ms) = true ↔ ∃ σ, σ ∈ evalMatches G env ms := by
+  simp only [holds]
+  cases h : evalMatches G env ms <;> simp
 
 /-- Functions that agree on a list's members give the same `flatMap`. -/
 theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g x = h x) :

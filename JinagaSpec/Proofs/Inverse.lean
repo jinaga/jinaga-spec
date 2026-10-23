@@ -1,4 +1,5 @@
 import JinagaSpec.Inverse
+import JinagaSpec.Proofs.Basic
 
 /-!
 # `shakeTree` cannot loop
@@ -20,8 +21,6 @@ TypeScript loop runs at most once per match in the suffix, for every input.
 condition only to a later match.
 -/
 namespace JinagaSpec
-
-def names (ms : List Match) : List Name := ms.map (·.unknown.name)
 
 /-- A step that keeps an invariant and never fails with `e`. -/
 def Keeps (P : List Match → Prop) (e : InverseError)

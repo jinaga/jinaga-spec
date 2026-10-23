@@ -11,9 +11,9 @@ inverse so that reading starts at the new fact and walks to its row:
 1. **Flatten the path.** Each existential condition the path passes through is
    `exists` and holds the pin. Its matches become ordinary matches, right after
    the match that held it. The specification's own projection names only its
-   top-level labels, so the results do not change. A lifted label is renamed
-   (`liftLabel`): the parser scopes an existential condition's labels to the
-   condition, so a later match may reuse the name (jinaga/jinaga.js#343).
+   top-level labels, so the results do not change, provided no lifted label
+   has the name of another (the parser lets a later match reuse a name an
+   existential condition declared: jinaga/jinaga.js#343).
 2. **Order from the new fact.** Bind first whatever path conditions reach from
    `__f`, then the givens, then whatever reaches from those. Each match leads
    with the path condition that reached it, reversed if it was written on the
@@ -24,6 +24,13 @@ inverse so that reading starts at the new fact and walks to its row:
 Because the subscription's givens are bound, every match of a specification
 that names its givens is reached, so nothing is refused (contrast
 jinaga/jinaga.js#141, whose inverses must reach every given from the new fact).
+
+**The result is checked, not trusted.** `arranges` checks that the reordered
+matches bind the same unknowns, once each, carry the same conditions (each
+possibly reversed or moved), and bind every label before it is used.
+`reorderOrSelf` keeps the original inverse when the check fails, so it is
+correct whatever `orderFromPin` does (`Proofs/Reorder.lean`); how often it
+falls back is measured by `check-inverse`.
 -/
 namespace JinagaSpec
 
@@ -44,32 +51,9 @@ mutual
     | .existential _ ms => pinnedMatches ms
 end
 
-/-- What a lifted label is renamed to. Reserved, so it cannot collide with a
-label the specification declares, and distinct from `pinLabel`. -/
-def liftLabel (n : Name) : Name := "__l" ++ n
-
-def renameLabel (names : List Name) (n : Name) : Name := if names.contains n then liftLabel n else n
-
-mutual
-  /-- Rename `names`, wherever they are declared or named. -/
-  def renameMatches (names : List Name) : List Match → List Match
-    | [] => []
-    | .mk u cs :: rest =>
-      .mk { u with name := renameLabel names u.name } (renameConditions names cs) :: renameMatches names rest
-
-  def renameConditions (names : List Name) : List Condition → List Condition
-    | [] => []
-    | c :: cs => renameCondition names c :: renameConditions names cs
-
-  def renameCondition (names : List Name) : Condition → Condition
-    | .path pc => .path { pc with labelRight := renameLabel names pc.labelRight }
-    | .existential e ms => .existential e (renameMatches names ms)
-end
-
 mutual
   /-- Lift the matches of every existential condition that holds the pin into
-  the list, after the match that held it, renamed so that no later label of the
-  same name captures them. -/
+  the list, after the match that held it. -/
   def flattenMatches : List Match → List Match
     | [] => []
     | .mk u cs :: rest =>
@@ -82,7 +66,7 @@ mutual
       let (keep, lifted) := flattenConditions cs
       match c with
       | .existential true ms =>
-        if pinnedMatches ms then (keep, renameMatches (ms.map (·.unknown.name)) (flattenMatches ms) ++ lifted)
+        if pinnedMatches ms then (keep, flattenMatches ms ++ lifted)
         else (c :: keep, lifted)
       | c => (c :: keep, lifted)
 end
@@ -156,9 +140,77 @@ def orderFromPin (givens : List Name) (ms : List Match) : Option (List Match) :=
   let (_, p, fromGivens) := grow bound bound p ms.length
   if p.labels.isEmpty && p.edges.isEmpty && p.filters.isEmpty then some (fromPin ++ fromGivens) else none
 
+/-! ## Checking the result -/
+
+mutual
+  /-- `ScopedMatches`, decided: every path condition names a label in scope. -/
+  def isScopedMatches : List Name → List Match → Bool
+    | _, [] => true
+    | scope, .mk u cs :: rest =>
+      isScopedConditions (u.name :: scope) scope cs && isScopedMatches (u.name :: scope) rest
+
+  def isScopedConditions (inner outer : List Name) : List Condition → Bool
+    | [] => true
+    | c :: cs => isScopedCondition inner outer c && isScopedConditions inner outer cs
+
+  def isScopedCondition (inner outer : List Name) : Condition → Bool
+    | .path pc => outer.contains pc.labelRight
+    | .existential _ ms => isScopedMatches inner ms
+end
+
+/-- The same condition: as written, or a path condition reversed onto its
+other end, or an existential condition moved to another match (an existential
+condition does not read the match it is written on). -/
+def sameConstraint : Name × Condition → Name × Condition → Bool
+  | (u1, .path pc), (u2, .path pc2) =>
+    (u1 == u2 && pc == pc2) || (u2 == pc.labelRight && Edge.reverse (u1, pc) == (u2, pc2))
+  | (_, c1), (_, c2) => c1 == c2
+
+def constraints (ms : List Match) : List (Name × Condition) :=
+  ms.flatMap fun m => m.conditions.map (m.unknown.name, ·)
+
+/-- Binds each unknown once, none of them in `scope`, and names only labels
+already bound. -/
+def bindsOnce (scope : List Name) (ms : List Match) : Bool :=
+  let names := ms.map (·.unknown.name)
+  (names.Nodup : Bool) && names.all (!scope.contains ·) && isScopedMatches scope ms
+
+/-- Every condition of `ms1` is a condition of `ms2`. -/
+def covers (ms1 ms2 : List Match) : Bool :=
+  (constraints ms1).all fun c => (constraints ms2).any (sameConstraint c ·)
+
+/-- `ms2` is an arrangement of `ms1`, starting from `scope`: the same unknowns,
+each bound once, and the same conditions, each possibly reversed or moved. -/
+def arranges (scope : List Name) (ms1 ms2 : List Match) : Bool :=
+  bindsOnce scope ms1 && bindsOnce scope ms2 &&
+    (ms1.map (·.unknown)).all (ms2.map (·.unknown)).contains &&
+    (ms2.map (·.unknown)).all (ms1.map (·.unknown)).contains &&
+    covers ms1 ms2 && covers ms2 ms1
+
 /-- An inverse, reordered to start at the new fact. -/
 def reorder (i : Specification) : Option Specification :=
   let givens := (i.given.map (·.name)).filter (· != pinLabel)
   (orderFromPin givens (flattenMatches i.matchList)).map fun ms => { i with matchList := ms }
+
+/-- The reordered inverse, if it checks. -/
+def reorderChecked (i : Specification) : Option Specification :=
+  let scope := pinLabel :: (i.given.map (·.name)).filter (· != pinLabel)
+  (reorder i).filter fun r =>
+    isScopedMatches scope i.matchList && arranges scope (flattenMatches i.matchList) r.matchList &&
+      i.projection.labels.all fun l => scope.contains l || (i.matchList.map (·.unknown.name)).contains l
+
+/-- The reordered inverse when it checks, and otherwise the inverse itself. -/
+def reorderOrSelf (i : Specification) : Specification := (reorderChecked i).getD i
+
+/-! ## The whole algorithm -/
+
+/-- The results `f` might have changed: each inverse, reordered to start at
+`f`, read on the graph that holds it. If `f` is one of the subscription's own
+givens, any result might have, so every result old and new is a candidate. -/
+def candidates (s : Specification) (env : Env) (g : Graph) (f : Fact) : List Row :=
+  if s.given.any (env ·.name == some f.id) then
+    s.evaluate g env ++ s.evaluate (g ++ [f]) env
+  else
+    ((inverses s).map reorderOrSelf).flatMap (·.evaluate (g ++ [f]) (pinEnv s env f))
 
 end JinagaSpec

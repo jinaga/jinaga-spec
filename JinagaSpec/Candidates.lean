@@ -35,7 +35,8 @@ the inverses for gained results, and `touchMatches false` those for lost ones.
 
 The inverses do not say "add" or "remove". They find *candidates*, and the
 stream decides each one by reading the specification (`Maintain.lean`). So
-they need only be complete, not exact.
+they need only be complete, not exact. `Reorder.lean` rewrites each one to
+start at the new fact, and defines `candidates`, the whole algorithm.
 
 Written in the portable subset: inductive types, total functions, structural
 recursion and lists.
@@ -92,13 +93,5 @@ def inverses (s : Specification) : List Specification :=
 /-- The subscription's givens, and the new fact as `pinLabel`. -/
 def pinEnv (s : Specification) (env : Env) (f : Fact) : Env :=
   (env.restrictTo (s.given.map (·.name))).bind pinLabel f.id
-
-/-- The results `f` might have changed. If `f` is one of the subscription's own
-givens, any result might have, so every result old and new is a candidate. -/
-def candidates (s : Specification) (env : Env) (g : Graph) (f : Fact) : List Row :=
-  if s.given.any (env ·.name == some f.id) then
-    s.evaluate g env ++ s.evaluate (g ++ [f]) env
-  else
-    (inverses s).flatMap (·.evaluate (g ++ [f]) (pinEnv s env f))
 
 end JinagaSpec

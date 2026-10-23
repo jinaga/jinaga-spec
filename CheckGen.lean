@@ -128,9 +128,11 @@ def genSpec (duplicates : Bool := false) (maxDepth : Nat := 2) (reuse : Bool := 
     let collide ← chance 1 5
     let duplicate ← pick ["p1", "u1", "u2", "s1"]
     let outOfScope := (innerNamesMatches matchList).filter (!scope.contains ·)
+    let fresh := if collide then s!"s{i + 1}" else s!"u{i + 1}"
     let name ← if duplicates then pure duplicate
-      else if reuse && !outOfScope.isEmpty && (← chance 1 3) then pick outOfScope
-      else pure (if collide then s!"s{i + 1}" else s!"u{i + 1}")
+      else if reuse && !outOfScope.isEmpty then do
+        if ← chance 1 3 then pick outOfScope else pure fresh
+      else pure fresh
     matchList := matchList ++ [← genMatch maxDepth types scope name (← pick types) 0]
     scope := scope ++ [name]
   let labels := (← repeatGen ((← below 2) + 1) (pick scope))

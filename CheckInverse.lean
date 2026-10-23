@@ -304,10 +304,8 @@ def checkReorder (s : Specification) (graphs : Nat) : Gen (ReorderTally × Optio
   let givens := s.given.map (·.name)
   for i in inverses s do
     t := { t with inverses := t.inverses + 1 }
-    match reorder i with
-    | none =>
-      t := { t with refused := t.refused + 1 }
-      if report.isNone then report := some s!"refused to reorder\n{describeSpecification i}"
+    match reorderChecked i with
+    | none => t := { t with refused := t.refused + 1 }
     | some r =>
       if !navigable (pinLabel :: givens) r.matchList then
         t := { t with notNavigable := t.notNavigable + 1 }
@@ -357,7 +355,7 @@ def main (args : List String) : IO UInt32 := do
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
   let mut specs : List Specification := cases.map (·.spec)
   for _ in [0:1500] do
-    let (s, g) := (genSpec false 3 true).run gen
+    let (s, g) := (genSpec false 3 !(args.contains "noreuse")).run gen
     gen := g
     unless isWellFormed s do
       throw <| IO.userError s!"the generator made a specification that is not well-formed:\n{describeSpecification s}"
@@ -411,7 +409,7 @@ def main (args : List String) : IO UInt32 := do
             disagree := rt.disagree + t.disagree, withResults := rt.withResults + t.withResults,
             mutantCaught := rt.mutantCaught + t.mutantCaught }
     if firstReorder.isNone then firstReorder := r
-  IO.println s!"reorder: {rt.inverses} inverses, {rt.refused} refused, {rt.notNavigable} not navigable, {rt.startsAtPin} start at the new fact, {rt.disagree} graphs where the results changed ({rt.withResults} with results); mutant \"swap roles of every path condition\" caught on {rt.mutantCaught} graphs"
+  IO.println s!"reorder: {rt.inverses} inverses, {rt.refused} kept as they were (the check failed), {rt.notNavigable} not navigable, {rt.startsAtPin} start at the new fact, {rt.disagree} graphs where the results changed ({rt.withResults} with results); mutant \"swap roles of every path condition\" caught on {rt.mutantCaught} graphs"
   IO.println s!"specifications: {inverted} inverted, {refusals.length} refused"
   for reason in (refusals.map (·.1)).eraseDups do
     let these := refusals.filter (·.1 == reason)

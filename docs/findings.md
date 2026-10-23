@@ -376,13 +376,42 @@ What the proof needed, and did not:
 - **No operation.** The inverses do not say "add" or "remove". They only have to
   be complete, because the stream re-checks every candidate (#6). This removes
   the polarity bookkeeping that #338's defect lived in.
-- **No reordering.** An inverse keeps the original specification's nesting and
-  order: the pinned unknown gains `u = __f` as its first condition, and the
-  condition the path passes through becomes `exists`. So no label is renamed,
-  and every inverse is an ordinary, runnable specification. `shakeTree` and
-  `relocateConditions` are not needed for correctness. Whether an inverse can be
-  run from `f` alone, without the subscription's givens, as a server needs in
-  order to fan a fact out to many subscribers, is the next question (layer 4).
+- **Reordering is for speed, and it checks itself.** An inverse as built keeps
+  the original specification's nesting and order. That is enough for
+  correctness, but read from the givens a pin inside an existential condition
+  is checked once per row of the collection. `reorderOrSelf` (`Reorder.lean`)
+  flattens the existential conditions the path passes through and orders the
+  matches from `__f`. It then checks its own result (`arranges`): the same
+  unknowns, each bound once, the same conditions (each possibly reversed or
+  moved), every label bound before use. If the check fails, it keeps the
+  inverse as it was. `reorderOrSelf_correct` holds with no hypothesis, because
+  the proof is about the check, not the search that produced the order: a list
+  of matches is a conjunction, so any well-scoped arrangement of the same
+  conditions has the same solutions. On random specifications every reordered
+  inverse starts at the new fact and every match is reached by a path
+  condition from something bound, and the results never change.
+- **Known givens make jinaga/jinaga.js#141 go away.** The reordering binds the
+  givens throughout, so a given joined only through an existential condition
+  is never a problem. jinaga.js refuses those specifications only because its
+  inverses must reach every given from the new fact alone.
+
+## A label reused after an existential condition captures it
+
+The parser scopes an existential condition's labels to the condition, so a
+later match may declare the same name. jinaga.js's inverse concatenates the
+outer and inner matches and looks labels up by name. The later match comes
+first in that list, so it captures the lookup, and the inverse misses changes
+(jinaga/jinaga.js#343, reproduced in jinaga.js itself). `check-inverse`
+generates such names. With them, jinaga.js's inverses also report results that
+are not there.
+
+`candidates` is immune, because an inverse keeps its nesting. The reordering
+is not: flattening would bind the two labels in one list. Rather than rename,
+which would need its own proof, the self-check rejects the flattened list when
+a name repeats, and the inverse is kept unordered: correct, and as slow as an
+unordered inverse. With reused names in the generator, about 6% of inverses
+fall back; without them, none do. Renaming lifted labels is a possible later
+improvement.
 
 `check-inverse` measures `candidates` itself, not a copy of the rule: it misses
 no change.
@@ -402,7 +431,9 @@ no change.
 | `Proofs/Maintain.lean` | A held set re-checked on covering candidates equals the result; graphs holding the same facts give the same results. |
 | `Proofs/Inverse.lean` | `shakeTree`'s rotation loop always stops within the length of the suffix it rotates. |
 | `Proofs/Fresh.lean` | A fresh fact changes no walk that starts anywhere else. |
-| `Proofs/Candidates.lean` | Every result a fresh fact changes is a result of one of the inverses; a re-checking stream is exact. |
+| `Proofs/Candidates.lean` | Every result a fresh fact changes is a result of one of the inverses. |
+| `Proofs/Reorder.lean` | Matches are a conjunction, so a checked arrangement has the same solutions; flattening an `exists` keeps them. |
+| `Proofs/Stream.lean` | The candidates cover every change, and a re-checking stream is exact. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
