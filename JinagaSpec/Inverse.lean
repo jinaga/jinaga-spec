@@ -69,10 +69,6 @@ structure Inverse where
   matchList : List Match
   operation : Operation
 
-def Condition.isPath : Condition → Bool
-  | .path _ => true
-  | .existential .. => false
-
 def Match.hasPath (m : Match) : Bool := m.conditions.any (·.isPath)
 
 def findMatch (ms : List Match) (label : Name) : Except InverseError Match :=

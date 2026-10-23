@@ -27,11 +27,6 @@ namespace JinagaSpec
 /-- `id` is the id of a fact in `store`. -/
 def InStore (store : Graph) (id : FactId) : Prop := ∃ ff ∈ store, ff.id = id
 
-theorem Graph.mem_of_factOf_eq_some {g : Graph} {id : FactId} {fact : Fact}
-    (h : g.factOf id = some fact) : fact ∈ g := by
-  unfold Graph.factOf at h
-  exact List.mem_of_find?_eq_some h
-
 section AuthGraph
 
 variable {store : Graph} {f : Fact}

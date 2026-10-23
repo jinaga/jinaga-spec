@@ -90,6 +90,11 @@ theorem span_loop_append (p : Match → Bool) :
     simp only [List.span.loop]
     cases p a <;> simp [ih]
 
+theorem Graph.mem_of_factOf_eq_some {g : Graph} {id : FactId} {fact : Fact}
+    (h : g.factOf id = some fact) : fact ∈ g := by
+  unfold Graph.factOf at h
+  exact List.mem_of_find?_eq_some h
+
 /-- Functions that agree on a list's members give the same `flatMap`. -/
 theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g x = h x) :
     l.flatMap g = l.flatMap h := by

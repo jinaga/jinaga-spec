@@ -355,6 +355,38 @@ branch is dead. The mutant that re-notifies a fact already in the store is
 caught on only about 1% of specifications: it shows only when a skipped
 successor condition matters on a small random graph.
 
+## The proven inverse
+
+`candidates_complete` (`Proofs/Candidates.lean`): for a well-formed
+specification and a fresh fact, the results of `inverses s`, evaluated on the
+new graph, include every result the fact adds or removes. `stream_correct`
+composes it with `maintain_correct`: a stream that re-checks those candidates
+after each insertion holds exactly the specification's results on the
+replica's graph. Both depend only on the standard axioms.
+
+What the proof needed, and did not:
+
+- **Freshness is two facts, not three.** `f`'s id is new to the graph, and no
+  fact of the graph points to it. Nothing about `f`'s own predecessors is used.
+  This is the only place the graph matters (`Proofs/Fresh.lean`).
+- **`WellFormed` is used once, for the reserved label.** Each inverse is given
+  the subscription's givens and `f` under `__f`, and the proof needs no label of
+  the specification to be `__f`. The scoping and naming rules that the split
+  needed for its own reasons are otherwise unused.
+- **No operation.** The inverses do not say "add" or "remove". They only have to
+  be complete, because the stream re-checks every candidate (#6). This removes
+  the polarity bookkeeping that #338's defect lived in.
+- **No reordering.** An inverse keeps the original specification's nesting and
+  order: the pinned unknown gains `u = __f` as its first condition, and the
+  condition the path passes through becomes `exists`. So no label is renamed,
+  and every inverse is an ordinary, runnable specification. `shakeTree` and
+  `relocateConditions` are not needed for correctness. Whether an inverse can be
+  run from `f` alone, without the subscription's givens, as a server needs in
+  order to fan a fact out to many subscribers, is the next question (layer 4).
+
+`check-inverse` measures `candidates` itself, not a copy of the rule: it misses
+no change.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -369,6 +401,8 @@ successor condition matters on a small random graph.
 | `Proofs/Hoist.lean` | The split agrees with the reference semantics, for every well-formed specification, at any nesting depth. |
 | `Proofs/Maintain.lean` | A held set re-checked on covering candidates equals the result; graphs holding the same facts give the same results. |
 | `Proofs/Inverse.lean` | `shakeTree`'s rotation loop always stops within the length of the suffix it rotates. |
+| `Proofs/Fresh.lean` | A fresh fact changes no walk that starts anywhere else. |
+| `Proofs/Candidates.lean` | Every result a fresh fact changes is a result of one of the inverses; a re-checking stream is exact. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs

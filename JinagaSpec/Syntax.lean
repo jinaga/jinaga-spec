@@ -44,6 +44,10 @@ def Match.unknown : Match → Label
 def Match.conditions : Match → List Condition
   | .mk _ conditions => conditions
 
+def Condition.isPath : Condition → Bool
+  | .path _ => true
+  | .existential .. => false
+
 @[simp] theorem Match.unknown_mk (unknown : Label) (conditions : List Condition) :
     (Match.mk unknown conditions).unknown = unknown := rfl
 

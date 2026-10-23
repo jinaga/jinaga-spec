@@ -10,6 +10,7 @@ import JinagaSpec.Json
 import JinagaSpec.Cases
 import JinagaSpec.Maintain
 import JinagaSpec.Inverse
+import JinagaSpec.Candidates
 import JinagaSpec.Proofs.Scoped
 import JinagaSpec.Proofs.Basic
 import JinagaSpec.Proofs.Locality
@@ -21,3 +22,5 @@ import JinagaSpec.Proofs.Store
 import JinagaSpec.Proofs.Hoist
 import JinagaSpec.Proofs.Maintain
 import JinagaSpec.Proofs.Inverse
+import JinagaSpec.Proofs.Fresh
+import JinagaSpec.Proofs.Candidates

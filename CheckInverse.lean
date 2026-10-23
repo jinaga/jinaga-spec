@@ -202,15 +202,14 @@ def rule338 : Rule := fun _ taken resultGained c =>
     | .path _ => some c
   else some c
 
-/-- The coarse rule: at a level that lost its solution, the conditions held on
-the old graph and need not hold on the new one, so drop its existential
-conditions; at a level that gained, keep everything but the condition taken. -/
-def ruleCoarse : Rule := fun levelGained taken _ c =>
-  if some c == taken then none
-  else if levelGained || c.isPath then some c else none
+/-- What a producer of candidates is given: the specification, the givens, the
+graph before `f`, and `f`. -/
+abbrev Producer := Specification → Env → Graph → Fact → List Row
 
-/-- Results gained or lost that a rule's candidates miss. -/
-def ruleMisses (rule : Rule) (s : Specification) (graphs : Nat) : Gen (Nat × Option String) := do
+def byRule (rule : Rule) : Producer := fun s env store f => ruleCandidates rule s (store ++ [f]) env f
+
+/-- Results gained or lost that a producer's candidates miss. -/
+def ruleMisses (produce : Producer) (s : Specification) (graphs : Nat) : Gen (Nat × Option String) := do
   let mut missed := 0
   let mut report := none
   for n in [0:graphs] do
@@ -227,7 +226,7 @@ def ruleMisses (rule : Rule) (s : Specification) (graphs : Nat) : Gen (Nat × Op
     let new := s.evaluate g' env
     let changed := new.filter (!old.contains ·) ++ old.filter (!new.contains ·)
     let m := if changed.isEmpty then [] else
-      let candidates := ruleCandidates rule s g' env f
+      let candidates := produce s env store f
       changed.filter (!candidates.contains ·)
     missed := missed + m.length
     if !m.isEmpty && report.isNone then
@@ -275,8 +274,8 @@ def namedCase (label : String) (c : Specification × Graph × Fact) : IO Unit :=
     let old := s.evaluate g env
     let new := s.evaluate g' env
     let changed := new.filter (!old.contains ·) ++ old.filter (!new.contains ·)
-    let missedBy (rule : Rule) := (changed.filter (!(ruleCandidates rule s g' env f).contains ·)).length
-    IO.println s!"  {label}: gained {t.gained} (missed {t.missedGained}), lost {t.lost} (missed {t.missedLost}); #338 as proposed misses {missedBy rule338}, the coarse rule {missedBy ruleCoarse}"
+    let missedBy (produce : Producer) := (changed.filter (!(produce s env g f).contains ·)).length
+    IO.println s!"  {label}: gained {t.gained} (missed {t.missedGained}), lost {t.lost} (missed {t.missedLost}); #338 as proposed misses {missedBy (byRule rule338)}, `candidates` {missedBy candidates}"
 
 /-! ## Dump for the TypeScript comparison -/
 
@@ -338,10 +337,10 @@ def main (args : List String) : IO UInt32 := do
   let mut missCoarse := 0
   let mut firstCoarse : Option String := none
   for s in specs do
-    let ((m, _), g) := (ruleMisses rule338 s 40).run gen
+    let ((m, _), g) := (ruleMisses (byRule rule338) s 40).run gen
     gen := g
     miss338 := miss338 + m
-    let ((m, r), g) := (ruleMisses ruleCoarse s 40).run gen
+    let ((m, r), g) := (ruleMisses candidates s 40).run gen
     gen := g
     missCoarse := missCoarse + m
     if firstCoarse.isNone then firstCoarse := r
@@ -352,7 +351,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"graphs: {tally.graphs}, {tally.gained} results gained, {tally.lost} lost"
   IO.println s!"complete: {tally.missedGained} gained results no \"add\" reported, {tally.missedLost} lost results no \"remove\" reported"
   IO.println s!"sound:    {tally.addAbsent} \"add\" reports of a result the graph lacks, {tally.removePresent} \"remove\" reports of a result it still has"
-  IO.println s!"by rule, over all {specs.length} specifications: #338 as proposed misses {miss338} changed results, the coarse rule misses {missCoarse}"
+  IO.println s!"by rule, over all {specs.length} specifications: #338 as proposed misses {miss338} changed results, `candidates` misses {missCoarse}"
   IO.println "named cases:"
   namedCase "exists { notExists } (jinaga.js#338)" existsNotExists
   namedCase "two sibling notExists" siblingNotExists
@@ -364,7 +363,7 @@ def main (args : List String) : IO UInt32 := do
   -- and every mutant must be caught.
   if let some r := firstGained then IO.println s!"\nFIRST GAIN JINAGA.JS'S INVERSES MISS\n{r}"
   if let some r := firstLost then IO.println s!"\nFIRST LOSS JINAGA.JS'S INVERSES MISS\n{r}"
-  if let some r := firstCoarse then IO.println s!"\nFIRST MISS BY THE COARSE RULE\n{r}"
+  if let some r := firstCoarse then IO.println s!"\nFIRST MISS BY `candidates`\n{r}"
   let uncaught := (if notFresh.1 == 0 then ["notify a fact the store already has"] else []) ++
     (if dropped.1 == 0 then ["drop existential conditions"] else []) ++
     (if miss338 == 0 then ["#338 as proposed"] else [])
