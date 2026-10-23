@@ -78,7 +78,8 @@ from `JinagaSpec/InverseCases.lean` (named cases) and from a fixed random seed
   "rowLabels": ["u1"],                  // the projection's labels: a row lists their fact ids, in this order
   "givens": { "p1": 0 },                // the subscription's givens, by label, as fact ids
   "graph": [ { "id": 0, "type": "Root", "predecessors": [] },
-             { "id": 1, "type": "Account", "predecessors": [ { "role": "root", "id": 0 } ] } ],
+             { "id": 1, "type": "Account", "predecessors": [ { "role": "root", "id": 0 } ] },
+             { "id": 2, "type": "Mirror", "predecessors": [ { "role": "account", "id": 1 } ] } ],
   "fact": { "id": 3, "type": "Retired", "predecessors": [ { "role": "mirror", "id": 2 } ] },
   "expected": {
     "gained": [ [ ... ] ],              // rows in the result after `fact` arrives and not before
