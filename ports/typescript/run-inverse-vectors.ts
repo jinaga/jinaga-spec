@@ -7,8 +7,9 @@
 // 1. The proven inverses, read by jinaga.js. Each vector's expected inverses,
 //    read by jinaga.js's own MemoryStore from the subscription's givens and
 //    each new fact, on a store that holds the whole batch, find exactly the
-//    vector's candidates, which include every result gained and lost. This shows that jinaga.js's runner reads these
-//    specifications as the reference semantics does. It must pass.
+//    vector's candidates, which include every result gained and lost. This
+//    shows that jinaga.js's runner reads these specifications as the
+//    reference semantics does. It must pass.
 // 2. The port. If jinaga.js has `src/specification/inverse-candidates.ts`
 //    (jinaga/jinaga.js#338), its `buildInverses` and `reorderInverse` must
 //    produce the vector's inverses, structurally and in order. It must pass

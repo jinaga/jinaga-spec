@@ -5,8 +5,9 @@ import JinagaSpec.Semantics
 # Named cases for inversion
 
 Each is a specification, a graph, the subscription's givens, and a fresh batch
-of facts that changes the result. Most batches are one fact. `lake exe vectors` writes one inverse vector per case
-(`vectors/inverse/`), and `check-inverse` measures each.
+of facts that changes the result. Most batches are one fact. `lake exe vectors`
+writes one inverse vector per case (`vectors/inverse/`), and `check-inverse`
+measures each.
 -/
 namespace JinagaSpec
 
