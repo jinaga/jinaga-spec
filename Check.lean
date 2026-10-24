@@ -317,24 +317,31 @@ def checkHoistSpec (split : Specification → Split) (s : Specification) (graphs
 
 /-! ## Maintaining a result (jinaga/jinaga-spec#6)
 
-Runs `maintainStep` over a random insertion sequence and compares the held set
-with `evaluate` after every insertion. The candidates are the rows that full
-evaluation says changed, plus one row that did not, so that re-checking a
-candidate that stays is exercised too. The mutant drops one changed row; it
-must be caught, or the check is not testing coverage. -/
+Runs `maintainStep` over a random insertion sequence, cut into random batches
+of one to three facts, and compares the held set with `evaluate` after every
+batch. The candidates are the rows that full evaluation says changed, plus one
+row that did not, so that re-checking a candidate that stays is exercised too.
+The mutant drops one changed row; it must be caught, or the check is not
+testing coverage. -/
 
-def changedRows (s : Specification) (env : Env) (g : Graph) (f : Fact) : List Row :=
+def changedRows (s : Specification) (env : Env) (g : Graph) (B : List Fact) : List Row :=
   let old := s.evaluate g env
-  let new := s.evaluate (g ++ [f]) env
+  let new := s.evaluate (g ++ B) env
   old.filter (!new.contains ·) ++ new.filter (!old.contains ·)
 
-def coveringCandidates (dropOne : Bool) (s : Specification) (env : Env) (g : Graph) (f : Fact) : List Row :=
-  let changed := changedRows s env g f
+def coveringCandidates (dropOne : Bool) (s : Specification) (env : Env) (g : Graph) (B : List Fact) : List Row :=
+  let changed := changedRows s env g B
   let unchanged := (s.evaluate g env).filter (!changed.contains ·)
   (if dropOne then changed.filter (some · != changed.head?) else changed) ++ unchanged.take 1
 
-/-- Insertions checked, insertions that changed the result, and insertions
-after which the held set was wrong. -/
+/-- Cut a list into consecutive pieces of one to three. -/
+partial def batches (xs : List α) : Gen (List (List α)) := do
+  if xs.isEmpty then return []
+  let n := (← below 3) + 1
+  return xs.take n :: (← batches (xs.drop n))
+
+/-- Batches checked, batches that changed the result, and batches after which
+the held set was wrong. -/
 def checkMaintain (dropOne : Bool) (s : Specification) (graphs : Nat) : Gen (Nat × Nat × Nat) := do
   let mut checked := 0
   let mut changes := 0
@@ -344,9 +351,9 @@ def checkMaintain (dropOne : Bool) (s : Specification) (graphs : Nat) : Gen (Nat
     let env ← genEnv s g
     let k ← below 5
     let mut state := (g.take k, s.evaluate (g.take k) env)
-    for f in g.drop k do
-      if !(changedRows s env state.1 f).isEmpty then changes := changes + 1
-      state := maintainStep s env (coveringCandidates dropOne s env) state f
+    for B in ← batches (g.drop k) do
+      if !(changedRows s env state.1 B).isEmpty then changes := changes + 1
+      state := maintainStep s env (coveringCandidates dropOne s env) state B
       checked := checked + 1
       if !sameSet state.2 (s.evaluate state.1 env) then wrong := wrong + 1
   return (checked, changes, wrong)
@@ -477,7 +484,7 @@ def main (args : List String) : IO UInt32 := do
       firstFailure := some s!"maintain check\n{describeSpecification s}"
     if pw > 0 && firstFailure.isNone then
       firstFailure := some s!"arrival-order check\n{describeSpecification s}"
-  IO.println s!"maintain:      {maintainChecked} insertions, {maintainWrong} failures; arrival order: {permWrong} failures"
+  IO.println s!"maintain:      {maintainChecked} batches, {maintainWrong} failures; arrival order: {permWrong} failures"
   IO.println "mutation check (each wrong split must be caught):"
   mutationScore (cases.map (·.spec) ++ pool) 30 g
   storeMutationScore (cases.map (·.spec) ++ pool) 30 g

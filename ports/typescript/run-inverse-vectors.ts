@@ -5,10 +5,11 @@
 // Three checks, for each vector:
 //
 // 1. The proven inverses, read by jinaga.js. Each vector's expected inverses,
-//    read by jinaga.js's own MemoryStore from the subscription's givens and the
-//    new fact, find exactly the vector's candidates, which include every result
-//    gained and lost. This shows that jinaga.js's runner reads these
-//    specifications as the reference semantics does. It must pass.
+//    read by jinaga.js's own MemoryStore from the subscription's givens and
+//    each new fact, on a store that holds the whole batch, find exactly the
+//    vector's candidates, which include every result gained and lost. This
+//    shows that jinaga.js's runner reads these specifications as the
+//    reference semantics does. It must pass.
 // 2. The port. If jinaga.js has `src/specification/inverse-candidates.ts`
 //    (jinaga/jinaga.js#338), its `buildInverses` and `reorderInverse` must
 //    produce the vector's inverses, structurally and in order. It must pass
@@ -41,9 +42,12 @@ type Row = (number | null)[];
 const key = (row: Row) => JSON.stringify(row);
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
 
-/** A store holding the vector's graph and its new fact. Fact ids become hashes. */
+/** The facts that arrive: a batch, or a single fact. */
+const arrivals = (v: any): any[] => v.batch ?? [v.fact];
+
+/** A store holding the vector's graph and every fact that arrives. Fact ids become hashes. */
 async function storeOf(v: any) {
-    const facts = [...v.graph, v.fact];
+    const facts = [...v.graph, ...arrivals(v)];
     const typeOf = new Map<number, string>(facts.map((f: any) => [f.id, f.type]));
     const ref = (id: number) => ({ type: typeOf.get(id), hash: `h${id}` });
     const store = new MemoryStore();
@@ -58,10 +62,10 @@ async function storeOf(v: any) {
 const idOf = (reference: any): number | null => reference ? Number(reference.hash.slice(1)) : null;
 const rowOf = (v: any, tuple: any): Row => v.rowLabels.map((l: string) => idOf(tuple[l]));
 
-/** Read an inverse from the subscription's givens and the new fact. */
-async function readInverse(v: any, store: any, ref: (id: number) => any, inverse: any): Promise<Row[]> {
+/** Read an inverse from the subscription's givens and one new fact. */
+async function readInverse(v: any, store: any, ref: (id: number) => any, inverse: any, fact: any): Promise<Row[]> {
     const start = inverse.given.map((g: any) =>
-        g.label.name === pinLabel ? ref(v.fact.id) : ref(v.givens[g.label.name]));
+        g.label.name === pinLabel ? ref(fact.id) : ref(v.givens[g.label.name]));
     const results = await store.read(start, structuredClone(inverse));
     return results.map((r: any) => rowOf(v, r.tuple));
 }
@@ -81,8 +85,10 @@ for (const file of files) {
     for (const list of ["inverses", "reordered"]) {
         try {
             const found = new Set<string>();
-            for (const { specification } of v.expected[list]) {
-                for (const row of await readInverse(v, store, ref, specification)) found.add(key(row));
+            for (const fact of arrivals(v)) {
+                for (const { specification } of v.expected[list]) {
+                    for (const row of await readInverse(v, store, ref, specification, fact)) found.add(key(row));
+                }
             }
             const missing = changed.filter(row => !found.has(key(row)));
             if (missing.length > 0) problems.push(`${list}: jinaga.js's reads miss ${JSON.stringify(missing)}`);
@@ -113,10 +119,10 @@ for (const file of files) {
     try {
         const added = new Set<string>();
         const removed = new Set<string>();
-        for (const inverse of invertSpecification(structuredClone(v.specification))) {
+        for (const fact of arrivals(v)) for (const inverse of invertSpecification(structuredClone(v.specification))) {
             const spec = inverse.inverseSpecification;
-            if (spec.given[0].label.type !== v.fact.type) continue;
-            const results = await store.read([ref(v.fact.id)], structuredClone(spec));
+            if (spec.given[0].label.type !== fact.type) continue;
+            const results = await store.read([ref(fact.id)], structuredClone(spec));
             for (const r of results) {
                 // Keep the tuples whose givens are this subscription's.
                 if (!Object.entries(v.givens).every(([name, id]) => !(name in r.tuple) || idOf(r.tuple[name]) === id)) continue;

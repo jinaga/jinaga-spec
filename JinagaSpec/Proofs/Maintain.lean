@@ -5,9 +5,13 @@ import JinagaSpec.Proofs.Basic
 # A re-checked result is the result, whatever order facts arrive in
 
 `maintain_correct`: a held set re-checked on covering candidates after every
-insertion equals `evaluate` on the graph so far. It needs nothing about the
+batch equals `evaluate` on the graph so far. It needs nothing about the
 specification or the facts: re-checking decides a candidate by reading the
 specification, and a result that is not a candidate did not change.
+
+`recheck_each`: re-checking several lists of candidates in turn, on one graph,
+is re-checking all of them at once. A replica that notifies each fact of a
+batch separately, in any order, re-checks the batch.
 
 `evaluate_congr`: two graphs holding the same facts give the same results, as
 sets. A fact's id must name one fact, which content addressing gives; without
@@ -16,25 +20,42 @@ the case where the two graphs are the same facts in a different order.
 -/
 namespace JinagaSpec
 
-theorem recheck_correct {s : Specification} {env : Env} {g : Graph} {f : Fact}
-    {candidates held : List Row}
-    (hheld : ∀ r, r ∈ held ↔ r ∈ s.evaluate g env) (hcov : Covers s env g f candidates) (r : Row) :
-    r ∈ recheck s env (g ++ [f]) candidates held ↔ r ∈ s.evaluate (g ++ [f]) env := by
-  rcases hcov r with h | h <;> by_cases r ∈ candidates <;> simp_all [recheck]
+theorem mem_recheck {s : Specification} {env : Env} {g : Graph} {candidates held : List Row} {r : Row} :
+    r ∈ recheck s env g candidates held ↔
+      (r ∈ held ∧ r ∉ candidates) ∨ (r ∈ candidates ∧ r ∈ s.evaluate g env) := by
+  simp [recheck]
 
-/-- After any sequence of insertions, starting from a held set that equals the
+theorem recheck_correct {s : Specification} {env : Env} {g : Graph} {B : List Fact}
+    {candidates held : List Row}
+    (hheld : ∀ r, r ∈ held ↔ r ∈ s.evaluate g env) (hcov : Covers s env g B candidates) (r : Row) :
+    r ∈ recheck s env (g ++ B) candidates held ↔ r ∈ s.evaluate (g ++ B) env := by
+  rcases hcov r with h | h <;> by_cases r ∈ candidates <;> simp_all [mem_recheck]
+
+/-- Re-checking each list of candidates in turn, on one graph, holds what one
+re-check of all of them holds. -/
+theorem recheck_each (s : Specification) (env : Env) (g : Graph) :
+    ∀ (cs : List (List Row)) (held : List Row) (r : Row),
+      r ∈ cs.foldl (fun held c => recheck s env g c held) held ↔ r ∈ recheck s env g cs.flatten held
+  | [], held, r => by simp [recheck]
+  | c :: cs, held, r => by
+    rw [List.foldl_cons, recheck_each s env g cs]
+    simp only [mem_recheck, List.flatten_cons, List.mem_append]
+    grind
+
+/-- After any sequence of batches, starting from a held set that equals the
 result, the held set equals the result, provided each step's candidates cover
 that step's change. -/
-theorem maintain_correct (s : Specification) (env : Env) (candidates : Graph → Fact → List Row) :
-    ∀ (fs : List Fact) (g : Graph) (held : List Row),
+theorem maintain_correct (s : Specification) (env : Env) (candidates : Graph → List Fact → List Row) :
+    ∀ (bs : List (List Fact)) (g : Graph) (held : List Row),
       (∀ r, r ∈ held ↔ r ∈ s.evaluate g env) →
-      (∀ pre f post, fs = pre ++ f :: post → Covers s env (g ++ pre) f (candidates (g ++ pre) f)) →
-      ∀ r, r ∈ (fs.foldl (maintainStep s env candidates) (g, held)).2 ↔ r ∈ s.evaluate (g ++ fs) env
+      (∀ pre B post, bs = pre ++ B :: post →
+        Covers s env (g ++ pre.flatten) B (candidates (g ++ pre.flatten) B)) →
+      ∀ r, r ∈ (bs.foldl (maintainStep s env candidates) (g, held)).2 ↔ r ∈ s.evaluate (g ++ bs.flatten) env
   | [], g, held, hheld, _ => by simpa using hheld
-  | f :: fs, g, held, hheld, hcov => by
-    have h := maintain_correct s env candidates fs (g ++ [f]) _
-      (recheck_correct hheld (by simpa using hcov [] f fs rfl))
-      (fun pre f' post h => by simpa using hcov (f :: pre) f' post (by simp [h]))
+  | B :: bs, g, held, hheld, hcov => by
+    have h := maintain_correct s env candidates bs (g ++ B) _
+      (recheck_correct hheld (by simpa using hcov [] B bs rfl))
+      (fun pre B' post h => by simpa using hcov (B :: pre) B' post (by simp [h]))
     simpa [maintainStep] using h
 
 /-! ## Arrival order -/
