@@ -1,4 +1,4 @@
-import JinagaSpec
+import CheckGen
 
 /-!
 # Randomized check of the split theorem
@@ -9,77 +9,6 @@ specifications. This is a cheap test that the theorem is true before it is
 proved, and a way to see which hypotheses it needs. It proves nothing.
 -/
 open JinagaSpec Build
-
-abbrev Gen := StateM (StdGen × Nat)
-
-def below (n : Nat) : Gen Nat :=
-  modifyGet fun (g, k) => let (x, g') := randNat g 0 (n - 1); (x, (g', k))
-
-def chance (num den : Nat) : Gen Bool := do return (← below den) < num
-
-def pick [Inhabited α] (xs : List α) : Gen α := do return xs[← below xs.length]!
-
-def fresh : Gen Nat := modifyGet fun (g, k) => (k, (g, k + 1))
-
-def repeatGen (n : Nat) (x : Gen α) : Gen (List α) := do
-  let mut out := []
-  for _ in [0:n] do out := (← x) :: out
-  return out.reverse
-
-/-! ## Facts and roles in a specification -/
-
-mutual
-  def typesInMatches : List Match → List Name
-    | [] => []
-    | .mk u cs :: rest => u.type :: (typesInConditions cs ++ typesInMatches rest)
-  def typesInConditions : List Condition → List Name
-    | [] => []
-    | c :: cs => typesInCondition c ++ typesInConditions cs
-  def typesInCondition : Condition → List Name
-    | .path c => (c.rolesLeft ++ c.rolesRight).map (·.predecessorType)
-    | .existential _ ms => typesInMatches ms
-end
-
-mutual
-  def rolesInMatches : List Match → List Role
-    | [] => []
-    | .mk _ cs :: rest => rolesInConditions cs ++ rolesInMatches rest
-  def rolesInConditions : List Condition → List Role
-    | [] => []
-    | c :: cs => rolesInCondition c ++ rolesInConditions cs
-  def rolesInCondition : Condition → List Role
-    | .path c => c.rolesLeft ++ c.rolesRight
-    | .existential _ ms => rolesInMatches ms
-end
-
-/-! ## Random graphs -/
-
-/-- Every type appears, so that a match has candidates. Each fact points, by
-each role, to zero, one or two facts of that role's type. -/
-def genGraph (s : Specification) (size : Nat) : Gen Graph := do
-  let types := (s.given.map (·.type) ++ typesInMatches s.matchList).eraseDups
-  let roles := (rolesInMatches s.matchList).eraseDups
-  let types := if types.isEmpty then ["T"] else types
-  let skeleton : List (Nat × Name) := (List.range size).map fun i => (i, types[i % types.length]!)
-  let mut facts : Graph := []
-  for (i, type) in skeleton do
-    let mut preds : List (Name × Nat) := []
-    for role in roles do
-      if ← chance 3 4 then
-        let targets := (skeleton.filter fun (j, t) => t == role.predecessorType && j != i).map (·.1)
-        if !targets.isEmpty then
-          preds := (role.name, ← pick targets) :: preds
-          if ← chance 1 4 then preds := (role.name, ← pick targets) :: preds
-    facts := facts ++ [{ id := i, type := type, predecessors := preds }]
-  return facts
-
-def genEnv (s : Specification) (g : Graph) : Gen Env := do
-  let mut ids := []
-  for l in s.given do
-    let candidates := (g.filter (·.type == l.type)).map (·.id)
-    let id ← if candidates.isEmpty then pure 0 else pick candidates
-    ids := ids ++ [id]
-  return s.bindGivens ids
 
 /-- A fact of the given's type, under authorization: an id fresh with respect to
 `store` (one past every id `genGraph` can produce), with predecessors chosen
@@ -96,57 +25,7 @@ def genBatchFact (s : Specification) (g0 : Label) (store : Graph) (size : Nat) :
         if ← chance 1 4 then preds := (role.name, ← pick targets) :: preds
   return { id := size, type := g0.type, predecessors := preds }
 
-/-! ## Random specifications, well scoped by construction -/
-
-/-- Most specifications use one fact type, so that two walks often meet. -/
-def factTypes : Gen (List Name) := do
-  return if ← chance 3 4 then ["A"] else ["A", "B"]
-
-def genRoles (types : List Name) : Gen (List Role) := do
-  let length ← pick [0, 0, 1, 1, 1, 2]
-  repeatGen length (do return role (← pick ["x", "y"]) (← pick types))
-
-def genPath (types scope : List Name) : Gen Condition := do
-  return path (← genRoles types) (← pick scope) (← genRoles types)
-
-instance : Inhabited Match := ⟨.mk { name := "", type := "" } []⟩
-
-partial def genMatch (types scope : List Name) (name type : Name) (depth : Nat) : Gen Match := do
-  let scope' := name :: scope
-  let root ← genPath types scope
-  let mut conditions := [root]
-  for _ in [0:(← below 3)] do
-    if depth < 2 && (← chance 1 3) then
-      let inner ← genMatch types scope' s!"e{← fresh}" (← pick types) (depth + 1)
-      conditions := conditions ++ [if ← chance 1 2 then exists' [inner] else notExists [inner]]
-    else
-      conditions := conditions ++ [← genPath types scope]
-  return .mk { name := name, type := type } conditions
-
-def genSpec (duplicates : Bool := false) : Gen Specification := do
-  let types ← factTypes
-  let count ← below 2
-  let given := (List.range (count + 1)).map fun i => (s!"p{i + 1}", "A")
-  let mut scope := given.map (·.1)
-  let mut matchList := []
-  for i in [0:(← below 4) + 1] do
-    -- Sometimes name an unknown `s{i}`, so that split labels must avoid it.
-    let collide ← chance 1 5
-    let duplicate ← pick ["p1", "u1", "u2", "s1"]
-    let name := if duplicates then duplicate
-      else if collide then s!"s{i + 1}" else s!"u{i + 1}"
-    matchList := matchList ++ [← genMatch types scope name (← pick types) 0]
-    scope := scope ++ [name]
-  let labels := (← repeatGen ((← below 2) + 1) (pick scope))
-  let projection := match labels with
-    | [l] => Projection.fact l
-    | ls => Projection.composite (ls.map fun l => { name := l, label := l })
-  return { given := givens given, matchList := matchList, projection := projection }
-
 /-! ## The check -/
-
-def sameSet (a b : List (List (Option Nat))) : Bool :=
-  a.all (b.contains ·) && b.all (a.contains ·)
 
 /-! ## Mutants
 
@@ -436,6 +315,53 @@ def checkHoistSpec (split : Specification → Split) (s : Specification) (graphs
       tally := { tally with failures := tally.failures + 1 }
   return (tally, report)
 
+/-! ## Maintaining a result (jinaga/jinaga-spec#6)
+
+Runs `maintainStep` over a random insertion sequence and compares the held set
+with `evaluate` after every insertion. The candidates are the rows that full
+evaluation says changed, plus one row that did not, so that re-checking a
+candidate that stays is exercised too. The mutant drops one changed row; it
+must be caught, or the check is not testing coverage. -/
+
+def changedRows (s : Specification) (env : Env) (g : Graph) (f : Fact) : List Row :=
+  let old := s.evaluate g env
+  let new := s.evaluate (g ++ [f]) env
+  old.filter (!new.contains ·) ++ new.filter (!old.contains ·)
+
+def coveringCandidates (dropOne : Bool) (s : Specification) (env : Env) (g : Graph) (f : Fact) : List Row :=
+  let changed := changedRows s env g f
+  let unchanged := (s.evaluate g env).filter (!changed.contains ·)
+  (if dropOne then changed.filter (some · != changed.head?) else changed) ++ unchanged.take 1
+
+/-- Insertions checked, insertions that changed the result, and insertions
+after which the held set was wrong. -/
+def checkMaintain (dropOne : Bool) (s : Specification) (graphs : Nat) : Gen (Nat × Nat × Nat) := do
+  let mut checked := 0
+  let mut changes := 0
+  let mut wrong := 0
+  for _ in [0:graphs] do
+    let g ← genGraph s 10
+    let env ← genEnv s g
+    let k ← below 5
+    let mut state := (g.take k, s.evaluate (g.take k) env)
+    for f in g.drop k do
+      if !(changedRows s env state.1 f).isEmpty then changes := changes + 1
+      state := maintainStep s env (coveringCandidates dropOne s env) state f
+      checked := checked + 1
+      if !sameSet state.2 (s.evaluate state.1 env) then wrong := wrong + 1
+  return (checked, changes, wrong)
+
+/-- Specifications on which the same facts in a different order gave different results. -/
+def checkPerm (s : Specification) (graphs : Nat) : Gen Nat := do
+  let mut wrong := 0
+  for _ in [0:graphs] do
+    let g ← genGraph s 10
+    let env ← genEnv s g
+    let k ← below 10
+    for g' in [g.reverse, g.drop k ++ g.take k] do
+      if !sameSet (s.evaluate g env) (s.evaluate g' env) then wrong := wrong + 1
+  return wrong
+
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
   let duplicates := args.contains "duplicates"
@@ -532,9 +458,30 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"hoist, ignoring polarity: {hoistNoPolTotal.checks} checks, {hoistNoPolTotal.failures} failures"
   IO.println s!"hoist, naive parity: {hoistNaiveTotal.checks} checks, {hoistNaiveTotal.failures} failures"
   IO.println s!"hoist, respecting polarity (monotone): {hoistTotal.checks} checks, {hoistTotal.failures} failures"
+  let mut maintainChecked := 0
+  let mut maintainWrong := 0
+  let mut permWrong := 0
+  let mut dropCaught := 0
+  let mut dropApplicable := 0
+  for s in cases.map (·.spec) ++ pool do
+    let ((checked, changes, wrong), _) := (checkMaintain false s 5).run g
+    let ((_, _, mutantWrong), g') := (checkMaintain true s 5).run g
+    let (pw, g'') := (checkPerm s 5).run g'
+    g := g''
+    maintainChecked := maintainChecked + checked
+    maintainWrong := maintainWrong + wrong
+    permWrong := permWrong + pw
+    if changes > 0 then dropApplicable := dropApplicable + 1
+    if mutantWrong > 0 then dropCaught := dropCaught + 1
+    if wrong > 0 && firstFailure.isNone then
+      firstFailure := some s!"maintain check\n{describeSpecification s}"
+    if pw > 0 && firstFailure.isNone then
+      firstFailure := some s!"arrival-order check\n{describeSpecification s}"
+  IO.println s!"maintain:      {maintainChecked} insertions, {maintainWrong} failures; arrival order: {permWrong} failures"
   IO.println "mutation check (each wrong split must be caught):"
   mutationScore (cases.map (·.spec) ++ pool) 30 g
   storeMutationScore (cases.map (·.spec) ++ pool) 30 g
+  IO.println s!"  mutant \"drop one changed row from the candidates\": caught on {dropCaught} of {dropApplicable} specifications with a change"
   match firstFailure with
   | none => return 0
   | some report => IO.println s!"\nFIRST FAILURE\n{report}"; return 1

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "vectors": "tsx run-vectors.ts",
-    "audit": "tsx audit-jinaga.ts"
+    "audit": "tsx audit-jinaga.ts",
+    "inverse": "tsx run-inverse-vectors.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

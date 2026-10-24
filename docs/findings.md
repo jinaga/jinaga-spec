@@ -265,6 +265,157 @@ any depth, in the order `hoistMatches`/`hoistConditions`/`hoistCondition`
 visits them — the same reason the general proof above did not need
 `splitPaths`' numbering to begin with.
 
+## Maintaining a result needs only covering candidates
+
+`maintain_correct` (jinaga/jinaga-spec#6) takes no hypothesis about the
+specification or the facts: a held set re-checked on candidates that cover each
+step's change equals `evaluate` after every insertion. `lake exe check` runs it
+over about 12,600 random insertions per seed with no failure, and a mutant that
+drops one changed row from the candidates is caught on every specification
+whose sample graphs had a change.
+
+`evaluate_perm` does need one hypothesis: an id names at most one fact
+(`Graph.IdsUnique`). Two facts with the same id and different content resolve
+differently depending on which comes first. Content addressing gives this. The
+theorem is stated more generally as `evaluate_congr`, for graphs holding the
+same facts with any repetition, because a replica that receives a fact twice
+holds it twice, and #9's `converge` needs exactly that.
+
+## Inversion, measured before anything is proved about it
+
+`JinagaSpec/Inverse.lean` ports `invertSpecification` from jinaga.js at
+`4ebbb27`, including its known defect at `inverse.ts:505`.
+`ports/typescript/inverse-diff.ts` checks that the port's inverses equal
+jinaga.js's, as text, on 400 random specifications per seed. They agree on
+every one across five seeds, refusals included, about 1,000 inverses per seed.
+`lake exe check-inverse` then measures them against law L4 (every result gained
+is reported by an "add" inverse, every result lost by a "remove" inverse) on
+random graphs and a fresh fact.
+
+**jinaga.js's inverses miss changes, from one cause.** Per seed of about 1,500
+specifications, a few lost results go unreported, and occasionally a gained
+one. Every miss inspected has the same cause: an inverse evaluates, on the new
+graph, a condition that held only on the old one. That happens at every level of
+the chain from the result down to the fact whose solution was *lost*.
+
+- `exists { notExists }` (jinaga/jinaga.js#338): retiring the only current
+  mirror loses the account, but the inverse requires the mirror's `notExists`
+  on the new graph, where it is false.
+- Two sibling `notExists` conditions that one fact falsifies together. Each
+  inverse removes its own condition and keeps the other, which the same fact
+  has just falsified. This is new. It is reproduced in jinaga.js itself: `watch`
+  reports the row added and never removed, while a query returns nothing.
+- At depth 3 it shows as a missed *gain*: `notExists { notExists { exists } }`.
+  The new fact makes the innermost `exists` true, which removes the middle
+  solution, which adds the result. The inverse's operation is "add", but the
+  middle level lost its solution, and its `notExists` is false on the new graph.
+
+**#338's proposed fix is not enough.** It keeps the enclosing conditions as
+written for "add" and negates them for "remove", decided by the inverse's final
+operation. Built directly from the specification and measured the same way, it
+still misses a few results per seed, and it misses the sibling case. Which
+conditions an inverse may keep depends on the direction of each level, not on
+the final operation.
+
+**The coarse rule misses nothing.** At each level of the chain that *lost* its
+solution, drop that level's existential conditions; at each level that gained,
+keep them, except the condition the chain passes through. Path conditions are
+kept everywhere: a lost solution never binds the new fact, and a walk from any
+other fact is the same on the old graph and the new. It missed no change across
+eight seeds, about 12,000 specifications. Its candidates are a superset, which a
+re-checking stream (#6) does not mind. This is the rule `candidates_complete`
+will be proved for.
+
+**Soundness, for a stream that trusts its inverses.** jinaga.js's "remove"
+inverses report about 16 results per seed that the graph still has (#338's
+second symptom). No "add" reports a result the graph lacks. A re-checking
+stream needs neither.
+
+**`shakeTree` refuses well-formed specifications.** About 8% of random
+well-formed specifications (126 of 1,516 on seed 1) pass the connectivity check
+and are then refused by `shakeTree` as "not connected to the rest of the graph".
+In each one a given is joined only from inside an existential condition. The
+connectivity check counts that join and `shakeTree` does not. One of the named
+cases is refused this way: `(p1: Post, p2: Jinaga.User)` with
+`!E { u3: Ban [u3->user = p2] }`, so jinaga.js cannot subscribe to it.
+jinaga/jinaga.js#141 is the open proposal to handle it. (The other refusals,
+about 250 per seed, are disconnected specifications from the generator, which
+jinaga.js is right to refuse.)
+
+**The loop that once ran forever cannot.** `shakeTree_bound`
+(`Proofs/Inverse.lean`): the loop that moves a match without a path condition to
+the bottom (jinaga/jinaga.js#132) returns to its first match within the length
+of the suffix it rotates, for every input, so it runs at most that many times.
+What it does on return is refuse, which is the refusal above.
+`relocateConditions` visits each match once and moves conditions only forward.
+
+**Smaller observations.** `simplifyMatch` checks whether a simplified
+existential condition still expects a successor of the given; none can, so the
+branch is dead. The mutant that re-notifies a fact already in the store is
+caught on only about 1% of specifications: it shows only when a skipped
+successor condition matters on a small random graph.
+
+## The proven inverse
+
+`candidates_complete` (`Proofs/Candidates.lean`): for a well-formed
+specification and a fresh fact, the results of `inverses s`, evaluated on the
+new graph, include every result the fact adds or removes. `stream_correct`
+composes it with `maintain_correct`: a stream that re-checks those candidates
+after each insertion holds exactly the specification's results on the
+replica's graph. Both depend only on the standard axioms.
+
+What the proof needed, and did not:
+
+- **Freshness is two facts, not three.** `f`'s id is new to the graph, and no
+  fact of the graph points to it. Nothing about `f`'s own predecessors is used.
+  This is the only place the graph matters (`Proofs/Fresh.lean`).
+- **`WellFormed` is used once, for the reserved label.** Each inverse is given
+  the subscription's givens and `f` under `__f`, and the proof needs no label of
+  the specification to be `__f`. The scoping and naming rules that the split
+  needed for its own reasons are otherwise unused.
+- **No operation.** The inverses do not say "add" or "remove". They only have to
+  be complete, because the stream re-checks every candidate (#6). This removes
+  the polarity bookkeeping that #338's defect lived in.
+- **Reordering is for speed, and it checks itself.** An inverse as built keeps
+  the original specification's nesting and order. That is enough for
+  correctness, but read from the givens a pin inside an existential condition
+  is checked once per row of the collection. `reorderOrSelf` (`Reorder.lean`)
+  flattens the existential conditions the path passes through and orders the
+  matches from `__f`. It then checks its own result (`arranges`): the same
+  unknowns, each bound once, the same conditions (each possibly reversed or
+  moved), every label bound before use. If the check fails, it keeps the
+  inverse as it was. `reorderOrSelf_correct` holds with no hypothesis, because
+  the proof is about the check, not the search that produced the order: a list
+  of matches is a conjunction, so any well-scoped arrangement of the same
+  conditions has the same solutions. On random specifications every reordered
+  inverse starts at the new fact and every match is reached by a path
+  condition from something bound, and the results never change.
+- **Known givens make jinaga/jinaga.js#141 go away.** The reordering binds the
+  givens throughout, so a given joined only through an existential condition
+  is never a problem. jinaga.js refuses those specifications only because its
+  inverses must reach every given from the new fact alone.
+
+## A label reused after an existential condition captures it
+
+The parser scopes an existential condition's labels to the condition, so a
+later match may declare the same name. jinaga.js's inverse concatenates the
+outer and inner matches and looks labels up by name. The later match comes
+first in that list, so it captures the lookup, and the inverse misses changes
+(jinaga/jinaga.js#343, reproduced in jinaga.js itself). `check-inverse`
+generates such names. With them, jinaga.js's inverses also report results that
+are not there.
+
+`candidates` is immune, because an inverse keeps its nesting. The reordering
+is not: flattening would bind the two labels in one list. Rather than rename,
+which would need its own proof, the self-check rejects the flattened list when
+a name repeats, and the inverse is kept unordered: correct, and as slow as an
+unordered inverse. With reused names in the generator, about 6% of inverses
+fall back; without them, none do. Renaming lifted labels is a possible later
+improvement.
+
+`check-inverse` measures `candidates` itself, not a copy of the rule: it misses
+no change.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -277,6 +428,12 @@ visits them — the same reason the general proof above did not need
 | `Basic.lean`, `Scoped.lean` | Helper facts, and the definitions of well-formedness. |
 | `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies`/`store_correct`. |
 | `Proofs/Hoist.lean` | The split agrees with the reference semantics, for every well-formed specification, at any nesting depth. |
+| `Proofs/Maintain.lean` | A held set re-checked on covering candidates equals the result; graphs holding the same facts give the same results. |
+| `Proofs/Inverse.lean` | `shakeTree`'s rotation loop always stops within the length of the suffix it rotates. |
+| `Proofs/Fresh.lean` | A fresh fact changes no walk that starts anywhere else. |
+| `Proofs/Candidates.lean` | Every result a fresh fact changes is a result of one of the inverses. |
+| `Proofs/Reorder.lean` | Matches are a conjunction, so a checked arrangement has the same solutions; flattening an `exists` keeps them. |
+| `Proofs/Stream.lean` | The candidates cover every change, and a re-checking stream is exact. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs

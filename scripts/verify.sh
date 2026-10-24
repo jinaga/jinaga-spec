@@ -17,21 +17,25 @@ echo "== No sorry, no added axioms"
 if grep -rnE "sorry|^axiom|native_decide" JinagaSpec; then
   echo "found a forbidden construct"; exit 1
 fi
-tmp="$(mktemp -d)"; printf 'import JinagaSpec\n#print axioms JinagaSpec.split_correct\n#print axioms JinagaSpec.isWellFormed_iff\n#print axioms JinagaSpec.store_correct\n#print axioms JinagaSpec.store_denies\n' > "$tmp/a.lean"
+tmp="$(mktemp -d)"; printf 'import JinagaSpec\n#print axioms JinagaSpec.split_correct\n#print axioms JinagaSpec.isWellFormed_iff\n#print axioms JinagaSpec.store_correct\n#print axioms JinagaSpec.store_denies\n#print axioms JinagaSpec.maintain_correct\n#print axioms JinagaSpec.evaluate_perm\n#print axioms JinagaSpec.shakeTree_bound\n#print axioms JinagaSpec.candidates_complete\n#print axioms JinagaSpec.stream_correct\n#print axioms JinagaSpec.reorderOrSelf_correct\n' > "$tmp/a.lean"
 lake env lean "$tmp/a.lean" | tee "$tmp/out.txt"
 if grep -q sorryAx "$tmp/out.txt"; then echo "one of the checked theorems depends on sorry"; exit 1; fi
 
 echo "== Vectors are up to date"
 lake build vectors
 tmp="$(mktemp -d)"; lake exe vectors "$tmp" > /dev/null
-for kind in split well-formed; do
+for kind in split well-formed inverse; do
   diff -r "$tmp/$kind" "vectors/$kind" || { echo "vectors/$kind is out of date: run lake exe vectors"; exit 1; }
 done
 echo "vectors match the oracle"
 
 echo "== Randomized check"
 lake build check
-for seed in 1 2 3; do lake exe check "$seed" | grep -E "specs|cases"; done
+for seed in 1 2 3; do lake exe check "$seed" | grep -E "specs|cases|maintain"; done
+
+echo "== Randomized check of inversion"
+lake build check-inverse
+lake exe check-inverse 1 | grep -E "^specifications|^complete|^sound|^by rule|caught"
 
 jinaga="${JINAGA_JS:-../jinaga.js}"
 if [ -d "$jinaga/src/specification" ]; then
@@ -44,6 +48,16 @@ if [ -d "$jinaga/src/specification" ]; then
     cd ports/typescript
     npm ci --silent
     JINAGA_JS="$jinaga" npm run --silent vectors | grep -E "vectors pass|vectors agree|FAIL"
+    dump="$(mktemp -d)/inverse-dump.json"
+    (cd ../.. && lake exe check-inverse dump "$dump" 1 > /dev/null)
+    JINAGA_JS="$jinaga" npx tsx inverse-diff.ts "$dump" | grep -E "specifications|FAIL"
+    JINAGA_JS="$jinaga" npm run --silent inverse | grep -E "inverse vectors|FAIL|misses changes"
+    # The reference TypeScript implementation, against the vectors and against
+    # the Lean definition on random specifications.
+    JINAGA_JS="$jinaga" PORT=./inverse-candidates.ts npm run --silent inverse | grep -E "inverse vectors|FAIL"
+    cands="$(mktemp -d)/candidates-dump.json"
+    (cd ../.. && lake exe check-inverse dump-candidates "$cands" 1 > /dev/null)
+    npx tsx reference-diff.ts "$cands" | grep -E "specifications|FAIL"
     npm run --silent audit | tail -2
   )
 else
