@@ -270,9 +270,9 @@ visits them — the same reason the general proof above did not need
 `maintain_correct` (jinaga/jinaga-spec#6) takes no hypothesis about the
 specification or the facts: a held set re-checked on candidates that cover each
 step's change equals `evaluate` after every insertion. `lake exe check` runs it
-over about 12,600 random insertions per seed with no failure, and a mutant that
-drops one changed row from the candidates is caught on every specification
-whose sample graphs had a change.
+over about 6,850 random batches of one to three facts per seed (seeds 1–3) with
+no failure, and a mutant that drops one changed row from the candidates is
+caught on every specification whose sample graphs had a change.
 
 `evaluate_perm` does need one hypothesis: an id names at most one fact
 (`Graph.IdsUnique`). Two facts with the same id and different content resolve
@@ -362,7 +362,8 @@ specification and a fresh fact, the results of `inverses s`, evaluated on the
 new graph, include every result the fact adds or removes. `stream_correct`
 composes it with `maintain_correct`: a stream that re-checks those candidates
 after each insertion holds exactly the specification's results on the
-replica's graph. Both depend only on the standard axioms.
+replica's graph. Both depend only on the standard axioms. Both now hold for
+a batch of facts, of which a single fact is the case `[f]` (next section).
 
 What the proof needed, and did not:
 
@@ -416,6 +417,83 @@ improvement.
 `check-inverse` measures `candidates` itself, not a copy of the rule: it misses
 no change.
 
+## A batch is read on the graph that holds it all (#11)
+
+A replica saves a batch, then notifies each saved fact against the graph that
+holds the whole batch (`ObservableSource.notify` in jinaga.js). So a fact's
+inverses are read on `g ++ B`, never on `g ++ pre ++ [f]`, and within the
+batch a fact may already have successors. The question was whether reading
+there still finds every change, and if not, what a stream may conclude.
+
+**Every change is a candidate (question 1).** `lake exe check-inverse` draws,
+for each of about 1,500 specifications per seed, 40 graphs and a batch of one
+to four fresh facts, each pointing into the graph or at facts of the batch made
+before it, listed in a random order. It compares the net change, from `g` to
+`g ++ B`, with `candidates s env g B`, every fact's inverses read on `g ++ B`:
+
+| seed | batches | with facts naming each other | results changed | missed by `candidates` | changed with no candidate | mutant "read each fact alone" misses |
+|---|---|---|---|---|---|---|
+| 1 | 60,640 | 21,212 | 3,063 | 0 | 0 | 140 |
+| 2 | 60,640 | 20,812 | 3,044 | 0 | 0 | 167 |
+| 3 | 60,640 | 20,881 | 3,454 | 0 | 0 | 162 |
+| 4 | 60,640 | 21,074 | 2,501 | 0 | 0 | 136 |
+| 5 | 60,640 | 20,993 | 2,561 | 0 | 0 | 114 |
+| 6 | 60,640 | 21,064 | 3,200 | 0 | 0 | 158 |
+| 7 | 60,640 | 21,205 | 3,216 | 0 | 0 | 152 |
+| 8 | 60,640 | 20,896 | 3,478 | 0 | 0 | 208 |
+
+So there is no counterexample to record. Question 2's weaker shapes are not
+needed: triggering follows from coverage, and no change to the inverses is
+needed. The mutant reads each fact's inverses on `g` and that fact alone. It
+misses changes on every seed, so the check would see a read on the wrong
+graph. `batch-exists-together` is the smallest such case: an account and its
+mirror arrive together, and neither fact's inverses find the account on a
+graph without the other.
+
+**The proof is the single-fact proof, read for a batch.** The walk from a
+changed result down to a new fact never needed `f` to be the last fact. It
+stops at the *first* fact of `B` it meets. Above that point every bound fact is
+old, so the walks the proof compares start outside `B`, and those are the same
+on `g` and `g ++ B`. The proof also learns which fact to pin only when it
+reaches it. So it reads each level with the pin unbound, and binds it on the
+way back up, which is sound because the specification never mentions `__f`
+(`AgreeOff`). That lemma group is the only new reasoning; the rest of
+`Proofs/Candidates.lean` changed `[f]` to `B`.
+
+**The hypothesis is weaker than the issue proposed.** `Fresh g B` asks only
+that no fact of `g` has the id of a fact of `B`, or points to one. It says
+nothing about order within the batch: no topological order is needed. That
+matters because jinaga.js discards the batch's order (jinaga/jinaga.js#248).
+The issue's hypothesis, fresh in some topological order, implies it.
+
+**What a stream may conclude.** Three theorems, each depending only on the
+standard axioms:
+
+- `candidates_complete`: for a well-formed specification and a fresh batch,
+  `candidates s env g B` includes every result the batch adds or removes. If a
+  fact of the batch is one of the subscription's givens, that fact's candidates
+  are every result old and new, as before.
+- `notify_correct`: from a held set equal to the result on `g`, re-checking
+  each fact's candidates in turn, each read on `g ++ B`, leaves exactly the
+  result on `g ++ B`. This is the shape jinaga/jinaga.js#336 and #345 need.
+  The re-checks commute (`recheck_each`): they all read one graph, so the
+  notifications may run in any order.
+- `stream_correct`: over a sequence of batches, each fresh when it arrives,
+  the stream holds exactly the specification's results.
+
+A row gained and lost within one batch (`batch-current-value`: two revisions
+arrive together, and the one between is current only inside the batch) may be
+a candidate, and the re-check drops it. Nothing proven covers a second batch
+saved while the first one's notifications are still reading. Those reads see
+more than `g ++ B`, which is a question about the store, not about inverses.
+
+**Vectors.** `vectors/inverse/` gains two named batch vectors and six random
+ones (`random-batch-<n>`, three facts each, at least one naming another). A
+batch vector carries `batch` in place of `fact`, and the existing vectors are
+unchanged (`vectors/README.md`). jinaga.js's `MemoryStore`, reading the proven
+inverses given each fact of the batch on a store that holds it all, finds
+exactly the vectors' candidates on all 30.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -428,12 +506,12 @@ no change.
 | `Basic.lean`, `Scoped.lean` | Helper facts, and the definitions of well-formedness. |
 | `Proofs/Store.lean` | `authGraph`'s retyping keeps the given out of every candidate list and every walk of at least one step; `store_denies`/`store_correct`. |
 | `Proofs/Hoist.lean` | The split agrees with the reference semantics, for every well-formed specification, at any nesting depth. |
-| `Proofs/Maintain.lean` | A held set re-checked on covering candidates equals the result; graphs holding the same facts give the same results. |
+| `Proofs/Maintain.lean` | A held set re-checked on covering candidates equals the result; re-checking in turn on one graph is re-checking at once; graphs holding the same facts give the same results. |
 | `Proofs/Inverse.lean` | `shakeTree`'s rotation loop always stops within the length of the suffix it rotates. |
-| `Proofs/Fresh.lean` | A fresh fact changes no walk that starts anywhere else. |
-| `Proofs/Candidates.lean` | Every result a fresh fact changes is a result of one of the inverses. |
+| `Proofs/Fresh.lean` | A fresh batch changes no walk that starts outside it. |
+| `Proofs/Candidates.lean` | Every result a fresh batch changes is a result of one of the inverses, given one of the batch's facts. |
 | `Proofs/Reorder.lean` | Matches are a conjunction, so a checked arrangement has the same solutions; flattening an `exists` keeps them. |
-| `Proofs/Stream.lean` | The candidates cover every change, and a re-checking stream is exact. |
+| `Proofs/Stream.lean` | The candidates cover every change, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs

@@ -14,14 +14,18 @@ and a fresh fact `f` (its id is new, and its predecessors are in the graph):
   stream that trusts its inverses does: an "add" never reports a result the
   graph does not have, and a "remove" never reports one it still has.
 
+It also measures `candidates` on random batches (jinaga/jinaga-spec#11): one to
+four fresh facts, some naming each other, in a random order, every inverse read
+on the graph that holds the whole batch. Every result the batch gains or loses
+must be a candidate. The mutant that reads each fact's inverses on the store
+and that fact alone must be caught.
+
 `lake exe check-inverse dump <file>` writes random specifications and this
 port's inverses as JSON, for `ports/typescript/inverse-diff.ts` to compare with
 jinaga.js. It proves nothing.
 -/
 open JinagaSpec Build
 open Lean (Json)
-
-deriving instance Inhabited for Fact
 
 def JinagaSpec.Operation.name : Operation → String
   | .add => "add"
@@ -216,6 +220,53 @@ def ruleMisses (produce : Producer) (s : Specification) (graphs : Nat) : Gen (Na
       report := some s!"{describeSpecification s}graph\n{showGraph store}\nnew fact {f.id}: {f.type} {f.predecessors}\nmissed {m}"
   return (missed, report)
 
+/-! ## Batches (jinaga/jinaga-spec#11)
+
+A replica saves a batch, then reads each fact's inverses on the graph that
+holds the whole batch. `candidates` does exactly that. -/
+
+structure BatchTally where
+  batches : Nat := 0
+  linked : Nat := 0
+  changed : Nat := 0
+  missed : Nat := 0
+  untriggered : Nat := 0
+  aloneMissed : Nat := 0
+
+def BatchTally.add (t u : BatchTally) : BatchTally :=
+  { batches := t.batches + u.batches, linked := t.linked + u.linked, changed := t.changed + u.changed,
+    missed := t.missed + u.missed, untriggered := t.untriggered + u.untriggered,
+    aloneMissed := t.aloneMissed + u.aloneMissed }
+
+/-- Question 1 of #11: every result the batch changes is a candidate. Question
+2, the weaker shape: a batch that changes something finds some candidate. The
+mutant reads each fact's inverses on the store and that fact alone. -/
+def checkBatches (s : Specification) (graphs : Nat) : Gen (BatchTally × Option String) := do
+  let mut t : BatchTally := {}
+  let mut report := none
+  for n in [0:graphs] do
+    let mut store ← genGraph s 8
+    let mut env ← genEnv s store
+    if n % 2 == 0 then
+      for _ in [0:10] do
+        if (s.evaluate store env).isEmpty then
+          store ← genGraph s 8
+          env ← genEnv s store
+    let B ← genBatch s store ((← below 4) + 1)
+    let old := s.evaluate store env
+    let new := s.evaluate (store ++ B) env
+    let changed := new.filter (!old.contains ·) ++ old.filter (!new.contains ·)
+    let found := candidates s env store B
+    let missed := changed.filter (!found.contains ·)
+    let alone := B.flatMap fun f => candidates s env store [f]
+    t := t.add { batches := 1, changed := changed.length, missed := missed.length
+                 linked := if B.any (fun f => B.any (·.predecessors.any (·.2 == f.id))) then 1 else 0
+                 untriggered := if !changed.isEmpty && found.isEmpty then 1 else 0
+                 aloneMissed := (changed.filter (!alone.contains ·)).length }
+    if !missed.isEmpty && report.isNone then
+      report := some s!"{describeSpecification s}graph\n{showGraph store}\nbatch\n{showGraph B}\nmissed {missed}"
+  return (t, report)
+
 /-! ## Named cases -/
 
 /-- jinaga/jinaga.js#338: "accounts with a current mirror", `exists { notExists }`.
@@ -258,7 +309,7 @@ def namedCase (label : String) (c : Specification × Graph × Fact) : IO Unit :=
     let new := s.evaluate g' env
     let changed := new.filter (!old.contains ·) ++ old.filter (!new.contains ·)
     let missedBy (produce : Producer) := (changed.filter (!(produce s env g f).contains ·)).length
-    IO.println s!"  {label}: gained {t.gained} (missed {t.missedGained}), lost {t.lost} (missed {t.missedLost}); #338 as proposed misses {missedBy (byRule rule338)}, `candidates` {missedBy candidates}"
+    IO.println s!"  {label}: gained {t.gained} (missed {t.missedGained}), lost {t.lost} (missed {t.missedLost}); #338 as proposed misses {missedBy (byRule rule338)}, `candidates` {missedBy fun s env g f => candidates s env g [f]}"
 
 /-! ## Reordering (layer 4) -/
 
@@ -399,10 +450,17 @@ def main (args : List String) : IO UInt32 := do
     let ((m, _), g) := (ruleMisses (byRule rule338) s 40).run gen
     gen := g
     miss338 := miss338 + m
-    let ((m, r), g) := (ruleMisses candidates s 40).run gen
+    let ((m, r), g) := (ruleMisses (fun s env g f => candidates s env g [f]) s 40).run gen
     gen := g
     missCoarse := missCoarse + m
     if firstCoarse.isNone then firstCoarse := r
+  let mut bt : BatchTally := {}
+  let mut firstBatch : Option String := none
+  for s in specs do
+    let ((t, r), g) := (checkBatches s 40).run gen
+    gen := g
+    bt := bt.add t
+    if firstBatch.isNone then firstBatch := r
   let mut rt : ReorderTally := {}
   let mut firstReorder : Option String := none
   for s in specs do
@@ -422,6 +480,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"complete: {tally.missedGained} gained results no \"add\" reported, {tally.missedLost} lost results no \"remove\" reported"
   IO.println s!"sound:    {tally.addAbsent} \"add\" reports of a result the graph lacks, {tally.removePresent} \"remove\" reports of a result it still has"
   IO.println s!"by rule, over all {specs.length} specifications: #338 as proposed misses {miss338} changed results, `candidates` misses {missCoarse}"
+  IO.println s!"batches: {bt.batches} ({bt.linked} with facts naming each other), {bt.changed} results changed, `candidates` misses {bt.missed}, {bt.untriggered} changed with no candidate; mutant \"read each fact alone\" misses {bt.aloneMissed}"
   IO.println "named cases:"
   namedCase "exists { notExists } (jinaga.js#338)" existsNotExists
   namedCase "two sibling notExists" siblingNotExists
@@ -435,9 +494,11 @@ def main (args : List String) : IO UInt32 := do
   if let some r := firstLost then IO.println s!"\nFIRST LOSS JINAGA.JS'S INVERSES MISS\n{r}"
   if let some r := firstReorder then IO.println s!"\nFIRST REORDER PROBLEM\n{r}"
   if let some r := firstCoarse then IO.println s!"\nFIRST MISS BY `candidates`\n{r}"
+  if let some r := firstBatch then IO.println s!"\nFIRST BATCH MISS BY `candidates`\n{r}"
   let uncaught := (if notFresh.1 == 0 then ["notify a fact the store already has"] else []) ++
     (if dropped.1 == 0 then ["drop existential conditions"] else []) ++
-    (if miss338 == 0 then ["#338 as proposed"] else [])
+    (if miss338 == 0 then ["#338 as proposed"] else []) ++
+    (if bt.aloneMissed == 0 then ["read each fact alone"] else [])
   unless uncaught.isEmpty do IO.println s!"\nMUTANTS NOT CAUGHT: {uncaught}"
   let uncaught := uncaught ++ (if rt.mutantCaught == 0 then ["swap roles of every path condition"] else [])
-  return if missCoarse == 0 && uncaught.isEmpty && firstReorder.isNone then 0 else 1
+  return if missCoarse == 0 && bt.missed == 0 && uncaught.isEmpty && firstReorder.isNone then 0 else 1

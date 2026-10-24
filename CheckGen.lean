@@ -8,6 +8,8 @@ specification `genSpec` makes is well scoped by construction.
 -/
 open JinagaSpec Build
 
+deriving instance Inhabited for Fact
+
 abbrev Gen := StateM (StdGen × Nat)
 
 def below (n : Nat) : Gen Nat :=
@@ -157,6 +159,19 @@ def genFreshFact (s : Specification) (store : Graph) (id : Nat) : Gen Fact := do
         preds := (role.name, ← pick targets) :: preds
         if ← chance 1 4 then preds := (role.name, ← pick targets) :: preds
   return { id := id, type := type, predecessors := preds }
+
+partial def shuffle [Inhabited α] : List α → Gen (List α)
+  | [] => return []
+  | xs => do
+    let i ← below xs.length
+    return xs[i]! :: (← shuffle (xs.eraseIdx i))
+
+/-- A batch of `size` facts, each with a new id and pointing into `store` or at
+facts of the batch made before it, listed in a random order. -/
+def genBatch (s : Specification) (store : Graph) (size : Nat) : Gen (List Fact) := do
+  let mut B := []
+  for k in [0:size] do B := B ++ [← genFreshFact s (store ++ B) (8 + k)]
+  if size ≤ 1 then return B else shuffle B
 
 def sameSet [BEq α] (a b : List α) : Bool :=
   a.all (b.contains ·) && b.all (a.contains ·)

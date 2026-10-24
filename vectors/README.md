@@ -66,9 +66,10 @@ vector where the oracle disagrees.
 ## `inverse/<name>.json`
 
 The inverse algorithm `candidates` (`JinagaSpec/Reorder.lean`), on a
-specification, a graph, the subscription's givens and a fresh fact. Generated
-from `JinagaSpec/InverseCases.lean` (named cases) and from a fixed random seed
-(`random-<n>`).
+specification, a graph, the subscription's givens and a fresh fact, or a fresh
+batch of facts. Generated from `JinagaSpec/InverseCases.lean` (named cases) and
+from fixed random seeds (`random-<n>` for single facts, `random-batch-<n>` for
+batches of three).
 
 ```jsonc
 {
@@ -82,28 +83,36 @@ from `JinagaSpec/InverseCases.lean` (named cases) and from a fixed random seed
              { "id": 2, "type": "Mirror", "predecessors": [ { "role": "account", "id": 1 } ] } ],
   "fact": { "id": 3, "type": "Retired", "predecessors": [ { "role": "mirror", "id": 2 } ] },
   "expected": {
-    "gained": [ [ ... ] ],              // rows in the result after `fact` arrives and not before
+    "gained": [ [ ... ] ],              // rows in the result after the facts arrive and not before
     "lost": [ [ ... ] ],                // rows in the result before and not after
     "inverses": [ { "specification": { ... }, "text": "..." } ],   // step 1, in order
     "reordered": [ { "specification": { ... }, "text": "..." } ],  // step 2: each of step 1, reordered, in order
-    "candidates": [ [ ... ] ]           // every row the inverses find, read on the graph with `fact`
+    "candidates": [ [ ... ] ]           // every row the inverses find, given each new fact, read on the graph with all of them
   }
 }
 ```
 
+A vector has either `fact` or `batch`. A batch vector replaces `fact` with
+`"batch": [ { ... }, ... ]`: several facts saved together, each new to `graph`,
+any of which may name another, listed in no particular order. A batch of one is
+written as `fact`. `gained` and `lost` are the net change, from `graph` to
+`graph` plus the whole batch: a row gained and lost within the batch is in
+neither, and may still be a candidate.
+
 Each inverse is an ordinary specification whose givens are the
-subscription's givens followed by `__f`, the new fact. It is read starting from
-the subscription's givens and the new fact, on the graph that holds the new
-fact. `candidates` is the set of rows all of them find, and contains every row
-of `gained` and `lost` (`candidates_complete`). A fact's `predecessors` lists
-one entry per predecessor; a role may appear more than once.
+subscription's givens followed by `__f`, a new fact. It is read once for each
+new fact, starting from the subscription's givens and that fact, on the graph
+that holds every new fact. `candidates` is the set of rows all of those reads
+find, and contains every row of `gained` and `lost` (`candidates_complete`).
+A fact's `predecessors` lists one entry per predecessor; a role may appear
+more than once.
 
 `ports/typescript/run-inverse-vectors.ts` (`npm run inverse`) checks, for each
 vector:
 
 1. jinaga.js's `MemoryStore` reads `expected.inverses` and
-   `expected.reordered` to exactly `expected.candidates`. Fact ids become
-   hashes `h<id>`.
+   `expected.reordered`, given each new fact, to exactly
+   `expected.candidates`. Fact ids become hashes `h<id>`.
 2. If jinaga.js has `src/specification/inverse-candidates.ts`, its
    `buildInverses(specification)` deep-equals `expected.inverses`, and
    `reorderInverse` of each deep-equals `expected.reordered`.

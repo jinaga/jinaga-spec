@@ -6,12 +6,14 @@
 // `npm run inverse` with PORT=./inverse-candidates.ts checks it against the
 // vectors, exactly as it checks the port in jinaga.js.
 //
-// Proven (jinaga/jinaga-spec#7): for a well-formed specification and a fresh
-// fact (no stored fact has its hash, none names it as a predecessor), every row
-// whose membership changes when the fact is saved is found by one of
+// Proven (jinaga/jinaga-spec#7, #11): for a well-formed specification and a
+// fresh batch (no fact stored before the batch has the hash of a fact in it, or
+// names one as a predecessor; facts of the batch may name each other), every
+// row whose membership changes when the batch is saved is found by one of
 // `candidateInverses(specification)`, read with the subscription's givens and
-// the new fact (`candidates_complete`), and a stream that re-checks those
-// candidates holds exactly the result (`stream_correct`).
+// one of the batch's facts, on the store that holds the whole batch
+// (`candidates_complete`). A stream that re-checks each saved fact's candidates
+// in turn holds exactly the result (`notify_correct`, `stream_correct`).
 
 type Role = { name: string, predecessorType: string };
 type Label = { name: string, type: string };
