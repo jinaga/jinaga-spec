@@ -71,6 +71,24 @@ batch of facts. Generated from `JinagaSpec/InverseCases.lean` (named cases) and
 from fixed random seeds (`random-<n>` for single facts, `random-batch-<n>` for
 batches of three).
 
+Between them the vectors show every shape in `inverseCoverage` (`Vectors.lean`):
+`exists` and `notExists` conditions, an existential condition with several
+matches, one inside another, several givens, a composite projection, a batch
+of several facts, and an inverse that cannot be reordered. `lake exe vectors`
+refuses to write a set that lacks one, so reseeding the generator cannot drop
+a shape. Two shapes jinaga.js handles are not shown, because the oracle cannot
+yet express them:
+
+* **Conditions on a given.** `Specification.given` holds labels only. jinaga.js
+  moves a given's conditions onto a match of their own
+  (`reduceGivenConditions`) before calling the same algorithm, which is why
+  check 2 below also runs `candidateInverses`.
+* **A batch that holds one of the subscription's givens.** The generator skips
+  such batches. `factCandidates` makes every result before and after a
+  candidate; jinaga.js instead reads one inverse per given
+  (`givenCandidateInverse`), relying on a read returning nothing while a given
+  is absent, which the oracle's semantics does not assume.
+
 ```jsonc
 {
   "name": "exists-not-exists-removes",
@@ -115,6 +133,8 @@ vector:
    `expected.candidates`. Fact ids become hashes `h<id>`.
 2. If jinaga.js has `src/specification/inverse-candidates.ts`, its
    `buildInverses(specification)` deep-equals `expected.inverses`, and
-   `reorderInverse` of each deep-equals `expected.reordered`.
+   `reorderInverse` of each deep-equals `expected.reordered`, and so does
+   `candidateInverses(specification)`, the entry point jinaga.js's observer
+   calls.
 3. Today's `invertSpecification`, for information: on which vectors its "add"
    inverses miss a gained row, or its "remove" inverses a lost one.

@@ -12,8 +12,9 @@
 //    reference semantics does. It must pass.
 // 2. The port. If jinaga.js has `src/specification/inverse-candidates.ts`
 //    (jinaga/jinaga.js#338), its `buildInverses` and `reorderInverse` must
-//    produce the vector's inverses, structurally and in order. It must pass
-//    once the port exists.
+//    produce the vector's inverses, structurally and in order, and its
+//    `candidateInverses` the vector's reordered inverses. It must pass once
+//    the port exists.
 // 3. Today's `invertSpecification`. Reported, not required: whether its "add"
 //    inverses report every gained result and its "remove" inverses every lost
 //    one. The vectors named after jinaga.js#338 and #343 are expected to miss
@@ -41,6 +42,12 @@ const pinLabel = "__f";
 type Row = (number | null)[];
 const key = (row: Row) => JSON.stringify(row);
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
+/** A specification, normalized, with its composite projection's components in name order. */
+const byComponentName = (s: any) => {
+    const n = normalize(s);
+    if (n.projection.type === "composite") n.projection.components.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    return n;
+};
 
 /** The facts that arrive: a batch, or a single fact. */
 const arrivals = (v: any): any[] => v.batch ?? [v.fact];
@@ -109,6 +116,14 @@ for (const file of files) {
             deepStrictEqual(normalize(built), v.expected.inverses.map((i: any) => i.specification));
             deepStrictEqual(normalize(built.map((i: any) => port.reorderInverse(i))),
                 v.expected.reordered.map((i: any) => i.specification));
+            // The entry point the observer calls, which also handles shapes
+            // outside the proof's language before it builds the inverses. Its
+            // cache key comes from jinaga.js's `describeSpecification`, which
+            // sorts a composite projection's components in place
+            // (jinaga/jinaga.js#313), so the components are compared in name
+            // order.
+            deepStrictEqual(port.candidateInverses(structuredClone(v.specification)).map(byComponentName),
+                v.expected.reordered.map((i: any) => byComponentName(i.specification)));
         } catch (e: any) {
             portFailed++;
             problems.push(`port: ${e.message.split("\n").slice(0, 12).join("\n")}`);

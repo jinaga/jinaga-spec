@@ -120,6 +120,20 @@ def inverseCases : List InverseCase := [
     givens := [("p1", 0)]
     graph := [⟨0, "Root", []⟩, ⟨1, "A", [("root", 0)]⟩, ⟨2, "B", [("a", 1)]⟩, ⟨3, "C", [("b", 2)]⟩]
     batch := [⟨4, "D", [("c", 3)]⟩] },
+  { name := "not-exists-two-matches"
+    description := "notExists { two matches, the second joined to the first }: tasks with no completed assignment. A Completion of an existing assignment removes the task: the path reaches the task from the second match through the first."
+    source := "coverage: an existential condition with several matches"
+    spec := assignmentSpec false
+    givens := [("p1", 0)]
+    graph := [⟨0, "Project", []⟩, ⟨1, "Task", [("project", 0)]⟩, ⟨2, "Assignment", [("task", 1)]⟩]
+    batch := [⟨3, "Completion", [("assignment", 2)]⟩] },
+  { name := "batch-exists-two-matches"
+    description := "exists { two matches, the second joined to the first }: tasks with a completed assignment. The assignment and its completion arrive in one batch, the completion listed first, so each inner match is bound to a new fact."
+    source := "coverage: an existential condition with several matches"
+    spec := assignmentSpec true
+    givens := [("p1", 0)]
+    graph := [⟨0, "Project", []⟩, ⟨1, "Task", [("project", 0)]⟩]
+    batch := [⟨3, "Completion", [("assignment", 2)]⟩, ⟨2, "Assignment", [("task", 1)]⟩] },
   { name := "batch-exists-together"
     description := "exists { notExists }: accounts with a current mirror. An account and its mirror arrive in one batch, the mirror listed first. Neither fact's inverses find the account on a graph without the other."
     source := "jinaga/jinaga-spec#11"
@@ -144,6 +158,11 @@ where
       exists' [unknown "e1" "Mirror" [path [r "account" "Account"] "u1",
         notExists [unknown "e2" "Retired" [path [r "mirror" "Mirror"] "e1"]]]]]]
     (fact "u1")
+  assignmentSpec (e : Bool) := spec [("p1", "Project")]
+    [unknown "t" "Task" [path [r "project" "Project"] "p1",
+      .existential e [unknown "a" "Assignment" [path [r "task" "Task"] "t"],
+        unknown "c" "Completion" [path [r "assignment" "Assignment"] "a"]]]]
+    (fact "t")
   freezeSpec := spec [("p1", "Owner")]
     [unknown "a" "Account" [path [r "owner" "Owner"] "p1",
       notExists [unknown "fz" "Freeze" [path [r "account" "Account"] "a",
