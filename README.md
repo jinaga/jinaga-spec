@@ -1,28 +1,49 @@
 # jinaga-spec
 
 A formal specification of Jinaga's specification language and the algorithms
-that transform it, with a machine-checked proof that the specification split is
-correct, and conformance vectors that any implementation can run.
+that transform it, with machine-checked proofs that they are correct, and
+conformance vectors that any implementation can run.
 
-**Status: a spike.** It covers one algorithm end to end (`splitBeforeFirstSuccessor`)
-to find out whether this approach keeps the definitions readable, the proofs
-tractable, and the ports checkable. The answer so far is yes. Nothing in `jinaga.js` or `jinaga.net` depends on it.
+Two algorithms are covered end to end:
+
+- **The split** (`splitBeforeFirstSuccessor`), which cuts an authorization rule
+  into a head that runs on the in-memory graph and a tail that runs on the store.
+  `split_correct` proves it keeps the rule's meaning.
+- **The inverse algorithm** (`candidates`), which says which results of a
+  subscription a batch of new facts might have changed. `stream_correct` proves
+  that a stream which re-checks those candidates after every batch holds exactly
+  the specification's results.
+
+**Status.** It began as a spike to find out whether this approach keeps the
+definitions readable, the proofs tractable, and the ports checkable. It does,
+and the libraries now port from it:
+
+- **`jinaga.js`** runs the proven inverse algorithm
+  (`src/specification/inverse-candidates.ts`) and refuses ill-formed
+  specifications where they enter.
+- **`jinaga.net`** has ported both (`InverseCandidates.cs`,
+  `WellFormedSpecification.cs`), and runs a pinned copy of the vectors in its
+  tests.
 
 ## What is here
 
 | | |
 |---|---|
-| `JinagaSpec/Syntax.lean`, `Semantics.lean`, `Split.lean` | The definitions: the language, what it means over a fact graph, and the shared plumbing a split's result evaluates through. Written to be read next to the TypeScript. |
-| `JinagaSpec/Hoist.lean` | `splitBeforeFirstSuccessor`: the split. Reaches into existential conditions at any depth, not only the pivot's own top level, hoisting a predecessor walk into the head wherever doing so is sound. |
-| `JinagaSpec/Proofs/` | The proof that the split preserves meaning. `Proofs/Hoist.lean` has the theorem. |
-| `JinagaSpec/Cases.lean`, `Vectors.lean` | Named specifications, and the program that writes them out with the split the oracle computes. |
-| `vectors/` | The generated conformance vectors: `split/` for the split, `well-formed/` for the check. Any port can read them. |
-| `ports/typescript/` | Runs the vectors against `jinaga.js`, holds a reference `isWellFormed`, and audits `jinaga.js`'s parser against the well-formedness vectors. |
-| `Check.lean` | Randomized test of the theorem, with mutation checks. Runs before proving, and still useful after. |
-| `docs/findings.md` | What the spike turned up. Read this after the theorem. |
+| `JinagaSpec/Syntax.lean`, `Semantics.lean`, `Split.lean` | The definitions: the language, what it means over a fact graph (`evaluate`, and `read`, what a replica reads), and the shared plumbing a split's result evaluates through. Written to be read next to the TypeScript. |
+| `JinagaSpec/WellFormed.lean` | `isWellFormed`: an executable check of the preconditions every theorem assumes, proved to agree with `WellFormed`. |
+| `JinagaSpec/Hoist.lean` | `splitBeforeFirstSuccessor`: the split. Reaches into existential conditions at any depth, hoisting a predecessor walk into the head wherever doing so is sound. |
+| `JinagaSpec/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary `tailReadsGiven` decides. |
+| `JinagaSpec/Candidates.lean`, `Reorder.lean` | `candidates`: the inverses of a specification, each reordered to start at the new fact. |
+| `JinagaSpec/Maintain.lean` | A stream that re-checks candidates after each batch. |
+| `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
+| `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
+| `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean` and `GivenConditions.lean` for the inverse algorithm. |
+| `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
+| `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
+| `ports/typescript/` | Runs the vectors against `jinaga.js`, holds reference implementations of `isWellFormed` and of the inverse algorithm, and audits `jinaga.js`'s parser. |
+| `Check.lean`, `CheckInverse.lean` | Randomized tests of the theorems, with mutation checks. They run before a proof exists, and keep earning their place after. |
+| `docs/findings.md` | What each step turned up, in order. Read it after the theorems. |
 | `docs/contracts.md` | What the split expects, who must provide it, and how to check a sequence of steps. |
-| `JinagaSpec/WellFormed.lean` | `isWellFormed`: an executable check of the split's preconditions, proved to agree with `WellFormed`. |
-| `JinagaSpec/Store.lean`, `JinagaSpec/Proofs/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary theorem `tailReadsGiven` decides. |
 
 ## Try it
 
@@ -30,13 +51,15 @@ tractable, and the ports checkable. The answer so far is yes. Nothing in `jinaga
 scripts/verify.sh
 ```
 
-That builds and checks the proofs, confirms the vectors are current, runs the
-randomized check, and runs the TypeScript port if it finds `../jinaga.js` (or
-`JINAGA_JS`). It needs [`elan`](https://github.com/leanprover/elan); the
+That builds and checks the proofs, confirms that every theorem rests only on the
+standard axioms, confirms the vectors are current, runs the randomized checks,
+and runs the TypeScript ports if it finds `../jinaga.js` (or `JINAGA_JS`). CI
+runs everything but the TypeScript step, which depends on a `jinaga.js`
+checkout. It needs [`elan`](https://github.com/leanprover/elan); the
 toolchain is pinned in `lean-toolchain`, and there is no other Lean dependency
 (no Mathlib).
 
-## The theorem
+## The split
 
 An authorization rule is a specification. To evaluate one, `jinaga.js` cuts it
 at its first match that the in-memory graph cannot run. The *head* before the
@@ -115,6 +138,45 @@ hoisting stops being sound, and the argument the proof turns on, are in
 earlier version of the rule, one level of nesting deeper than the first
 counterexample.
 
+## The inverse algorithm and the stream
+
+A subscription holds the results of a specification and updates them as facts
+arrive. A replica saves facts in batches. For each fact of a batch, `candidates`
+builds one inverse per way that fact can change a result, and reads each one,
+starting at the fact, on the graph that holds the whole batch. The inverses
+carry no "add" or "remove": they find *candidates*, and the stream keeps or
+drops each candidate by reading the specification.
+
+```lean
+theorem stream_correct (s : Specification) (hwf : WellFormed s) (env : Env) :
+    ∀ (bs : List (List Fact)) (g : Graph) (held : List Row),
+      (∀ r, r ∈ held ↔ r ∈ s.read g env) →
+      (∀ pre B post, bs = pre ++ B :: post → Fresh (g ++ pre.flatten) B) →
+      ∀ r, r ∈ (bs.foldl (maintainStep (s.read · env) (candidates s env)) (g, held)).2 ↔
+        r ∈ s.read (g ++ bs.flatten) env
+```
+
+Start from a held set equal to the result. After each batch, re-check its
+candidates. The held set is then exactly the result, for every well-formed
+specification, provided each batch is *fresh*: no stored fact has the id of a
+fact in the batch, or names one as a predecessor. The facts within a batch may
+name each other, in any order. The theorem rests on three results:
+
+- `candidates_complete`: every result a batch adds or removes is a candidate.
+- `maintain_correct`: re-checking covering candidates keeps the held set exact.
+- `notify_correct`: notifying each fact of the batch in turn, in any order, is
+  the same as re-checking all of them at once.
+
+The result is `read`, what a replica reads: nothing until every given is a fact
+it holds, then `evaluate`. When a given itself arrives in a batch, every result
+read afterwards is a candidate. jinaga.js's `givenCandidateInverse` does exactly
+this.
+
+A given may carry existential conditions, as in jinaga.js. `reduceGivenConditions`
+moves them onto one new first match, `read_reduceGivenConditions` proves that
+the reduced specification reads the same results, and `stream_correct_given`
+carries the stream theorem over to it.
+
 ## Reading the definitions
 
 `Split.lean` and `Hoist.lean` are in a deliberately **portable subset**:
@@ -143,25 +205,40 @@ TypeScript, with these exceptions:
 
 ## Conformance vectors
 
-Each file in `vectors/split/` holds a specification, the split the Lean oracle
-computes, and both in Jinaga's text form. A port passes when its split of the
-same specification equals `expected`. See `vectors/README.md`.
+There are three kinds, all generated from the definitions (`vectors/README.md`):
 
-The TypeScript in `jinaga.js` passes every vector (`scripts/verify.sh` runs it).
+- `split/`: a specification, the split the oracle computes, and both in
+  Jinaga's text form.
+- `well-formed/`: a specification, and whether it is well-formed.
+- `inverse/`: a specification, a graph, a subscription's givens, and a fresh
+  fact or batch. Each vector gives the rows gained and lost, the inverses and
+  their reorderings, and the candidates they find.
+
+The inverse vectors are named cases plus fixed random seeds. `lake exe vectors`
+refuses to write a set that leaves out any shape in its coverage list, which
+includes nested and multi-match existential conditions, batches, a given
+arriving, and a condition on a given.
+
+`jinaga.js` passes every split and well-formedness vector. It passes the
+inverse vectors except the two with a condition on a given, which wait on the
+new label rule (jinaga/jinaga.js#371). `jinaga.net` runs a copy of the vectors
+pinned at `07d5788`, from before the vectors for a given arriving and for
+conditions on a given.
 
 ## What is modelled, and what is not
 
-Modelled: path conditions, positive and negative existential conditions,
-multi-valued predecessor roles, fact and composite projections, several givens.
+Modelled: path conditions, positive and negative existential conditions at any
+depth, multi-valued predecessor roles, fact and composite projections, several
+givens, batches of facts, and a given that is not yet stored.
 
 Conditions on givens are modelled for the inverse algorithm and the stream
-(`GivenConditions.lean`): they reduce to a match of their own, proven to keep
-what a replica reads. The split does not take them yet: its handling of a
-given's conditions (`declaredLabelsInGivens`, added in the review of #311) has
-no counterpart here.
+(`GivenConditions.lean`), not for the split: the split's handling of a given's
+conditions (`declaredLabelsInGivens`, added in the review of #311) has no
+counterpart here.
 
 Not yet: `field`/`hash`/`time` projections, and nested specification
-projections.
+projections. `jinaga.js` and `jinaga.net` observe a nested collection by
+flattening it into a specification of its own, which is outside the proof.
 See `docs/findings.md`.
 
 ## The limit of the guarantee
@@ -173,13 +250,15 @@ harder to hide, but they are not a proof about the TypeScript.
 
 ## Next
 
-1. Wire `isWellFormed` into the `AuthorizationRuleSpecification` constructors in
-   `jinaga.net` (`docs/contracts.md`); `jinaga.js` now does this
-   (jinaga/jinaga.js#308, #311).
-2. Given conditions and the remaining projections, and a .NET runner for the vectors.
-3. Vectors that check evaluation (a specification, a graph, and the expected
-   results), so a port is checked on meaning as well as on shape.
-4. `buildFeeds`, then skeleton canonicity, then distribution soundness.
+1. `jinaga.js` adopts the proven reduction of conditions on a given
+   (jinaga/jinaga.js#371). `jinaga.net` re-pins its vectors and ports a
+   replica's `read`, the given-arrival candidates, and that reduction.
+2. A stream whose reads see later batches: prove it exact, or show that batches
+   must be serialized (#13).
+3. Conditions on givens in the split, the remaining projections, and nested
+   collections.
+4. Feeds: prove that they carry every relevant fact and that replicas converge
+   (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
 
 ## License
 
