@@ -121,9 +121,10 @@ neither, and may still be a candidate.
 Each inverse is an ordinary specification whose givens are the
 subscription's givens followed by `__f`, a new fact. It is read once for each
 new fact, starting from the subscription's givens and that fact, on the graph
-that holds every new fact. A new fact that is one of the subscription's givens was not
-stored before, so for it every row read on that graph is a candidate. `candidates` is the set of rows all of those reads
-find, and contains every row of `gained` and `lost` (`candidates_complete`).
+that holds every new fact. A new fact that is one of the subscription's
+givens was not stored before, so for it every row read on that graph is a
+candidate. `candidates` is the set of rows all of those reads find, and
+contains every row of `gained` and `lost` (`candidates_complete`).
 A fact's `predecessors` lists one entry per predecessor; a role may appear
 more than once.
 
