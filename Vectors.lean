@@ -71,8 +71,8 @@ def inverseToJson (i : Specification) : Json :=
 
 def inverseVector (c : InverseCase) : Json :=
   let g' := c.graph ++ c.batch
-  let old := c.spec.evaluate c.graph c.env
-  let new := c.spec.evaluate g' c.env
+  let old := c.spec.read c.graph c.env
+  let new := c.spec.read g' c.env
   let is := inverses c.spec
   -- A batch of one is written as `fact`, so a port that reads only single
   -- facts reads those vectors unchanged.
@@ -114,10 +114,10 @@ def randomInverseCases (namePrefix : String) (size count : Nat) : List InverseCa
         let env ← genEnv s st
         return (st, env, ← genBatch s st size) : Gen (Graph × Env × List Fact)).run gen
       gen := g
+      -- The givens are stored facts; the named cases show a given arriving.
       let givens := s.given.map fun l => (l.name, (env l.name).getD 0)
       let linked := size == 1 || B.any fun f => B.any (·.predecessors.any (·.2 == f.id))
-      if linked && !sameSet (s.evaluate store env) (s.evaluate (store ++ B) env) &&
-          !givens.any fun (_, id) => B.any (·.id == id) then
+      if linked && !sameSet (s.read store env) (s.read (store ++ B) env) then
         out := out ++ [{ name := s!"{namePrefix}{out.length + 1}"
                          description := if size == 1
                            then "A random well-formed specification, graph and fresh fact that change the result."
@@ -142,8 +142,8 @@ end
 /-- What the inverse vectors must show between them, each with the test that
 a case shows it. `lake exe vectors` refuses to write a set in which no case
 shows one, so a change to the generator cannot quietly drop a shape a port
-must handle. Not yet modelled, so not yet listed: conditions on a given, and a
-batch that holds one of the subscription's givens (`vectors/README.md`). -/
+must handle. Not yet modelled, so not yet listed: conditions on a given
+(`vectors/README.md`). -/
 def inverseCoverage : List (String × (InverseCase → Bool)) := [
   ("an exists condition", fun c => anyConditionIn (fun | .existential true _ => true | _ => false) c.spec.matchList),
   ("a notExists condition", fun c => anyConditionIn (fun | .existential false _ => true | _ => false) c.spec.matchList),
@@ -154,6 +154,8 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
   ("several givens", fun c => c.spec.given.length > 1),
   ("a composite projection", fun c => match c.spec.projection with | .composite _ => true | _ => false),
   ("a batch of several facts", fun c => c.batch.length > 1),
+  ("a batch that holds one of the subscription's givens",
+    fun c => c.givens.any fun (_, id) => c.batch.any (·.id == id)),
   ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone)]
 
 def main (args : List String) : IO Unit := do
@@ -171,7 +173,7 @@ def main (args : List String) : IO Unit := do
   for c in inverseAll do
     unless isWellFormed c.spec do
       throw <| IO.userError s!"inverse case {c.name} is not well-formed"
-    if sameSet (c.spec.evaluate c.graph c.env) (c.spec.evaluate (c.graph ++ c.batch) c.env) then
+    if sameSet (c.spec.read c.graph c.env) (c.spec.read (c.graph ++ c.batch) c.env) then
       throw <| IO.userError s!"inverse case {c.name} does not change the result"
     IO.FS.writeFile (inverseDir / s!"{c.name}.json") ((inverseVector c).pretty ++ "\n")
   for c in cases do

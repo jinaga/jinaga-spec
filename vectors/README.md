@@ -74,20 +74,21 @@ batches of three).
 Between them the vectors show every shape in `inverseCoverage` (`Vectors.lean`):
 `exists` and `notExists` conditions, an existential condition with several
 matches, one inside another, several givens, a composite projection, a batch
-of several facts, and an inverse that cannot be reordered. `lake exe vectors`
-refuses to write a set that lacks one, so reseeding the generator cannot drop
-a shape. Two shapes jinaga.js handles are not shown, because the oracle cannot
-yet express them:
+of several facts, a batch that holds one of the subscription's givens, and an
+inverse that cannot be reordered. `lake exe vectors` refuses to write a set
+that lacks one, so reseeding the generator cannot drop a shape. One shape
+jinaga.js handles is not shown, because the oracle cannot yet express it:
 
 * **Conditions on a given.** `Specification.given` holds labels only. jinaga.js
   moves a given's conditions onto a match of their own
   (`reduceGivenConditions`) before calling the same algorithm, which is why
   check 2 below also runs `candidateInverses`.
-* **A batch that holds one of the subscription's givens.** The generator skips
-  such batches. `factCandidates` makes every result before and after a
-  candidate; jinaga.js instead reads one inverse per given
-  (`givenCandidateInverse`), relying on a read returning nothing while a given
-  is absent, which the oracle's semantics does not assume.
+
+Results are what a replica reads (`Specification.read`): none until every
+given is a fact the graph holds, then `evaluate`. `gained` and `lost` compare
+those reads. The random vectors draw their givens from `graph`, so a given
+arrives only in the named cases `given-arrives` and
+`given-arrives-under-not-exists`.
 
 ```jsonc
 {
@@ -120,8 +121,10 @@ neither, and may still be a candidate.
 Each inverse is an ordinary specification whose givens are the
 subscription's givens followed by `__f`, a new fact. It is read once for each
 new fact, starting from the subscription's givens and that fact, on the graph
-that holds every new fact. `candidates` is the set of rows all of those reads
-find, and contains every row of `gained` and `lost` (`candidates_complete`).
+that holds every new fact. A new fact that is one of the subscription's
+givens was not stored before, so for it every row read on that graph is a
+candidate. `candidates` is the set of rows all of those reads find, and
+contains every row of `gained` and `lost` (`candidates_complete`).
 A fact's `predecessors` lists one entry per predecessor; a role may appear
 more than once.
 
@@ -129,7 +132,8 @@ more than once.
 vector:
 
 1. jinaga.js's `MemoryStore` reads `expected.inverses` and
-   `expected.reordered`, given each new fact, to exactly
+   `expected.reordered`, given each new fact, and jinaga.js's
+   `givenCandidateInverse` for a new fact that is a given, to exactly
    `expected.candidates`. Fact ids become hashes `h<id>`.
 2. If jinaga.js has `src/specification/inverse-candidates.ts`, its
    `buildInverses(specification)` deep-equals `expected.inverses`, and

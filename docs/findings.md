@@ -472,7 +472,9 @@ standard axioms:
 - `candidates_complete`: for a well-formed specification and a fresh batch,
   `candidates s env g B` includes every result the batch adds or removes. If a
   fact of the batch is one of the subscription's givens, that fact's candidates
-  are every result old and new, as before.
+  are every result old and new, as before. (Superseded: a stream now
+  maintains what a replica reads, and that fact's candidates are every
+  result read on the new graph. See the next section.)
 - `notify_correct`: from a held set equal to the result on `g`, re-checking
   each fact's candidates in turn, each read on `g ++ B`, leaves exactly the
   result on `g ++ B`. This is the shape jinaga/jinaga.js#336 and #345 need.
@@ -494,6 +496,36 @@ unchanged (`vectors/README.md`). jinaga.js's `MemoryStore`, reading the proven
 inverses given each fact of the batch on a store that holds it all, finds
 exactly the vectors' candidates on all 30.
 
+## A replica reads nothing until its givens arrive
+
+`evaluate` binds a given to its id whether or not the graph holds that fact.
+jinaga.js's `SpecificationRunner.read` returns nothing while any given is
+missing. The two disagree before a given arrives, and only then: a
+specification whose only conditions on a missing user are `notExists` has
+results under `evaluate` and none for a replica (`given-arrives-under-not-exists`).
+
+`Specification.read` is the replica's reading: `evaluate` when every given is a
+fact of `g` of its declared type, and nothing otherwise. A stream maintains
+`read`. `evaluate` stays the reference semantics underneath, so the split, the
+store and the inverses are unchanged.
+
+`Covers`, `recheck` and `maintainStep` now take the result as a function of the
+graph, and `maintain_correct` holds for any such function: its proof never
+looked inside `evaluate`. `candidates_complete`, `notify_correct` and
+`stream_correct` are restated for `(s.read · env)`, under the same hypotheses.
+
+When a given arrives in a fresh batch, `Fresh` says the graph did not hold it,
+so the old read is empty, and every result read on the new graph is a
+candidate. That is all `factCandidates` reads for it now, which is jinaga.js's
+`givenCandidateInverse`, so jinaga.js's stream is the proven one in this case
+too. When no given arrives, each given is stored after the batch exactly when
+it was before (`has_append_outside`): either both reads are empty, or both are
+`evaluate` and the inverses cover the change as before.
+
+This is also the semantics a condition on a given needs. jinaga.js reduces such
+a condition to a match bound to the given, which binds only a stored fact, so
+the reduction agrees with `read`, not with `evaluate`.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -511,7 +543,7 @@ exactly the vectors' candidates on all 30.
 | `Proofs/Fresh.lean` | A fresh batch changes no walk that starts outside it. |
 | `Proofs/Candidates.lean` | Every result a fresh batch changes is a result of one of the inverses, given one of the batch's facts. |
 | `Proofs/Reorder.lean` | Matches are a conjunction, so a checked arrangement has the same solutions; flattening an `exists` keeps them. |
-| `Proofs/Stream.lean` | The candidates cover every change, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
+| `Proofs/Stream.lean` | The candidates cover every change a replica reads, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
