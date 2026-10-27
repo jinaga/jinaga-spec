@@ -28,3 +28,5 @@ import JinagaSpec.Proofs.Fresh
 import JinagaSpec.Proofs.Candidates
 import JinagaSpec.Proofs.Reorder
 import JinagaSpec.Proofs.Stream
+import JinagaSpec.GivenConditions
+import JinagaSpec.Proofs.GivenConditions

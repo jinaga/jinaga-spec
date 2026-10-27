@@ -154,9 +154,14 @@ The TypeScript in `jinaga.js` passes every vector (`scripts/verify.sh` runs it).
 Modelled: path conditions, positive and negative existential conditions,
 multi-valued predecessor roles, fact and composite projections, several givens.
 
-Not yet: conditions on givens, `field`/`hash`/`time` projections, and nested
-specification projections. The split's handling of a given's conditions
-(`declaredLabelsInGivens`, added in the review of #311) has no counterpart here.
+Conditions on givens are modelled for the inverse algorithm and the stream
+(`GivenConditions.lean`): they reduce to a match of their own, proven to keep
+what a replica reads. The split does not take them yet: its handling of a
+given's conditions (`declaredLabelsInGivens`, added in the review of #311) has
+no counterpart here.
+
+Not yet: `field`/`hash`/`time` projections, and nested specification
+projections.
 See `docs/findings.md`.
 
 ## The limit of the guarantee

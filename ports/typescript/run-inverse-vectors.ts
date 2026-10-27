@@ -122,7 +122,13 @@ for (const file of files) {
     // 2. The port.
     if (port) {
         try {
-            const built = port.buildInverses(structuredClone(v.specification));
+            // A vector with conditions on its givens builds its inverses from
+            // their reduction, which a port that exports one must match.
+            const reduced = v.expected.reduced?.specification ?? v.specification;
+            if (v.expected.reduced && port.reduceGivenConditions) {
+                deepStrictEqual(normalize(port.reduceGivenConditions(structuredClone(v.specification))), reduced);
+            }
+            const built = port.buildInverses(structuredClone(reduced));
             deepStrictEqual(normalize(built), v.expected.inverses.map((i: any) => i.specification));
             deepStrictEqual(normalize(built.map((i: any) => port.reorderInverse(i))),
                 v.expected.reordered.map((i: any) => i.specification));

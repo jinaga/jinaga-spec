@@ -234,17 +234,23 @@ structure BatchTally where
   aloneMissed : Nat := 0
   givenArrived : Nat := 0
   givenIgnoredMissed : Nat := 0
+  conditioned : Nat := 0
+  conditionDroppedMissed : Nat := 0
 
 def BatchTally.add (t u : BatchTally) : BatchTally :=
   { batches := t.batches + u.batches, linked := t.linked + u.linked, changed := t.changed + u.changed,
     missed := t.missed + u.missed, untriggered := t.untriggered + u.untriggered,
     aloneMissed := t.aloneMissed + u.aloneMissed, givenArrived := t.givenArrived + u.givenArrived,
-    givenIgnoredMissed := t.givenIgnoredMissed + u.givenIgnoredMissed }
+    givenIgnoredMissed := t.givenIgnoredMissed + u.givenIgnoredMissed,
+    conditioned := t.conditioned + u.conditioned,
+    conditionDroppedMissed := t.conditionDroppedMissed + u.conditionDroppedMissed }
 
 /-- Question 1 of #11: every result the batch changes is a candidate. Question
 2, the weaker shape: a batch that changes something finds some candidate. One
 mutant reads each fact's inverses on the store and that fact alone; another
-finds nothing when a given arrives. -/
+finds nothing when a given arrives. Sometimes a given carries a random
+condition, and the candidates are those of the reduction; a third mutant uses
+the specification without the condition. -/
 def checkBatches (s : Specification) (graphs : Nat) : Gen (BatchTally × Option String) := do
   let mut t : BatchTally := {}
   let mut report := none
@@ -259,22 +265,35 @@ def checkBatches (s : Specification) (graphs : Nat) : Gen (BatchTally × Option 
     let B ← genBatch s store ((← below 4) + 1)
     -- Sometimes a subscription's given arrives in the batch.
     if ← chance 1 4 then env ← genEnv s (store ++ B)
-    let old := s.read store env
-    let new := s.read (store ++ B) env
+    -- Sometimes a given carries a condition.
+    let mut c : ConditionedSpecification := .ofSpecification s
+    if ← chance 1 3 then
+      let n ← pick (s.given.map (·.name))
+      let types := (s.given.map (·.type) ++ typesInMatches s.matchList).eraseDups
+      let m ← genMatch 2 types (s.given.map (·.name)) s!"c{← fresh}" (← pick types) 1
+      let e ← chance 1 2
+      c := { c with given := c.given.map fun (l', gcs) => if l'.name == n then (l', [(e, [m])]) else (l', gcs) }
+    let red := reduceGivenConditions (givenConditionsLabel c) c
+    unless isWellFormed red do continue
+    let old := c.read store env
+    let new := c.read (store ++ B) env
     let changed := new.filter (!old.contains ·) ++ old.filter (!new.contains ·)
-    let found := candidates s env store B
+    let found := candidates red env store B
     let missed := changed.filter (!found.contains ·)
-    let alone := B.flatMap fun f => candidates s env store [f]
+    let alone := B.flatMap fun f => candidates red env store [f]
     let givenIgnored := B.flatMap fun f =>
-      if s.given.any (env ·.name == some f.id) then [] else factCandidates s env (store ++ B) f
+      if red.given.any (env ·.name == some f.id) then [] else factCandidates red env (store ++ B) f
+    let conditionDropped := candidates s env store B
     t := t.add { batches := 1, changed := changed.length, missed := missed.length
                  linked := if B.any (fun f => B.any (·.predecessors.any (·.2 == f.id))) then 1 else 0
                  untriggered := if !changed.isEmpty && found.isEmpty then 1 else 0
                  aloneMissed := (changed.filter (!alone.contains ·)).length
                  givenIgnoredMissed := (changed.filter (!givenIgnored.contains ·)).length
+                 conditioned := if c.conditions.isEmpty then 0 else 1
+                 conditionDroppedMissed := (changed.filter (!conditionDropped.contains ·)).length
                  givenArrived := if s.given.any (fun l => B.any (env l.name == some ·.id)) then 1 else 0 }
     if !missed.isEmpty && report.isNone then
-      report := some s!"{describeSpecification s}graph\n{showGraph store}\nbatch\n{showGraph B}\nmissed {missed}"
+      report := some s!"{describeConditioned c}graph\n{showGraph store}\nbatch\n{showGraph B}\nmissed {missed}"
   return (t, report)
 
 /-! ## Named cases -/
@@ -490,7 +509,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"complete: {tally.missedGained} gained results no \"add\" reported, {tally.missedLost} lost results no \"remove\" reported"
   IO.println s!"sound:    {tally.addAbsent} \"add\" reports of a result the graph lacks, {tally.removePresent} \"remove\" reports of a result it still has"
   IO.println s!"by rule, over all {specs.length} specifications: #338 as proposed misses {miss338} changed results, `candidates` misses {missCoarse}"
-  IO.println s!"batches: {bt.batches} ({bt.linked} with facts naming each other), {bt.changed} results changed, {bt.givenArrived} with a given arriving, `candidates` misses {bt.missed}, {bt.untriggered} changed with no candidate; mutant \"read each fact alone\" misses {bt.aloneMissed}, \"ignore a given arriving\" misses {bt.givenIgnoredMissed}"
+  IO.println s!"batches: {bt.batches} ({bt.linked} with facts naming each other), {bt.changed} results changed, {bt.givenArrived} with a given arriving, `candidates` misses {bt.missed}, {bt.untriggered} changed with no candidate; mutant \"read each fact alone\" misses {bt.aloneMissed}, \"ignore a given arriving\" misses {bt.givenIgnoredMissed}, \"drop conditions on a given\" misses {bt.conditionDroppedMissed} ({bt.conditioned} batches with one)"
   IO.println "named cases:"
   namedCase "exists { notExists } (jinaga.js#338)" existsNotExists
   namedCase "two sibling notExists" siblingNotExists
@@ -509,7 +528,8 @@ def main (args : List String) : IO UInt32 := do
     (if dropped.1 == 0 then ["drop existential conditions"] else []) ++
     (if miss338 == 0 then ["#338 as proposed"] else []) ++
     (if bt.aloneMissed == 0 then ["read each fact alone"] else []) ++
-    (if bt.givenIgnoredMissed == 0 then ["ignore a given arriving"] else [])
+    (if bt.givenIgnoredMissed == 0 then ["ignore a given arriving"] else []) ++
+    (if bt.conditionDroppedMissed == 0 then ["drop conditions on a given"] else [])
   unless uncaught.isEmpty do IO.println s!"\nMUTANTS NOT CAUGHT: {uncaught}"
   let uncaught := uncaught ++ (if rt.mutantCaught == 0 then ["swap roles of every path condition"] else [])
   return if missCoarse == 0 && bt.missed == 0 && uncaught.isEmpty && firstReorder.isNone then 0 else 1

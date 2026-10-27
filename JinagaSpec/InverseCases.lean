@@ -1,5 +1,5 @@
 import JinagaSpec.Build
-import JinagaSpec.Semantics
+import JinagaSpec.GivenConditions
 
 /-!
 # Named cases for inversion
@@ -21,6 +21,8 @@ structure InverseCase where
   givens : List (Name × FactId)
   graph : Graph
   batch : List Fact
+  /-- Conditions on the givens, by the given's name. -/
+  conditions : List (Name × List GivenCondition) := []
 
 private def r (n t : Name) : Role := role n t
 
@@ -151,6 +153,22 @@ def inverseCases : List InverseCase := [
     givens := [("p1", 0), ("p2", 1)]
     graph := [⟨1, "Channel", []⟩, ⟨2, "Message", [("channel", 1)]⟩]
     batch := [⟨0, "User", []⟩] },
+  { name := "given-condition-lost"
+    description := "Tasks of a root that is not archived: a condition on the given. Archiving the root fails the condition, and every task is lost."
+    source := "jinaga.js reduceGivenConditions"
+    spec := spec [("p1", "Root")] [unknown "t" "Task" [path [r "root" "Root"] "p1"]] (fact "t")
+    conditions := [("p1", [(false, [unknown "ar" "Archived" [path [r "root" "Root"] "p1"]])])]
+    givens := [("p1", 0)]
+    graph := [⟨0, "Root", []⟩, ⟨1, "Task", [("root", 0)]⟩]
+    batch := [⟨2, "Archived", [("root", 0)]⟩] },
+  { name := "given-condition-gained"
+    description := "Tasks of the second given, a channel, once the first, a root, is opened. Opening the root satisfies the condition on the first given, and the tasks of the second are gained."
+    source := "jinaga.js reduceGivenConditions"
+    spec := spec [("p1", "Root"), ("p2", "Channel")] [unknown "t" "Task" [path [r "channel" "Channel"] "p2"]] (fact "t")
+    conditions := [("p1", [(true, [unknown "op" "Opened" [path [r "root" "Root"] "p1"]])])]
+    givens := [("p1", 0), ("p2", 1)]
+    graph := [⟨0, "Root", []⟩, ⟨1, "Channel", []⟩, ⟨2, "Task", [("channel", 1)]⟩]
+    batch := [⟨3, "Opened", [("root", 0)]⟩] },
   { name := "batch-exists-together"
     description := "exists { notExists }: accounts with a current mirror. An account and its mirror arrive in one batch, the mirror listed first. Neither fact's inverses find the account on a graph without the other."
     source := "jinaga/jinaga-spec#11"
@@ -187,5 +205,15 @@ where
     (fact "a")
 
 def InverseCase.env (c : InverseCase) : Env := fun n => c.givens.lookup n
+
+/-- The case's specification, with the conditions on its givens. -/
+def InverseCase.conditioned (c : InverseCase) : ConditionedSpecification :=
+  { given := c.spec.given.map fun l => (l, (c.conditions.lookup l.name).getD [])
+    matchList := c.spec.matchList, projection := c.spec.projection }
+
+/-- The case's specification with the conditions on its givens reduced to a
+match, which the inverses are built from. -/
+def InverseCase.reduced (c : InverseCase) : Specification :=
+  reduceGivenConditions (givenConditionsLabel c.conditioned) c.conditioned
 
 end JinagaSpec

@@ -71,9 +71,11 @@ def inverseToJson (i : Specification) : Json :=
 
 def inverseVector (c : InverseCase) : Json :=
   let g' := c.graph ++ c.batch
-  let old := c.spec.read c.graph c.env
-  let new := c.spec.read g' c.env
-  let is := inverses c.spec
+  let old := c.conditioned.read c.graph c.env
+  let new := c.conditioned.read g' c.env
+  let is := inverses c.reduced
+  -- A vector with conditions on its givens also shows their reduction.
+  let reduced := if c.conditioned.conditions.isEmpty then [] else [("reduced", inverseToJson c.reduced)]
   -- A batch of one is written as `fact`, so a port that reads only single
   -- facts reads those vectors unchanged.
   let arrived := match c.batch with
@@ -83,18 +85,18 @@ def inverseVector (c : InverseCase) : Json :=
     ("name", c.name),
     ("description", c.description),
     ("source", c.source),
-    ("specification", specificationToJson c.spec),
-    ("text", describeSpecification c.spec),
+    ("specification", conditionedToJson c.conditioned),
+    ("text", describeConditioned c.conditioned),
     ("rowLabels", Json.arr (c.spec.projection.labels.map Json.str).toArray),
     ("givens", Json.mkObj (c.givens.map fun (n, id) => (n, Json.num id))),
     ("graph", Json.arr (c.graph.map factToJson).toArray),
     arrived,
-    ("expected", Json.mkObj [
+    ("expected", Json.mkObj <| reduced ++ [
       ("gained", rowsToJson (new.filter (!old.contains ·))),
       ("lost", rowsToJson (old.filter (!new.contains ·))),
       ("inverses", Json.arr (is.map inverseToJson).toArray),
       ("reordered", Json.arr (is.map (inverseToJson ∘ reorderOrSelf)).toArray),
-      ("candidates", rowsToJson (candidates c.spec c.env c.graph c.batch))])]
+      ("candidates", rowsToJson (candidates c.reduced c.env c.graph c.batch))])]
 
 /-- Random specifications, each with a graph and a fresh batch that change its
 result, from a fixed seed, so that a port is held to shapes nobody chose. A
@@ -142,8 +144,7 @@ end
 /-- What the inverse vectors must show between them, each with the test that
 a case shows it. `lake exe vectors` refuses to write a set in which no case
 shows one, so a change to the generator cannot quietly drop a shape a port
-must handle. Not yet modelled, so not yet listed: conditions on a given
-(`vectors/README.md`). -/
+must handle. -/
 def inverseCoverage : List (String × (InverseCase → Bool)) := [
   ("an exists condition", fun c => anyConditionIn (fun | .existential true _ => true | _ => false) c.spec.matchList),
   ("a notExists condition", fun c => anyConditionIn (fun | .existential false _ => true | _ => false) c.spec.matchList),
@@ -154,6 +155,7 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
   ("several givens", fun c => c.spec.given.length > 1),
   ("a composite projection", fun c => match c.spec.projection with | .composite _ => true | _ => false),
   ("a batch of several facts", fun c => c.batch.length > 1),
+  ("a condition on a given", fun c => !c.conditioned.conditions.isEmpty),
   ("a batch that holds one of the subscription's givens",
     fun c => c.givens.any fun (_, id) => c.batch.any (·.id == id)),
   ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone)]
@@ -171,9 +173,13 @@ def main (args : List String) : IO Unit := do
     unless inverseAll.any shows do
       throw <| IO.userError s!"no inverse vector shows {shape}"
   for c in inverseAll do
-    unless isWellFormed c.spec do
+    -- The hypotheses of `read_reduceGivenConditions`, for the label the
+    -- reduction picks.
+    unless isWellFormed c.reduced do
       throw <| IO.userError s!"inverse case {c.name} is not well-formed"
-    if sameSet (c.spec.read c.graph c.env) (c.spec.read (c.graph ++ c.batch) c.env) then
+    if c.conditioned.labels.contains (givenConditionsLabel c.conditioned) then
+      throw <| IO.userError s!"inverse case {c.name}: the reduction's label is already used"
+    if sameSet (c.conditioned.read c.graph c.env) (c.conditioned.read (c.graph ++ c.batch) c.env) then
       throw <| IO.userError s!"inverse case {c.name} does not change the result"
     IO.FS.writeFile (inverseDir / s!"{c.name}.json") ((inverseVector c).pretty ++ "\n")
   for c in cases do
