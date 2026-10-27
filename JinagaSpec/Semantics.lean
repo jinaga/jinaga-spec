@@ -89,6 +89,19 @@ projection names. Results are compared as sets. -/
 def Specification.evaluate (s : Specification) (g : Graph) (env : Env) : List (List (Option FactId)) :=
   (evalMatches g env s.matchList).map fun e => s.projection.labels.map e
 
+/-- The label is bound to a fact of `g` of the label's type. -/
+def Graph.has (g : Graph) (env : Env) (l : Label) : Bool :=
+  match env l.name with
+  | some id => (g.factOf id).any (·.type == l.type)
+  | none => false
+
+/-- The results as a replica reads them: none until every given is a fact the
+replica holds, as jinaga.js's `SpecificationRunner.read` does. `evaluate`
+binds a given whether or not its fact is stored, so before the given arrives
+it can find results that a replica would not. -/
+def Specification.read (s : Specification) (g : Graph) (env : Env) : List (List (Option FactId)) :=
+  if s.given.all (g.has env) then s.evaluate g env else []
+
 /-- Bind the givens, in order, to the facts a caller supplies. -/
 def Specification.bindGivens (s : Specification) (facts : List FactId) : Env :=
   fun n => ((s.given.map (·.name)).zip facts).lookup n

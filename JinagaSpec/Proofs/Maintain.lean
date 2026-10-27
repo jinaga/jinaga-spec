@@ -5,9 +5,9 @@ import JinagaSpec.Proofs.Basic
 # A re-checked result is the result, whatever order facts arrive in
 
 `maintain_correct`: a held set re-checked on covering candidates after every
-batch equals `evaluate` on the graph so far. It needs nothing about the
-specification or the facts: re-checking decides a candidate by reading the
-specification, and a result that is not a candidate did not change.
+batch equals the result on the graph so far. It needs nothing about the
+result or the facts: re-checking decides a candidate by reading the result,
+and a result that is not a candidate did not change.
 
 `recheck_each`: re-checking several lists of candidates in turn, on one graph,
 is re-checking all of them at once. A replica that notifies each fact of a
@@ -20,40 +20,40 @@ the case where the two graphs are the same facts in a different order.
 -/
 namespace JinagaSpec
 
-theorem mem_recheck {s : Specification} {env : Env} {g : Graph} {candidates held : List Row} {r : Row} :
-    r ∈ recheck s env g candidates held ↔
-      (r ∈ held ∧ r ∉ candidates) ∨ (r ∈ candidates ∧ r ∈ s.evaluate g env) := by
+theorem mem_recheck {result : Graph → List Row} {g : Graph} {candidates held : List Row} {r : Row} :
+    r ∈ recheck result g candidates held ↔
+      (r ∈ held ∧ r ∉ candidates) ∨ (r ∈ candidates ∧ r ∈ result g) := by
   simp [recheck]
 
-theorem recheck_correct {s : Specification} {env : Env} {g : Graph} {B : List Fact}
+theorem recheck_correct {result : Graph → List Row} {g : Graph} {B : List Fact}
     {candidates held : List Row}
-    (hheld : ∀ r, r ∈ held ↔ r ∈ s.evaluate g env) (hcov : Covers s env g B candidates) (r : Row) :
-    r ∈ recheck s env (g ++ B) candidates held ↔ r ∈ s.evaluate (g ++ B) env := by
+    (hheld : ∀ r, r ∈ held ↔ r ∈ result g) (hcov : Covers result g B candidates) (r : Row) :
+    r ∈ recheck result (g ++ B) candidates held ↔ r ∈ result (g ++ B) := by
   rcases hcov r with h | h <;> by_cases r ∈ candidates <;> simp_all [mem_recheck]
 
 /-- Re-checking each list of candidates in turn, on one graph, holds what one
 re-check of all of them holds. -/
-theorem recheck_each (s : Specification) (env : Env) (g : Graph) :
+theorem recheck_each (result : Graph → List Row) (g : Graph) :
     ∀ (cs : List (List Row)) (held : List Row) (r : Row),
-      r ∈ cs.foldl (fun held c => recheck s env g c held) held ↔ r ∈ recheck s env g cs.flatten held
+      r ∈ cs.foldl (fun held c => recheck result g c held) held ↔ r ∈ recheck result g cs.flatten held
   | [], held, r => by simp [recheck]
   | c :: cs, held, r => by
-    rw [List.foldl_cons, recheck_each s env g cs]
+    rw [List.foldl_cons, recheck_each result g cs]
     simp only [mem_recheck, List.flatten_cons, List.mem_append]
     grind
 
 /-- After any sequence of batches, starting from a held set that equals the
 result, the held set equals the result, provided each step's candidates cover
 that step's change. -/
-theorem maintain_correct (s : Specification) (env : Env) (candidates : Graph → List Fact → List Row) :
+theorem maintain_correct (result : Graph → List Row) (candidates : Graph → List Fact → List Row) :
     ∀ (bs : List (List Fact)) (g : Graph) (held : List Row),
-      (∀ r, r ∈ held ↔ r ∈ s.evaluate g env) →
+      (∀ r, r ∈ held ↔ r ∈ result g) →
       (∀ pre B post, bs = pre ++ B :: post →
-        Covers s env (g ++ pre.flatten) B (candidates (g ++ pre.flatten) B)) →
-      ∀ r, r ∈ (bs.foldl (maintainStep s env candidates) (g, held)).2 ↔ r ∈ s.evaluate (g ++ bs.flatten) env
+        Covers result (g ++ pre.flatten) B (candidates (g ++ pre.flatten) B)) →
+      ∀ r, r ∈ (bs.foldl (maintainStep result candidates) (g, held)).2 ↔ r ∈ result (g ++ bs.flatten)
   | [], g, held, hheld, _ => by simpa using hheld
   | B :: bs, g, held, hheld, hcov => by
-    have h := maintain_correct s env candidates bs (g ++ B) _
+    have h := maintain_correct result candidates bs (g ++ B) _
       (recheck_correct hheld (by simpa using hcov [] B bs rfl))
       (fun pre B' post h => by simpa using hcov (B :: pre) B' post (by simp [h]))
     simpa [maintainStep] using h

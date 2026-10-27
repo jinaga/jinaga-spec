@@ -6,8 +6,10 @@
 //
 // 1. The proven inverses, read by jinaga.js. Each vector's expected inverses,
 //    read by jinaga.js's own MemoryStore from the subscription's givens and
-//    each new fact, on a store that holds the whole batch, find exactly the
-//    vector's candidates, which include every result gained and lost. This
+//    each new fact, on a store that holds the whole batch, together with
+//    jinaga.js's `givenCandidateInverse` for a new fact that is one of the
+//    givens, find exactly the vector's candidates, which include every result
+//    gained and lost. This
 //    shows that jinaga.js's runner reads these specifications as the
 //    reference semantics does. It must pass.
 // 2. The port. If jinaga.js has `src/specification/inverse-candidates.ts`
@@ -31,6 +33,7 @@ const load = (path: string) => import(pathToFileURL(join(jinagaJs, path)).href);
 
 const { MemoryStore } = await load("src/memory/memory-store.ts");
 const { invertSpecification } = await load("src/specification/inverse.ts");
+const { givenCandidateInverse } = await load("src/observer/recheck.ts");
 const { Trace } = await load("src/util/trace.ts");
 Trace.off();
 // PORT names another implementation to check instead, such as this
@@ -95,6 +98,13 @@ for (const file of files) {
             for (const fact of arrivals(v)) {
                 for (const { specification } of v.expected[list]) {
                     for (const row of await readInverse(v, store, ref, specification, fact)) found.add(key(row));
+                }
+                // A subscription's given arrives: jinaga.js reads every row, through an
+                // inverse pinned on that given (`factCandidates`' first branch).
+                for (const [index, given] of v.specification.given.entries()) {
+                    if (v.givens[given.label.name] !== fact.id) continue;
+                    const inverse = givenCandidateInverse(structuredClone(v.specification), index);
+                    for (const row of await readInverse(v, store, ref, inverse, fact)) found.add(key(row));
                 }
             }
             const missing = changed.filter(row => !found.has(key(row)));

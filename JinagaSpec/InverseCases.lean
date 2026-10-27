@@ -134,6 +134,23 @@ def inverseCases : List InverseCase := [
     givens := [("p1", 0)]
     graph := [⟨0, "Project", []⟩, ⟨1, "Task", [("project", 0)]⟩]
     batch := [⟨3, "Completion", [("assignment", 2)]⟩, ⟨2, "Assignment", [("task", 1)]⟩] },
+  { name := "given-arrives"
+    description := "A subscription started on a given the replica does not hold yet. The given arrives with a task under it, the task listed first: nothing was read before, and the task is read now."
+    source := "jinaga.js givenCandidateInverse"
+    spec := spec [("p1", "Root")] [unknown "t" "Task" [path [r "root" "Root"] "p1"]] (fact "t")
+    givens := [("p1", 0)]
+    graph := []
+    batch := [⟨1, "Task", [("root", 0)]⟩, ⟨0, "Root", []⟩] },
+  { name := "given-arrives-under-not-exists"
+    description := "Messages in a channel that this user has not read, for a user the replica does not hold yet. A replica reads nothing until the user arrives, then reads the message, though no Read could have existed before."
+    source := "jinaga.js givenCandidateInverse"
+    spec := spec [("p1", "User"), ("p2", "Channel")]
+      [unknown "m" "Message" [path [r "channel" "Channel"] "p2",
+        notExists [unknown "rd" "Read" [path [r "message" "Message"] "m", path [r "user" "User"] "p1"]]]]
+      (fact "m")
+    givens := [("p1", 0), ("p2", 1)]
+    graph := [⟨1, "Channel", []⟩, ⟨2, "Message", [("channel", 1)]⟩]
+    batch := [⟨0, "User", []⟩] },
   { name := "batch-exists-together"
     description := "exists { notExists }: accounts with a current mirror. An account and its mirror arrive in one batch, the mirror listed first. Neither fact's inverses find the account on a graph without the other."
     source := "jinaga/jinaga-spec#11"

@@ -207,17 +207,18 @@ def reorderOrSelf (i : Specification) : Specification := (reorderChecked i).getD
 
 /-- The results `f` might have changed, when it arrives in `old` and the graph
 is now `new`: each inverse, reordered to start at `f`, read on `new`. If `f`
-is one of the subscription's own givens, any result might have, so every
-result old and new is a candidate. -/
-def factCandidates (s : Specification) (env : Env) (old new : Graph) (f : Fact) : List Row :=
+is one of the subscription's own givens, it was not stored before, so the
+replica read nothing then, and every result it reads now is a candidate
+(jinaga.js's `givenCandidateInverse`). -/
+def factCandidates (s : Specification) (env : Env) (new : Graph) (f : Fact) : List Row :=
   if s.given.any (env ·.name == some f.id) then
-    s.evaluate old env ++ s.evaluate new env
+    s.read new env
   else
     ((inverses s).map reorderOrSelf).flatMap (·.evaluate new (pinEnv s env f))
 
 /-- The results a batch `B` might have changed: each fact's candidates, every
 one read on `g ++ B`, the graph that holds the whole batch. -/
 def candidates (s : Specification) (env : Env) (g : Graph) (B : List Fact) : List Row :=
-  B.flatMap (factCandidates s env g (g ++ B))
+  B.flatMap (factCandidates s env (g ++ B))
 
 end JinagaSpec

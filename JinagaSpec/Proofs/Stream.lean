@@ -21,38 +21,61 @@ namespace JinagaSpec
 
 variable {g : Graph} {B : List Fact}
 
+/-- No fact of `g` has the id of a fact of a fresh batch. -/
+theorem factOf_eq_none_of_fresh (hf : Fresh g B) {b : Fact} (hb : b ∈ B) : g.factOf b.id = none :=
+  List.find?_eq_none.mpr fun x hx => by simpa using hf.idNew x hx b hb
+
+/-- A label bound outside the batch is stored after it exactly when it was before. -/
+theorem has_append_outside {env : Env} {l : Label} (h : ∀ b ∈ B, env l.name ≠ some b.id) :
+    (g ++ B).has env l = g.has env l := by
+  unfold Graph.has
+  split
+  · rename_i id hid
+    rw [factOf_append_outside fun b hb heq => h b hb (hid.trans (congrArg some heq))]
+  · rfl
+
 /-- **`candidates_complete`.** For a well-formed specification and a fresh
-batch, the candidates include every result the batch adds or removes. -/
+batch, the candidates include every result the batch adds or removes, as a
+replica reads them. -/
 theorem candidates_complete (s : Specification) (hwf : WellFormed s) (hf : Fresh g B) (env : Env) :
-    Covers s env g B (candidates s env g B) := by
+    Covers (s.read · env) g B (candidates s env g B) := by
   intro r
   by_cases hgiv : ∃ f ∈ B, s.given.any (env ·.name == some f.id) = true
-  · -- A fact of the batch is one of the givens: every result old and new is a candidate.
+  · -- A given arrives in the batch. It was not stored, so nothing was read
+    -- before, and every result read now is a candidate.
     obtain ⟨f, hfB, hg⟩ := hgiv
-    have hall : ∀ r, r ∈ s.evaluate g env ++ s.evaluate (g ++ B) env → r ∈ candidates s env g B :=
-      fun r h => List.mem_flatMap.mpr ⟨f, hfB, by simpa [factCandidates, hg] using h⟩
-    by_cases h1 : r ∈ s.evaluate g env
-    · exact Or.inr (hall r (List.mem_append_left _ h1))
-    by_cases h2 : r ∈ s.evaluate (g ++ B) env
-    · exact Or.inr (hall r (List.mem_append_right _ h2))
-    exact Or.inl (iff_of_false h1 h2)
+    obtain ⟨l, hl, he⟩ := List.any_eq_true.mp hg
+    have hold : s.read g env = [] := by
+      simp only [Specification.read, ite_eq_right_iff, List.all_eq_true]
+      exact fun h => absurd (h l hl) (by simp [Graph.has, beq_iff_eq.mp he, factOf_eq_none_of_fresh hf hfB])
+    by_cases h2 : r ∈ s.read (g ++ B) env
+    · exact Or.inr (List.mem_flatMap.mpr ⟨f, hfB, by simpa [factCandidates, hg] using h2⟩)
+    · exact Or.inl (by simp [hold, h2])
   simp only [not_exists, not_and] at hgiv
-  rcases inverses_complete s hwf hf env hgiv r with h | ⟨f, hfB, ι, hι, hr⟩
-  · exact Or.inl h
-  · refine Or.inr (List.mem_flatMap.mpr ⟨f, hfB, ?_⟩)
-    simp only [factCandidates, hgiv f hfB, Bool.false_eq_true, ite_false]
-    exact List.mem_flatMap.mpr ⟨reorderOrSelf ι, List.mem_map.mpr ⟨ι, hι, rfl⟩,
-      (reorderOrSelf_correct ι _ r).mpr hr⟩
+  -- No given arrives, so each is stored after the batch exactly when it was before.
+  have hhas : s.given.all ((g ++ B).has env) = s.given.all (g.has env) := by
+    rw [Bool.eq_iff_iff]
+    simp only [List.all_eq_true]
+    exact forall₂_congr fun l hl => by
+      rw [has_append_outside fun b hb heq => hgiv b hb (List.any_eq_true.mpr ⟨l, hl, by simp [heq]⟩)]
+  by_cases hpres : s.given.all (g.has env) = true
+  · rcases inverses_complete s hwf hf env hgiv r with h | ⟨f, hfB, ι, hι, hr⟩
+    · exact Or.inl (by simpa [Specification.read, hhas, hpres] using h)
+    · refine Or.inr (List.mem_flatMap.mpr ⟨f, hfB, ?_⟩)
+      simp only [factCandidates, hgiv f hfB, Bool.false_eq_true, ite_false]
+      exact List.mem_flatMap.mpr ⟨reorderOrSelf ι, List.mem_map.mpr ⟨ι, hι, rfl⟩,
+        (reorderOrSelf_correct ι _ r).mpr hr⟩
+  · exact Or.inl (by simp [Specification.read, hhas, hpres])
 
 /-- **Notifying each fact of a batch.** Start from a held set that equals the
 result on `g`. Save a fresh batch `B`, then, for each of its facts, re-check
 that fact's candidates, read on `g ++ B`: the held set is then exactly the
 result on `g ++ B`. -/
 theorem notify_correct (s : Specification) (hwf : WellFormed s) (hf : Fresh g B) (env : Env)
-    (held : List Row) (hheld : ∀ r, r ∈ held ↔ r ∈ s.evaluate g env) (r : Row) :
-    r ∈ B.foldl (fun held f => recheck s env (g ++ B) (factCandidates s env g (g ++ B) f) held) held ↔
-      r ∈ s.evaluate (g ++ B) env := by
-  rw [← List.foldl_map (g := fun held c => recheck s env (g ++ B) c held), recheck_each,
+    (held : List Row) (hheld : ∀ r, r ∈ held ↔ r ∈ s.read g env) (r : Row) :
+    r ∈ B.foldl (fun held f => recheck (s.read · env) (g ++ B) (factCandidates s env (g ++ B) f) held) held ↔
+      r ∈ s.read (g ++ B) env := by
+  rw [← List.foldl_map (g := fun held c => recheck (s.read · env) (g ++ B) c held), recheck_each,
     ← List.flatMap_def]
   exact recheck_correct hheld (candidates_complete s hwf hf env) r
 
@@ -62,12 +85,12 @@ holds exactly the specification's results on the replica's graph, provided each
 batch is fresh when it arrives. -/
 theorem stream_correct (s : Specification) (hwf : WellFormed s) (env : Env) :
     ∀ (bs : List (List Fact)) (g : Graph) (held : List Row),
-      (∀ r, r ∈ held ↔ r ∈ s.evaluate g env) →
+      (∀ r, r ∈ held ↔ r ∈ s.read g env) →
       (∀ pre B post, bs = pre ++ B :: post → Fresh (g ++ pre.flatten) B) →
-      ∀ r, r ∈ (bs.foldl (maintainStep s env (candidates s env)) (g, held)).2 ↔
-        r ∈ s.evaluate (g ++ bs.flatten) env :=
+      ∀ r, r ∈ (bs.foldl (maintainStep (s.read · env) (candidates s env)) (g, held)).2 ↔
+        r ∈ s.read (g ++ bs.flatten) env :=
   fun bs g held hheld hfresh =>
-    maintain_correct s env (candidates s env) bs g held hheld
+    maintain_correct (s.read · env) (candidates s env) bs g held hheld
       fun pre B post h => candidates_complete s hwf (hfresh pre B post h) env
 
 end JinagaSpec

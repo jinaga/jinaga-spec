@@ -232,15 +232,19 @@ structure BatchTally where
   missed : Nat := 0
   untriggered : Nat := 0
   aloneMissed : Nat := 0
+  givenArrived : Nat := 0
+  givenIgnoredMissed : Nat := 0
 
 def BatchTally.add (t u : BatchTally) : BatchTally :=
   { batches := t.batches + u.batches, linked := t.linked + u.linked, changed := t.changed + u.changed,
     missed := t.missed + u.missed, untriggered := t.untriggered + u.untriggered,
-    aloneMissed := t.aloneMissed + u.aloneMissed }
+    aloneMissed := t.aloneMissed + u.aloneMissed, givenArrived := t.givenArrived + u.givenArrived,
+    givenIgnoredMissed := t.givenIgnoredMissed + u.givenIgnoredMissed }
 
 /-- Question 1 of #11: every result the batch changes is a candidate. Question
-2, the weaker shape: a batch that changes something finds some candidate. The
-mutant reads each fact's inverses on the store and that fact alone. -/
+2, the weaker shape: a batch that changes something finds some candidate. One
+mutant reads each fact's inverses on the store and that fact alone; another
+finds nothing when a given arrives. -/
 def checkBatches (s : Specification) (graphs : Nat) : Gen (BatchTally × Option String) := do
   let mut t : BatchTally := {}
   let mut report := none
@@ -253,16 +257,22 @@ def checkBatches (s : Specification) (graphs : Nat) : Gen (BatchTally × Option 
           store ← genGraph s 8
           env ← genEnv s store
     let B ← genBatch s store ((← below 4) + 1)
-    let old := s.evaluate store env
-    let new := s.evaluate (store ++ B) env
+    -- Sometimes a subscription's given arrives in the batch.
+    if ← chance 1 4 then env ← genEnv s (store ++ B)
+    let old := s.read store env
+    let new := s.read (store ++ B) env
     let changed := new.filter (!old.contains ·) ++ old.filter (!new.contains ·)
     let found := candidates s env store B
     let missed := changed.filter (!found.contains ·)
     let alone := B.flatMap fun f => candidates s env store [f]
+    let givenIgnored := B.flatMap fun f =>
+      if s.given.any (env ·.name == some f.id) then [] else factCandidates s env (store ++ B) f
     t := t.add { batches := 1, changed := changed.length, missed := missed.length
                  linked := if B.any (fun f => B.any (·.predecessors.any (·.2 == f.id))) then 1 else 0
                  untriggered := if !changed.isEmpty && found.isEmpty then 1 else 0
-                 aloneMissed := (changed.filter (!alone.contains ·)).length }
+                 aloneMissed := (changed.filter (!alone.contains ·)).length
+                 givenIgnoredMissed := (changed.filter (!givenIgnored.contains ·)).length
+                 givenArrived := if s.given.any (fun l => B.any (env l.name == some ·.id)) then 1 else 0 }
     if !missed.isEmpty && report.isNone then
       report := some s!"{describeSpecification s}graph\n{showGraph store}\nbatch\n{showGraph B}\nmissed {missed}"
   return (t, report)
@@ -480,7 +490,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"complete: {tally.missedGained} gained results no \"add\" reported, {tally.missedLost} lost results no \"remove\" reported"
   IO.println s!"sound:    {tally.addAbsent} \"add\" reports of a result the graph lacks, {tally.removePresent} \"remove\" reports of a result it still has"
   IO.println s!"by rule, over all {specs.length} specifications: #338 as proposed misses {miss338} changed results, `candidates` misses {missCoarse}"
-  IO.println s!"batches: {bt.batches} ({bt.linked} with facts naming each other), {bt.changed} results changed, `candidates` misses {bt.missed}, {bt.untriggered} changed with no candidate; mutant \"read each fact alone\" misses {bt.aloneMissed}"
+  IO.println s!"batches: {bt.batches} ({bt.linked} with facts naming each other), {bt.changed} results changed, {bt.givenArrived} with a given arriving, `candidates` misses {bt.missed}, {bt.untriggered} changed with no candidate; mutant \"read each fact alone\" misses {bt.aloneMissed}, \"ignore a given arriving\" misses {bt.givenIgnoredMissed}"
   IO.println "named cases:"
   namedCase "exists { notExists } (jinaga.js#338)" existsNotExists
   namedCase "two sibling notExists" siblingNotExists
@@ -498,7 +508,8 @@ def main (args : List String) : IO UInt32 := do
   let uncaught := (if notFresh.1 == 0 then ["notify a fact the store already has"] else []) ++
     (if dropped.1 == 0 then ["drop existential conditions"] else []) ++
     (if miss338 == 0 then ["#338 as proposed"] else []) ++
-    (if bt.aloneMissed == 0 then ["read each fact alone"] else [])
+    (if bt.aloneMissed == 0 then ["read each fact alone"] else []) ++
+    (if bt.givenIgnoredMissed == 0 then ["ignore a given arriving"] else [])
   unless uncaught.isEmpty do IO.println s!"\nMUTANTS NOT CAUGHT: {uncaught}"
   let uncaught := uncaught ++ (if rt.mutantCaught == 0 then ["swap roles of every path condition"] else [])
   return if missCoarse == 0 && bt.missed == 0 && uncaught.isEmpty && firstReorder.isNone then 0 else 1

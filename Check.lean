@@ -353,7 +353,7 @@ def checkMaintain (dropOne : Bool) (s : Specification) (graphs : Nat) : Gen (Nat
     let mut state := (g.take k, s.evaluate (g.take k) env)
     for B in ← batches (g.drop k) do
       if !(changedRows s env state.1 B).isEmpty then changes := changes + 1
-      state := maintainStep s env (coveringCandidates dropOne s env) state B
+      state := maintainStep (s.evaluate · env) (coveringCandidates dropOne s env) state B
       checked := checked + 1
       if !sameSet state.2 (s.evaluate state.1 env) then wrong := wrong + 1
   return (checked, changes, wrong)
