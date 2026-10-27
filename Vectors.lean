@@ -127,6 +127,35 @@ def randomInverseCases (namePrefix : String) (size count : Nat) : List InverseCa
         break
   return out
 
+mutual
+  /-- Some condition, at any depth, satisfies `p`. -/
+  partial def anyConditionIn (p : Condition → Bool) : List Match → Bool
+    | [] => false
+    | .mk _ cs :: rest => cs.any (anyCondition p) || anyConditionIn p rest
+
+  partial def anyCondition (p : Condition → Bool) (c : Condition) : Bool :=
+    p c || match c with
+      | .existential _ ms => anyConditionIn p ms
+      | .path _ => false
+end
+
+/-- What the inverse vectors must show between them, each with the test that
+a case shows it. `lake exe vectors` refuses to write a set in which no case
+shows one, so a change to the generator cannot quietly drop a shape a port
+must handle. Not yet modelled, so not yet listed: conditions on a given, and a
+batch that holds one of the subscription's givens (`vectors/README.md`). -/
+def inverseCoverage : List (String × (InverseCase → Bool)) := [
+  ("an exists condition", fun c => anyConditionIn (fun | .existential true _ => true | _ => false) c.spec.matchList),
+  ("a notExists condition", fun c => anyConditionIn (fun | .existential false _ => true | _ => false) c.spec.matchList),
+  ("an existential condition with several matches",
+    fun c => anyConditionIn (fun | .existential _ (_ :: _ :: _) => true | _ => false) c.spec.matchList),
+  ("an existential condition inside another",
+    fun c => anyConditionIn (fun | .existential _ ms => anyConditionIn (!·.isPath) ms | _ => false) c.spec.matchList),
+  ("several givens", fun c => c.spec.given.length > 1),
+  ("a composite projection", fun c => match c.spec.projection with | .composite _ => true | _ => false),
+  ("a batch of several facts", fun c => c.batch.length > 1),
+  ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone)]
+
 def main (args : List String) : IO Unit := do
   let root : System.FilePath := args.headD "vectors"
   let splitDir := root / "split"
@@ -136,6 +165,9 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll wfDir
   IO.FS.createDirAll inverseDir
   let inverseAll := inverseCases ++ randomInverseCases "random-" 1 12 ++ randomInverseCases "random-batch-" 3 6
+  for (shape, shows) in inverseCoverage do
+    unless inverseAll.any shows do
+      throw <| IO.userError s!"no inverse vector shows {shape}"
   for c in inverseAll do
     unless isWellFormed c.spec do
       throw <| IO.userError s!"inverse case {c.name} is not well-formed"

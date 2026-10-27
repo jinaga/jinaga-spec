@@ -101,7 +101,11 @@ partial def genMatch (maxDepth : Nat) (types scope : List Name) (name type : Nam
   for _ in [0:(← below 3)] do
     if depth < maxDepth && (← chance 1 3) then
       let inner ← genMatch maxDepth types scope' s!"e{← fresh}" (← pick types) (depth + 1)
-      conditions := conditions ++ [if ← chance 1 2 then exists' [inner] else notExists [inner]]
+      let mut inners := [inner]
+      -- Sometimes a second match, which may join the first.
+      if ← chance 1 3 then
+        inners := inners ++ [← genMatch maxDepth types (inner.unknown.name :: scope') s!"e{← fresh}" (← pick types) (depth + 1)]
+      conditions := conditions ++ [if ← chance 1 2 then exists' inners else notExists inners]
     else
       conditions := conditions ++ [← genPath types scope]
   return .mk { name := name, type := type } conditions
