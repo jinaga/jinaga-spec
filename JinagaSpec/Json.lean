@@ -1,5 +1,5 @@
 import Lean.Data.Json
-import JinagaSpec.Split
+import JinagaSpec.Describe
 
 /-!
 # JSON form
@@ -43,12 +43,15 @@ def projectionToJson : Projection → Json
       ("components", Json.arr (components.map fun c =>
         Json.mkObj [("type", "fact"), ("name", c.name), ("label", c.label)]).toArray)]
 
-def specificationToJson (s : Specification) : Json :=
+def conditionedToJson (c : ConditionedSpecification) : Json :=
   Json.mkObj [
-    ("given", Json.arr (s.given.map fun l =>
-      Json.mkObj [("label", labelToJson l), ("conditions", Json.arr #[])]).toArray),
-    ("matches", Json.arr (s.matchList.map matchToJson).toArray),
-    ("projection", projectionToJson s.projection)]
+    ("given", Json.arr (c.given.map fun (l, gcs) =>
+      Json.mkObj [("label", labelToJson l),
+        ("conditions", Json.arr (gcs.map fun (e, ms) => conditionToJson (.existential e ms)).toArray)]).toArray),
+    ("matches", Json.arr (c.matchList.map matchToJson).toArray),
+    ("projection", projectionToJson c.projection)]
+
+def specificationToJson (s : Specification) : Json := conditionedToJson (.ofSpecification s)
 
 def optionToJson (f : Specification → Json) : Option Specification → Json
   | none => Json.null

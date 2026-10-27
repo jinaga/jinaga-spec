@@ -1,4 +1,4 @@
-import JinagaSpec.Syntax
+import JinagaSpec.GivenConditions
 
 /-!
 # Text form
@@ -47,13 +47,24 @@ def describeProjection (depth : Nat) : Projection → String
     "{\n" ++ String.join (sorted.map fun c => s!"    {indentOf depth}{c.name} = {c.label}\n") ++
       s!"{indentOf depth}}"
 
-def describeSpecification (s : Specification) (depth : Nat := 0) : String :=
-  let given := ", ".intercalate (s.given.map fun l => s!"{l.name}: {l.type}")
+/-- A given, and its conditions in brackets if it has any. -/
+def describeGiven (depth : Nat) : Label × List GivenCondition → String
+  | (l, []) => s!"{l.name}: {l.type}"
+  | (l, gcs) =>
+    s!"{l.name}: {l.type} [\n" ++
+      String.join (gcs.map fun (e, ms) => describeCondition l.name (depth + 1) (.existential e ms)) ++
+      s!"{indentOf depth}]"
+
+def describeConditioned (c : ConditionedSpecification) (depth : Nat := 0) : String :=
+  let given := ", ".intercalate (c.given.map (describeGiven depth))
   let projection :=
-    match s.projection with
+    match c.projection with
     | .composite [] => ""
     | p => " => " ++ describeProjection depth p
-  s!"{indentOf depth}({given}) \{\n" ++ describeMatches (depth + 1) s.matchList ++
+  s!"{indentOf depth}({given}) \{\n" ++ describeMatches (depth + 1) c.matchList ++
     s!"{indentOf depth}}{projection}\n"
+
+def describeSpecification (s : Specification) (depth : Nat := 0) : String :=
+  describeConditioned (.ofSpecification s) depth
 
 end JinagaSpec

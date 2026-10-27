@@ -526,6 +526,39 @@ This is also the semantics a condition on a given needs. jinaga.js reduces such
 a condition to a match bound to the given, which binds only a stored fact, so
 the reduction agrees with `read`, not with `evaluate`.
 
+## Conditions on a given reduce to a match
+
+jinaga.js lets a given carry existential conditions; a replica reads nothing
+while one fails. `ConditionedSpecification` (`GivenConditions.lean`) is that
+shape, and its `read` is `Specification.read` behind the conditions.
+
+`reduceGivenConditions x c` moves every condition onto one new first match,
+`x: T [x = g, ...]`, bound to the first given with a condition. An existential
+condition does not read the match it is written on, so one match serves every
+given's conditions, where jinaga.js used one per given, each needing its own
+label. The match has one solution when the conditions hold and none when they
+do not, and only while the given is stored, which is why this follows the
+previous section: against `evaluate`, the reduction would need a hypothesis
+that the given is present; against `read`, it needs none.
+
+`read_reduceGivenConditions` assumes only that the reduction is well-formed and
+that `x` is not a label the specification names. Both are checkable: a port
+runs `isWellFormed` on the reduction it builds, and the label rule (the first
+of `given`, `given2`, ... not named anywhere) is checked by the vector
+generator, not proved, since the theorem holds for any unused label. The proof
+reuses `scopedMatches_shrink` to drop `x` from the scope of what never names
+it, `allHold_agree` for the conditions, and `exists_projection_iff` for the
+rows. `candidates_complete_given` and `stream_correct_given` follow by
+rewriting with it.
+
+jinaga.js labelled the match `__g<i>`, which `WellFormed` rejects, because the
+proofs reserve `__` names. The label is now an ordinary one the specification
+does not use, so jinaga.js's reduction must change to match: two vectors,
+`given-condition-lost` and `given-condition-gained`, pin it.
+`check-inverse` adds a random condition to a random given in a third of its
+batches; `candidates` of the reduction misses nothing, and a mutant that
+drops the condition is caught.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -544,6 +577,7 @@ the reduction agrees with `read`, not with `evaluate`.
 | `Proofs/Candidates.lean` | Every result a fresh batch changes is a result of one of the inverses, given one of the batch's facts. |
 | `Proofs/Reorder.lean` | Matches are a conjunction, so a checked arrangement has the same solutions; flattening an `exists` keeps them. |
 | `Proofs/Stream.lean` | The candidates cover every change a replica reads, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
+| `Proofs/GivenConditions.lean` | Reducing conditions on a given to a match keeps what a replica reads, so the stream of a conditioned specification is exact. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
@@ -556,6 +590,7 @@ became 350, with the check included.
 
 ## Not covered
 
-Conditions on givens, `field`/`hash`/`time` projections, and nested
-specification projections are not modelled. `buildFeeds`, skeleton canonicity
+`field`/`hash`/`time` projections and nested specification projections are
+not modelled. Conditions on givens are modelled for the inverse algorithm and
+the stream, not for the split. `buildFeeds`, skeleton canonicity
 and distribution soundness are not started.

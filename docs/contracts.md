@@ -145,8 +145,9 @@ into one the compiler tracks: the pipeline must end in `assertWellFormed`.
 
 ## What is not covered
 
-Conditions on givens, and the labels declared inside nested specification
-projections, are not modelled, and the check ignores them. The reserved-label
+Conditions on givens are modelled only for the inverse algorithm
+(`GivenConditions.lean`), and the labels declared inside nested specification
+projections not at all; the check ignores both. The reserved-label
 rule makes the second harmless for the split's own labels: no declaration site,
 modelled or not, can collide with a name it may not use.
 

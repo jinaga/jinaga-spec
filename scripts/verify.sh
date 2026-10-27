@@ -17,7 +17,7 @@ echo "== No sorry, no added axioms"
 if grep -rnE "sorry|^axiom|native_decide" JinagaSpec; then
   echo "found a forbidden construct"; exit 1
 fi
-tmp="$(mktemp -d)"; printf 'import JinagaSpec\n#print axioms JinagaSpec.split_correct\n#print axioms JinagaSpec.isWellFormed_iff\n#print axioms JinagaSpec.store_correct\n#print axioms JinagaSpec.store_denies\n#print axioms JinagaSpec.maintain_correct\n#print axioms JinagaSpec.evaluate_perm\n#print axioms JinagaSpec.shakeTree_bound\n#print axioms JinagaSpec.candidates_complete\n#print axioms JinagaSpec.notify_correct\n#print axioms JinagaSpec.stream_correct\n#print axioms JinagaSpec.reorderOrSelf_correct\n' > "$tmp/a.lean"
+tmp="$(mktemp -d)"; printf 'import JinagaSpec\n#print axioms JinagaSpec.split_correct\n#print axioms JinagaSpec.isWellFormed_iff\n#print axioms JinagaSpec.store_correct\n#print axioms JinagaSpec.store_denies\n#print axioms JinagaSpec.maintain_correct\n#print axioms JinagaSpec.evaluate_perm\n#print axioms JinagaSpec.shakeTree_bound\n#print axioms JinagaSpec.candidates_complete\n#print axioms JinagaSpec.notify_correct\n#print axioms JinagaSpec.stream_correct\n#print axioms JinagaSpec.reorderOrSelf_correct\n#print axioms JinagaSpec.read_reduceGivenConditions\n#print axioms JinagaSpec.stream_correct_given\n' > "$tmp/a.lean"
 lake env lean "$tmp/a.lean" | tee "$tmp/out.txt"
 if grep -q sorryAx "$tmp/out.txt"; then echo "one of the checked theorems depends on sorry"; exit 1; fi
 

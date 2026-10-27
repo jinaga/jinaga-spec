@@ -44,6 +44,21 @@ mutual
     | .existential _ ms => usedInMatches ms
 end
 
+mutual
+  /-- Every unknown the matches declare, at any depth. -/
+  def declaredInMatches : List Match → List Name
+    | [] => []
+    | .mk u cs :: rest => u.name :: declaredInConditions cs ++ declaredInMatches rest
+
+  def declaredInConditions : List Condition → List Name
+    | [] => []
+    | c :: cs => declaredInCondition c ++ declaredInConditions cs
+
+  def declaredInCondition : Condition → List Name
+    | .path _ => []
+    | .existential _ ms => declaredInMatches ms
+end
+
 /-- The label the split gives the fact that the head walks to for the `i`th
 hoisted path condition. -/
 def splitLabel (i : Nat) : Name := s!"__s{i}"

@@ -260,7 +260,48 @@ export function reorderInverse(inverse: Specification): Specification {
     return ok ? { ...inverse, matches: ordered! } : inverse;
 }
 
+/* ---------------- Conditions on a given (JinagaSpec/GivenConditions.lean) ---------------- */
+
+/** Every label a list of matches declares or names, at any depth. */
+function labelsIn(matches: Match[]): string[] {
+    return matches.flatMap(m => [m.unknown.name, ...m.conditions.flatMap(c =>
+        isPath(c) ? [c.labelRight] : labelsIn(c.matches))]);
+}
+
+/**
+ * Move every condition on a given onto a new first match, bound to the first
+ * given that has a condition. An existential condition does not read the match
+ * it is written on, so one match serves every given's conditions. Its label is
+ * the first of `given`, `given2`, `given3`, ... that the specification does
+ * not name (`givenConditionsLabel`). Proven to keep what a replica reads
+ * (`read_reduceGivenConditions`).
+ */
+export function reduceGivenConditions(specification: Specification): Specification {
+    const first = specification.given.find(g => g.conditions.length > 0);
+    if (!first) return specification;
+    const conditions = specification.given.flatMap(g => g.conditions);
+    const used = new Set([
+        ...specification.given.map(g => g.label.name),
+        ...labelsIn(conditions.flatMap(c => c.matches)),
+        ...labelsIn(specification.matches),
+        ...projectionLabels(specification.projection)]);
+    let k = 1;
+    while (used.has(k === 1 ? "given" : `given${k}`)) k++;
+    const label = k === 1 ? "given" : `given${k}`;
+    return {
+        given: specification.given.map(g => ({ label: g.label, conditions: [] })),
+        matches: [
+            {
+                unknown: { name: label, type: first.label.type },
+                conditions: [{ type: "path", rolesLeft: [], labelRight: first.label.name, rolesRight: [] }, ...conditions]
+            },
+            ...specification.matches
+        ],
+        projection: specification.projection
+    };
+}
+
 /** The whole algorithm's inverses. Read each with `[...subscriptionGivens, newFact]`; every resulting row is a candidate. */
 export function candidateInverses(specification: Specification): Specification[] {
-    return buildInverses(specification).map(reorderInverse);
+    return buildInverses(reduceGivenConditions(specification)).map(reorderInverse);
 }

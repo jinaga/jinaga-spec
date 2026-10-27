@@ -39,21 +39,6 @@ level's own conditions never read it (`AgreeOff`).
 namespace JinagaSpec
 
 mutual
-  /-- Every unknown the matches declare, at any depth. -/
-  def declaredInMatches : List Match → List Name
-    | [] => []
-    | .mk u cs :: rest => u.name :: declaredInConditions cs ++ declaredInMatches rest
-
-  def declaredInConditions : List Condition → List Name
-    | [] => []
-    | c :: cs => declaredInCondition c ++ declaredInConditions cs
-
-  def declaredInCondition : Condition → List Name
-    | .path _ => []
-    | .existential _ ms => declaredInMatches ms
-end
-
-mutual
   theorem declaredInMatches_ordinary :
       ∀ (ms : List Match) (A : List Name), WellNamedMatches A ms →
         ∀ x ∈ declaredInMatches ms, isReserved x = false
