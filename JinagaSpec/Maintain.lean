@@ -33,10 +33,16 @@ on `g`, and leave every other held result as it was. -/
 def recheck (result : Graph → List Row) (g : Graph) (candidates held : List Row) : List Row :=
   held.filter (!candidates.contains ·) ++ candidates.filter ((result g).contains ·)
 
+/-- One batch: extend the graph, and update the held results for the graph
+before and the batch. -/
+def advance (update : Graph → List Fact → List Row → List Row) :
+    Graph × List Row → List Fact → Graph × List Row
+  | (g, held), B => (g ++ B, update g B held)
+
 /-- One batch: extend the graph, then re-check the candidates the producer
 names for this graph and batch. -/
 def maintainStep (result : Graph → List Row) (candidates : Graph → List Fact → List Row) :
-    Graph × List Row → List Fact → Graph × List Row
-  | (g, held), B => (g ++ B, recheck result (g ++ B) (candidates g B) held)
+    Graph × List Row → List Fact → Graph × List Row :=
+  advance fun g B => recheck result (g ++ B) (candidates g B)
 
 end JinagaSpec

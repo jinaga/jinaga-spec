@@ -83,12 +83,17 @@ mutual
       (touchMatches (gained == e) ms).map fun (p, ms') => (p, .existential true ms')
 end
 
-/-- The inverses of a specification: for each path, a specification given the
-subscription's givens and the new fact. -/
-def inverses (s : Specification) : List Specification :=
-  (touchMatches true s.matchList ++ touchMatches false s.matchList).map fun (p, ms) =>
+/-- The inverses of a specification in one direction: for each path, a
+specification given the subscription's givens and the new fact. -/
+def inversesFor (gained : Bool) (s : Specification) : List Specification :=
+  (touchMatches gained s.matchList).map fun (p, ms) =>
     { given := s.given ++ [{ name := pinLabel, type := p.type }], matchList := ms,
       projection := s.projection }
+
+/-- The inverses of a specification: those for gained results, then those for
+lost ones. -/
+def inverses (s : Specification) : List Specification :=
+  inversesFor true s ++ inversesFor false s
 
 /-- The subscription's givens, and the new fact as `pinLabel`. -/
 def pinEnv (s : Specification) (env : Env) (f : Fact) : Env :=

@@ -34,6 +34,23 @@ theorem has_append_outside {env : Env} {l : Label} (h : ∀ b ∈ B, env l.name 
     rw [factOf_append_outside fun b hb heq => h b hb (hid.trans (congrArg some heq))]
   · rfl
 
+/-- A given that arrives in a fresh batch was not stored, so nothing was read
+before it. -/
+theorem read_given_arrives {s : Specification} (hf : Fresh g B) {env : Env} {f : Fact} (hfB : f ∈ B)
+    (hg : s.given.any (env ·.name == some f.id) = true) : s.read g env = [] := by
+  obtain ⟨l, hl, he⟩ := List.any_eq_true.mp hg
+  simp only [Specification.read, ite_eq_right_iff, List.all_eq_true]
+  exact fun h => absurd (h l hl) (by simp [Graph.has, beq_iff_eq.mp he, factOf_eq_none_of_fresh hf hfB])
+
+/-- When no given arrives, each is stored after the batch exactly when it was before. -/
+theorem givens_stored_append {s : Specification} {env : Env}
+    (hgiv : ∀ f ∈ B, ¬ (s.given.any (env ·.name == some f.id)) = true) :
+    s.given.all ((g ++ B).has env) = s.given.all (g.has env) := by
+  rw [Bool.eq_iff_iff]
+  simp only [List.all_eq_true]
+  exact forall₂_congr fun l hl => by
+    rw [has_append_outside fun b hb heq => hgiv b hb (List.any_eq_true.mpr ⟨l, hl, by simp [heq]⟩)]
+
 /-- **`candidates_complete`.** For a well-formed specification and a fresh
 batch, the candidates include every result the batch adds or removes, as a
 replica reads them. -/
@@ -41,30 +58,29 @@ theorem candidates_complete (s : Specification) (hwf : WellFormed s) (hf : Fresh
     Covers (s.read · env) g B (candidates s env g B) := by
   intro r
   by_cases hgiv : ∃ f ∈ B, s.given.any (env ·.name == some f.id) = true
-  · -- A given arrives in the batch. It was not stored, so nothing was read
-    -- before, and every result read now is a candidate.
+  · -- A given arrives in the batch: every result read now is a candidate.
     obtain ⟨f, hfB, hg⟩ := hgiv
-    obtain ⟨l, hl, he⟩ := List.any_eq_true.mp hg
-    have hold : s.read g env = [] := by
-      simp only [Specification.read, ite_eq_right_iff, List.all_eq_true]
-      exact fun h => absurd (h l hl) (by simp [Graph.has, beq_iff_eq.mp he, factOf_eq_none_of_fresh hf hfB])
     by_cases h2 : r ∈ s.read (g ++ B) env
     · exact Or.inr (List.mem_flatMap.mpr ⟨f, hfB, by simpa [factCandidates, hg] using h2⟩)
-    · exact Or.inl (by simp [hold, h2])
+    · exact Or.inl (by simp [read_given_arrives hf hfB hg, h2])
   simp only [not_exists, not_and] at hgiv
-  -- No given arrives, so each is stored after the batch exactly when it was before.
-  have hhas : s.given.all ((g ++ B).has env) = s.given.all (g.has env) := by
-    rw [Bool.eq_iff_iff]
-    simp only [List.all_eq_true]
-    exact forall₂_congr fun l hl => by
-      rw [has_append_outside fun b hb heq => hgiv b hb (List.any_eq_true.mpr ⟨l, hl, by simp [heq]⟩)]
+  have hhas := givens_stored_append (g := g) hgiv
   by_cases hpres : s.given.all (g.has env) = true
-  · rcases inverses_complete s hwf hf env hgiv r with h | ⟨f, hfB, ι, hι, hr⟩
-    · exact Or.inl (by simpa [Specification.read, hhas, hpres] using h)
-    · refine Or.inr (List.mem_flatMap.mpr ⟨f, hfB, ?_⟩)
+  · have hfound : ∀ f ∈ B, ∀ ι ∈ inverses s, r ∈ ι.evaluate (g ++ B) (pinEnv s env f) →
+        r ∈ candidates s env g B := fun f hfB ι hι hr => by
+      refine List.mem_flatMap.mpr ⟨f, hfB, ?_⟩
       simp only [factCandidates, hgiv f hfB, Bool.false_eq_true, ite_false]
       exact List.mem_flatMap.mpr ⟨reorderOrSelf ι, List.mem_map.mpr ⟨ι, hι, rfl⟩,
         (reorderOrSelf_correct ι _ r).mpr hr⟩
+    have h := inverses_complete s hwf hf env hgiv r
+    simp only [Specification.read, hhas, hpres, ite_true]
+    by_cases h1 : r ∈ s.evaluate g env <;> by_cases h2 : r ∈ s.evaluate (g ++ B) env
+    · exact Or.inl (iff_of_true h1 h2)
+    · obtain ⟨f, hfB, ι, hι, hr⟩ := h.2 h1 h2
+      exact Or.inr (hfound f hfB ι (List.mem_append_right _ hι) hr)
+    · obtain ⟨f, hfB, ι, hι, hr⟩ := h.1 h1 h2
+      exact Or.inr (hfound f hfB ι (List.mem_append_left _ hι) hr)
+    · exact Or.inl (iff_of_false h1 h2)
   · exact Or.inl (by simp [Specification.read, hhas, hpres])
 
 /-- **Notifying each fact of a batch.** Start from a held set that equals the
