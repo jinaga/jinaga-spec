@@ -37,6 +37,8 @@ The inverses do not say "add" or "remove". They find *candidates*, and the
 stream decides each one by reading the specification (`Maintain.lean`). So
 they need only be complete, not exact. `Reorder.lean` rewrites each one to
 start at the new fact, and defines `candidates`, the whole algorithm.
+`Exact.lean` strengthens them, by direction (`inversesFor`), so that they are
+exact and need no second read.
 
 Written in the portable subset: inductive types, total functions, structural
 recursion and lists.

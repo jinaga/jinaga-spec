@@ -559,6 +559,79 @@ does not use, so jinaga.js's reduction must change to match: two vectors,
 batches; `candidates` of the reduction misses nothing, and a mutant that
 drops the condition is caught.
 
+## Exact inverses
+
+`candidates` is complete, and a stream decides each candidate by reading the
+specification again (`recheck`). That second read is what a replicator pushing
+changes to a client would rather not pay. `changes` (`Exact.lean`) makes the
+inverses themselves exact, so each reports adds or removes from one read.
+
+**The rule.** The inverses split by direction (`inversesFor`). An add inverse
+(gained direction) is conjoined, match by match, with the original top-level
+matches (`conj`): every original condition is re-attached to its match. A
+remove inverse (lost direction) comes in one variant per top-level match `j`
+and existential condition `d` on it: the inverse conjoined with the original
+unknowns, no conditions, except `d` flipped on match `j` (`removeTests`). A
+specification with no top-level existential condition has no remove inverses,
+and needs none: a top-level row can be lost only when one of them flips, since
+path conditions do not change on a fresh batch.
+
+**Why one test at the top suffices.** The tests say nothing about the old
+graph. An add need only be in the new result, and a remove only absent from
+it: adding a row the set already holds, or removing one it lacks, changes
+nothing. So "sound on the new graph" (`adds_sound`, `removes_sound`) plus
+complete (`changes_complete`) is exact (`exact_correct`), and a row cannot be
+both added and removed, so the order of the two does not matter. That is also
+why the levels below the top may stay relaxed: whatever an inverse's nested
+levels admit, the top-level test decides the row on the new graph. The
+counterexamples in "Inversion, measured" are each caught by this rule:
+`exists { notExists }` with a second current mirror (the remove test, no
+current mirror, fails), sibling `notExists` (the remove test for either holds),
+and Restore with a second freeze (the re-attached `notExists`, no unrestored
+freeze, fails).
+
+The proof turned on one lemma: two lists of matches over the same unknowns,
+each bound once, read as one have exactly the solutions they share
+(`mem_evalMatches_conj`). Both bind the same unknown to a fact of the same
+type, and the finished solution says which, because nothing rebinds it. The
+soundness theorems need no `Fresh`: they are statements about the new graph
+alone. Completeness reuses the walk of `inverses_complete` (`gainedMatches`,
+`lostMatches`), restated to keep the direction, and one new walk: a solution
+the batch removes fails, on the new graph, an existential condition of one of
+its top-level matches (`lost_test`).
+
+**The limit: `ProjectsUnknowns`.** The remove test is per solution. When the
+projection leaves out a top-level unknown, two solutions can project to one
+row, and one of them failing does not remove the row.
+`projection-drops-unknown` is the case: tasks with an open assignment,
+projecting only the task. Of two open assignments, one is completed; the task
+stays, but the remove inverse reports it. Exactness for rows there would need
+the remove test to be `notExists` over a renamed copy of the whole original
+match list, joined to the projected labels, which needs label renaming and a
+lemma for it. Maintaining products, where the projection is every top-level
+unknown, and deriving rows with counts, is the alternative. Neither is done.
+
+**Measured** (`check-inverse`, seed 1). On 30,341 batches over the random
+specifications and the named cases, each with the projection widened to every
+top-level unknown where it was not already (25,723 of them): 3,640 rows gained
+and 98 lost, 6,289 adds and 2,133 removes. No add is absent from the new
+result, no remove is present in it, no change is missed, and applying the
+changes to the old result gives the new one on every batch. Without the
+widening, 470 removes report a row the new result still has, which is why the
+hypothesis is needed. Both mutants are caught: add inverses without the
+re-attached conditions report rows the new result lacks (Restore shapes,
+including `not-exists-not-exists-second-freeze`), and remove inverses without
+the flipped test report rows it still has. Random graphs rarely build the
+second shape, which `exists-not-exists-second-mirror` supplies.
+
+Re-attaching every original condition, path conditions included, duplicates
+the inverse's own path conditions, which costs nothing in meaning and keeps
+the proof to one lemma. It does not make reordering fall back more often:
+217 of 5,068 add inverses keep their order, the same 217 as the plain
+inverses, and 401 of 2,440 remove inverses (16%), against 228 of 1,349 plain
+lost-direction inverses (17%). So the alternative, attaching only the
+existential conditions, is not worth its extra lemma.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -576,6 +649,7 @@ drops the condition is caught.
 | `Proofs/Fresh.lean` | A fresh batch changes no walk that starts outside it. |
 | `Proofs/Candidates.lean` | Every result a fresh batch changes is a result of one of the inverses, given one of the batch's facts. |
 | `Proofs/Reorder.lean` | Matches are a conjunction, so a checked arrangement has the same solutions; flattening an `exists` keeps them. |
+| `Proofs/Exact.lean` | Two match lists over the same unknowns read as one are a conjunction; the exact inverses are sound on the new graph and complete, so a stream that applies their changes is exact. |
 | `Proofs/Stream.lean` | The candidates cover every change a replica reads, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
 | `Proofs/GivenConditions.lean` | Reducing conditions on a given to a match keeps what a replica reads, so the stream of a conditioned specification is exact. |
 

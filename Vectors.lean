@@ -11,8 +11,9 @@ when its own split of the same specification equals `expected`.
 
 It also writes `dir/inverse/`: for each case, a specification, a graph, the
 subscription's givens and a fresh fact or batch of facts, with the results
-gained and lost, the inverses `candidates` builds and reorders, and the
-candidates they find (`vectors/README.md`).
+gained and lost, the inverses `candidates` builds and reorders, the
+candidates they find, and, where they are exact for rows, the adds and removes
+of the exact inverses (`vectors/README.md`).
 -/
 open Lean (Json)
 open JinagaSpec
@@ -96,7 +97,12 @@ def inverseVector (c : InverseCase) : Json :=
       ("lost", rowsToJson (old.filter (!new.contains ·))),
       ("inverses", Json.arr (is.map inverseToJson).toArray),
       ("reordered", Json.arr (is.map (inverseToJson ∘ reorderOrSelf)).toArray),
-      ("candidates", rowsToJson (candidates c.reduced c.env c.graph c.batch))])]
+      ("candidates", rowsToJson (candidates c.reduced c.env c.graph c.batch))] ++
+      -- The exact inverses' changes, where they are exact for rows.
+      (if projectsUnknowns c.reduced then
+        let (adds, removes) := changes c.reduced c.env c.graph c.batch
+        [("exact", Json.mkObj [("adds", rowsToJson adds), ("removes", rowsToJson removes)])]
+      else []))]
 
 /-- Random specifications, each with a graph and a fresh batch that change its
 result, from a fixed seed, so that a port is held to shapes nobody chose. A
@@ -179,8 +185,8 @@ def main (args : List String) : IO Unit := do
       throw <| IO.userError s!"inverse case {c.name} is not well-formed"
     if c.conditioned.labels.contains (givenConditionsLabel c.conditioned) then
       throw <| IO.userError s!"inverse case {c.name}: the reduction's label is already used"
-    if sameSet (c.conditioned.read c.graph c.env) (c.conditioned.read (c.graph ++ c.batch) c.env) then
-      throw <| IO.userError s!"inverse case {c.name} does not change the result"
+    if c.unchanged != sameSet (c.conditioned.read c.graph c.env) (c.conditioned.read (c.graph ++ c.batch) c.env) then
+      throw <| IO.userError s!"inverse case {c.name} {if c.unchanged then "changes" else "does not change"} the result"
     IO.FS.writeFile (inverseDir / s!"{c.name}.json") ((inverseVector c).pretty ++ "\n")
   for c in cases do
     -- Every specification the split vectors use is one the theorem covers.
