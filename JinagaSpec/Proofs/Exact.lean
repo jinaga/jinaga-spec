@@ -36,9 +36,15 @@ theorem names_eq_of_unknowns {ms1 ms2 : List Match} (h : ms1.map (·.unknown) = 
     names ms1 = names ms2 := by
   simpa [names, Function.comp_def] using congrArg (List.map Label.name) h
 
+/-- Read through a match on `u` that nothing after it rebinds, a solution
+binds `u` to the fact the match chose. -/
+theorem bound_of_frame {G : Graph} {env e : Env} {u : Name} {x : Fact} {rest : List Match}
+    (h : e ∈ evalMatches G (env.bind u x.id) rest) (hu : u ∉ names rest) : e u = some x.id := by
+  rw [evalMatches_frame h _ hu]; simp [Env.bind]
+
 theorem mem_evalMatches_conj {g : Graph} :
     ∀ {ms1 ms2 : List Match} {env e : Env}, ms1.map (·.unknown) = ms2.map (·.unknown) →
-      (names ms1).Nodup →
+      (names ms2).Nodup →
       (e ∈ evalMatches g env (conj ms1 ms2) ↔ e ∈ evalMatches g env ms1 ∧ e ∈ evalMatches g env ms2)
   | [], [], _, _, _, _ => by simp [conj, evalMatches]
   | [], _ :: _, _, _, hu, _ | _ :: _, [], _, _, hu, _ => by simp at hu
@@ -46,7 +52,7 @@ theorem mem_evalMatches_conj {g : Graph} :
     simp only [List.map_cons, List.cons.injEq, Match.unknown_mk] at hu
     obtain ⟨rfl, hu⟩ := hu
     simp only [names, List.map_cons, List.nodup_cons, Match.unknown_mk] at hnd
-    have hn2 : u.name ∉ names r2 := names_eq_of_unknowns hu ▸ hnd.1
+    have hn1 : u.name ∉ names r1 := names_eq_of_unknowns hu ▸ hnd.1
     show e ∈ evalMatches g env (.mk u (cs1 ++ cs2) :: conj r1 r2) ↔ _
     simp only [mem_evalMatches_cons, mem_evalMatches_conj hu hnd.2, allHold_append, Bool.and_eq_true]
     constructor
@@ -54,10 +60,7 @@ theorem mem_evalMatches_conj {g : Graph} :
       exact ⟨⟨f, hf, ht, h1, he1⟩, f, hf, ht, h2, he2⟩
     · rintro ⟨⟨f, hf, ht, h1, he1⟩, f2, -, -, h2, he2⟩
       -- The finished solution says which fact the unknown is.
-      have hid : f2.id = f.id := by
-        have := (evalMatches_frame he2 _ hn2).symm.trans (evalMatches_frame he1 _ hnd.1)
-        simpa [Env.bind] using this
-      rw [hid] at h2 he2
+      rw [Option.some.inj ((bound_of_frame he2 hnd.1).symm.trans (bound_of_frame he1 hn1))] at h2 he2
       exact ⟨f, hf, ht, ⟨h1, h2⟩, he1, he2⟩
 
 /-- A well-named list of matches binds each unknown once. -/
@@ -134,23 +137,16 @@ theorem removeTests_fail {G : Graph} :
   | .mk u cs :: rest, t, env, σ, e, hnd, ht, hσ, he, hag => by
     simp only [names, List.map_cons, List.nodup_cons, Match.unknown_mk] at hnd
     obtain ⟨x, -, -, hc, hσ'⟩ := mem_evalMatches_cons.mp hσ
-    have hxid : e u.name = some x.id := by
-      rw [← hag u.name List.mem_cons_self, evalMatches_frame hσ' _ hnd.1]; simp [Env.bind]
+    have hxid := (hag u.name List.mem_cons_self).symm.trans (bound_of_frame hσ' hnd.1)
     -- The test binds `u` to the same fact, so reads from the same environment.
     simp only [removeTests, List.mem_append, List.mem_map, List.mem_filter] at ht
     rcases ht with ⟨d, ⟨hd, hp⟩, rfl⟩ | ⟨t', ht', rfl⟩
     · obtain ⟨y, -, -, hy, he'⟩ := mem_evalMatches_cons.mp he
-      have : y.id = x.id := by
-        have := (evalMatches_frame he' u.name (by simpa [names] using hnd.1)).symm.trans hxid
-        simpa [Env.bind] using this
-      rw [this] at hy
+      rw [Option.some.inj ((bound_of_frame he' (by simpa [names] using hnd.1)).symm.trans hxid)] at hy
       simp [allHold, holds_flip (by simpa using hp), (allHold_iff cs).mp hc d hd] at hy
     · obtain ⟨y, -, -, -, he'⟩ := mem_evalMatches_cons.mp he
-      have : y.id = x.id := by
-        have hn : u.name ∉ names t' := by rw [names_eq_of_unknowns (removeTests_unknowns ht')]; exact hnd.1
-        have := (evalMatches_frame he' u.name hn).symm.trans hxid
-        simpa [Env.bind] using this
-      rw [this] at he'
+      rw [Option.some.inj ((bound_of_frame he' (names_eq_of_unknowns (removeTests_unknowns ht') ▸ hnd.1)).symm.trans
+        hxid)] at he'
       exact removeTests_fail hnd.2 ht' hσ' he' fun z hz => hag z (List.mem_cons_of_mem _ hz)
 
 section
@@ -201,8 +197,7 @@ theorem adds_sound (hwf : WellFormed s) {r : Row} (h : r ∈ (changes s env g B)
   split at hr
   · rename_i hpres
     obtain ⟨t, ht, e, he, rfl⟩ := mem_addInverses.mp hr
-    rw [mem_evalMatches_conj (touchMatches_unknowns ht)
-      (names_eq_of_unknowns (touchMatches_unknowns ht) ▸ hwf.wellNamed.nodup)] at he
+    rw [mem_evalMatches_conj (touchMatches_unknowns ht) hwf.wellNamed.nodup] at he
     simp only [Specification.read, hpres, ite_true]
     exact (evaluate_agree hwf (pinEnv_agree hwf env f) _).mp (List.mem_map.mpr ⟨e, he.2, rfl⟩)
   · simp at hr
@@ -219,7 +214,7 @@ theorem removes_sound (hwf : WellFormed s) (hpu : ProjectsUnknowns s) {r : Row}
   · rename_i hpres
     obtain ⟨t, ht, tl, htl, e, he, rfl⟩ := mem_removeInverses.mp hr
     rw [mem_evalMatches_conj ((touchMatches_unknowns ht).trans (removeTests_unknowns htl).symm)
-      (names_eq_of_unknowns (touchMatches_unknowns ht) ▸ hwf.wellNamed.nodup)] at he
+      (names_eq_of_unknowns (removeTests_unknowns htl) ▸ hwf.wellNamed.nodup)] at he
     simp only [Specification.read, hpres, ite_true]
     intro hread
     obtain ⟨σ, hσ, hσr⟩ := List.mem_map.mp ((evaluate_agree hwf (pinEnv_agree hwf env f) _).mpr hread)
@@ -311,7 +306,7 @@ theorem changes_complete (hwf : WellFormed s) (hf : Fresh g B) (r : Row) :
     have he' := mem_evalMatches_pin hwf.pin_unused hnp (names_eq_of_unknowns hu ▸ hnp) he3 he hag
     refine List.mem_flatMap.mpr ⟨b, hb, ?_⟩
     rw [factChanges_stored (hgiv b hb) hpres']
-    exact mem_addInverses.mpr ⟨t, ht, e, (mem_evalMatches_conj hu (names_eq_of_unknowns hu ▸ hnd)).mpr ⟨he, he'⟩,
+    exact mem_addInverses.mpr ⟨t, ht, e, (mem_evalMatches_conj hu hnd).mpr ⟨he, he'⟩,
       (hwf.project_agreeOff hag).symm⟩
   · intro h1 h2
     obtain ⟨e3, he3, rfl⟩ := List.mem_map.mp h1
@@ -327,7 +322,7 @@ theorem changes_complete (hwf : WellFormed s) (hf : Fresh g B) (r : Row) :
     refine List.mem_flatMap.mpr ⟨b, hb, ?_⟩
     rw [factChanges_stored (hgiv b hb) hpres']
     exact mem_removeInverses.mpr ⟨t, ht, tl, htl, e,
-      (mem_evalMatches_conj (hu.trans hul.symm) (names_eq_of_unknowns hu ▸ hnd)).mpr ⟨he, he'⟩,
+      (mem_evalMatches_conj (hu.trans hul.symm) (names_eq_of_unknowns hul ▸ hnd)).mpr ⟨he, he'⟩,
       (hwf.project_agreeOff hag).symm⟩
 
 /-! ## Exact -/
