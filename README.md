@@ -12,7 +12,10 @@ Two algorithms are covered end to end:
 - **The inverse algorithm** (`candidates`), which says which results of a
   subscription a batch of new facts might have changed. `stream_correct` proves
   that a stream which re-checks those candidates after every batch holds exactly
-  the specification's results.
+  the specification's results. Its exact variant (`changes`) strengthens each
+  inverse so that it reports adds and removes with no re-check, and
+  `exact_stream_correct` proves a stream that applies them exact, when the
+  projection names every top-level unknown.
 
 **Status.** It began as a spike to find out whether this approach keeps the
 definitions readable, the proofs tractable, and the ports checkable. It does,
@@ -34,10 +37,11 @@ and the libraries now port from it:
 | `JinagaSpec/Hoist.lean` | `splitBeforeFirstSuccessor`: the split. Reaches into existential conditions at any depth, hoisting a predecessor walk into the head wherever doing so is sound. |
 | `JinagaSpec/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary `tailReadsGiven` decides. |
 | `JinagaSpec/Candidates.lean`, `Reorder.lean` | `candidates`: the inverses of a specification, each reordered to start at the new fact. |
+| `JinagaSpec/Exact.lean` | `changes`: the exact inverses, which report adds and removes from one read each, and a stream that applies them. |
 | `JinagaSpec/Maintain.lean` | A stream that re-checks candidates after each batch. |
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
-| `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean` and `GivenConditions.lean` for the inverse algorithm. |
+| `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
 | `ports/typescript/` | Runs the vectors against `jinaga.js`, holds reference implementations of `isWellFormed` and of the inverse algorithm, and audits `jinaga.js`'s parser. |
@@ -172,6 +176,30 @@ it holds, then `evaluate`. When a given itself arrives in a batch, every result
 read afterwards is a candidate. jinaga.js's `givenCandidateInverse` does exactly
 this.
 
+### Exact inverses
+
+The re-check costs a second read per candidate. `changes` (`Exact.lean`) makes
+the inverses themselves exact. An inverse for gained results re-attaches the
+specification's top-level conditions, so every row it finds is in the new
+result. An inverse for lost results comes in one variant per top-level
+existential condition, flipped, so every solution it finds fails the
+specification on the new graph. Neither says anything about the old graph:
+adding a row the set holds, or removing one it lacks, changes nothing.
+
+```lean
+theorem exact_stream_correct (s : Specification) (hwf : WellFormed s) (hpu : ProjectsUnknowns s)
+    (env : Env) :
+    ∀ (bs : List (List Fact)) (g : Graph) (held : List Row),
+      (∀ r, r ∈ held ↔ r ∈ s.read g env) →
+      (∀ pre B post, bs = pre ++ B :: post → Fresh (g ++ pre.flatten) B) →
+      ∀ r, r ∈ (bs.foldl (exactStep s env) (g, held)).2 ↔ r ∈ s.read (g ++ bs.flatten) env
+```
+
+The remove test is per solution, so it is exact for rows only when a row
+determines its solution: when the projection names every top-level unknown
+(`ProjectsUnknowns`). It rests on `adds_sound` and `removes_sound` (sound on
+the new graph, with no freshness needed) and `changes_complete`.
+
 A given may carry existential conditions, as in jinaga.js. `reduceGivenConditions`
 moves them onto one new first match, `read_reduceGivenConditions` proves that
 the reduced specification reads the same results, and `stream_correct_given`
@@ -212,7 +240,8 @@ There are three kinds, all generated from the definitions (`vectors/README.md`):
 - `well-formed/`: a specification, and whether it is well-formed.
 - `inverse/`: a specification, a graph, a subscription's givens, and a fresh
   fact or batch. Each vector gives the rows gained and lost, the inverses and
-  their reorderings, and the candidates they find.
+  their reorderings, the candidates they find, and, where the projection names
+  every top-level unknown, the exact inverses' adds and removes.
 
 The inverse vectors are named cases plus fixed random seeds. `lake exe vectors`
 refuses to write a set that leaves out any shape in its coverage list, which

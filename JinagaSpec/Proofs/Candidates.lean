@@ -375,65 +375,90 @@ mutual
           cases b <;> exact List.mem_map.mpr ⟨t, htm, rfl⟩
 end
 
+/-! ## From results to solutions -/
+
+section Results
+
+variable {s : Specification}
+
+/-- Environments that agree on the givens have the same results. -/
+theorem evaluate_agree (hwf : WellFormed s) {G : Graph} {env1 env2 : Env}
+    (h : Agree (s.given.map (·.name)) env1 env2) (r : Row) :
+    r ∈ s.evaluate G env1 ↔ r ∈ s.evaluate G env2 := by
+  simp only [Specification.evaluate, List.mem_map]
+  exact exists_projection_iff hwf.inScope h (fun x hx => List.mem_append.mpr (hwf.projected x hx)) r
+
+/-- No given, top-level unknown or projected label is the pin. -/
+theorem WellFormed.not_pin (hwf : WellFormed s) {x : Name}
+    (hx : x ∈ s.given.map (·.name) ∨ x ∈ names s.matchList) : x ≠ pinLabel := fun h => by
+  have : isReserved x = false := by
+    rcases hx with hx | hx <;> obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
+    · exact hwf.givensOrdinary m hm
+    · exact wellNamed_ordinary hwf.wellNamed m hm
+  simp [h, isReserved_pinLabel] at this
+
+theorem WellFormed.pin_unused (hwf : WellFormed s) : pinLabel ∉ usedInMatches s.matchList := fun h => by
+  simpa [isReserved_pinLabel] using usedInMatches_ordinary s.matchList _ hwf.inScope hwf.wellNamed
+    (fun x hx => by obtain ⟨l, hl, rfl⟩ := List.mem_map.mp hx; exact hwf.givensOrdinary l hl) _ h
+
+theorem WellFormed.pin_undeclared (hwf : WellFormed s) : pinLabel ∉ declaredInMatches s.matchList :=
+  fun h => by simpa [isReserved_pinLabel] using declaredInMatches_ordinary s.matchList _ hwf.wellNamed _ h
+
+/-- The new fact's environment agrees with the subscription's on the givens. -/
+theorem pinEnv_agree (hwf : WellFormed s) (env : Env) (f : Fact) :
+    Agree (s.given.map (·.name)) (pinEnv s env f) env := fun x hx => by
+  simp [pinEnv, Env.bind, hwf.not_pin (Or.inl hx), Env.restrictTo, hx]
+
+/-- When no fact of the batch is a given, the givens bind none of them. -/
+theorem pinOnly_restrict {env : Env}
+    (hgiv : ∀ f ∈ B, ¬ (s.given.any (env ·.name == some f.id)) = true) :
+    PinOnly B (env.restrictTo (s.given.map (·.name))) := by
+  intro y _ id hid b hb heq
+  simp only [Env.restrictTo] at hid
+  split at hid
+  · rename_i hc
+    obtain ⟨l, hl, rfl⟩ := List.mem_map.mp (List.contains_iff_mem.mp hc)
+    exact hgiv b hb (List.any_eq_true.mpr ⟨l, hl, by simp [hid, heq]⟩)
+  · simp at hid
+
+/-- Solutions that agree off the pin project to the same result. -/
+theorem WellFormed.project_agreeOff (hwf : WellFormed s) {e1 e2 : Env} (h : AgreeOff e1 e2) :
+    s.projection.labels.map e1 = s.projection.labels.map e2 :=
+  List.map_congr_left fun x hx => h x (hwf.not_pin (hwf.projected x hx))
+
+end Results
+
 /-- **`inverses_complete`.** For a well-formed specification and a fresh batch
 none of whose facts is one of the subscription's givens, every result the batch
-adds or removes is a result of one of the inverses, given one of the batch's
-facts, read on the new graph. -/
+adds is a result of one of the inverses for gained results, and every result it
+removes is a result of one of the inverses for lost results, given one of the
+batch's facts, read on the new graph. -/
 theorem inverses_complete (s : Specification) (hwf : WellFormed s) (hf : Fresh g B) (env : Env)
     (hgiv : ∀ f ∈ B, ¬ (s.given.any (env ·.name == some f.id)) = true) (r : Row) :
-    (r ∈ s.evaluate g env ↔ r ∈ s.evaluate (g ++ B) env) ∨
-      ∃ f ∈ B, ∃ ι ∈ inverses s, r ∈ ι.evaluate (g ++ B) (pinEnv s env f) := by
-  let givens := s.given.map (·.name)
-  have hgivOrd : ∀ x ∈ givens, isReserved x = false := by
-    intro x hx
-    obtain ⟨l, hl, rfl⟩ := List.mem_map.mp hx
-    exact hwf.givensOrdinary l hl
+    (r ∉ s.evaluate g env → r ∈ s.evaluate (g ++ B) env →
+      ∃ f ∈ B, ∃ ι ∈ inversesFor true s, r ∈ ι.evaluate (g ++ B) (pinEnv s env f)) ∧
+    (r ∈ s.evaluate g env → r ∉ s.evaluate (g ++ B) env →
+      ∃ f ∈ B, ∃ ι ∈ inversesFor false s, r ∈ ι.evaluate (g ++ B) (pinEnv s env f)) := by
   -- Forget every label but the givens. The pin is bound once the walk finds it.
-  let env0 := env.restrictTo givens
-  have hsame : ∀ G, r ∈ s.evaluate G env ↔ r ∈ s.evaluate G env0 := fun G => by
-    simp only [Specification.evaluate, List.mem_map]
-    exact exists_projection_iff hwf.inScope (Env.restrictTo_agree givens env).symm
-      (fun x hx => List.mem_append.mpr (hwf.projected x hx)) r
-  have hpin : PinOnly B env0 := by
-    intro y _ id hid b hb heq
-    simp only [env0, Env.restrictTo] at hid
-    split at hid
-    · rename_i hc
-      obtain ⟨l, hl, rfl⟩ := List.mem_map.mp (List.contains_iff_mem.mp hc)
-      exact hgiv b hb (List.any_eq_true.mpr ⟨l, hl, by simp [hid, heq]⟩)
-    · simp at hid
-  have hus : pinLabel ∉ usedInMatches s.matchList := fun h => by
-    simpa [isReserved_pinLabel] using
-      usedInMatches_ordinary s.matchList givens hwf.inScope hwf.wellNamed hgivOrd _ h
-  have hds : pinLabel ∉ declaredInMatches s.matchList := fun h => by
-    simpa [isReserved_pinLabel] using declaredInMatches_ordinary s.matchList givens hwf.wellNamed _ h
-  -- A projected label is ordinary, so it is not the pin.
-  have hproj : ∀ x ∈ s.projection.labels, x ≠ pinLabel := fun x hx h => by
-    have : isReserved x = false := by
-      rcases hwf.projected x hx with hx | hx
-      · exact hgivOrd x hx
-      · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
-        exact wellNamed_ordinary hwf.wellNamed m hm
-    simp [h, isReserved_pinLabel] at this
+  have hsame := fun G => evaluate_agree (G := G) hwf (Env.restrictTo_agree (s.given.map (·.name)) env).symm r
   -- A changed solution is a solution of an inverse, and projects to the same result.
-  have hfound : ∀ t ∈ touchMatches true s.matchList ++ touchMatches false s.matchList, ∀ f ∈ B,
+  have hfound : ∀ gained, ∀ t ∈ touchMatches gained s.matchList, ∀ f ∈ B,
       ∀ e3, ∀ e ∈ evalMatches (g ++ B) (pinEnv s env f) t.2, AgreeOff e3 e →
-      s.projection.labels.map e3 = r → ∃ f ∈ B, ∃ ι ∈ inverses s, r ∈ ι.evaluate (g ++ B) (pinEnv s env f) :=
-    fun t ht f hf e3 e he hag hr => ⟨f, hf, _, List.mem_map.mpr ⟨t, ht, rfl⟩, List.mem_map.mpr
-      ⟨e, he, hr ▸ List.map_congr_left fun x hx => (hag x (hproj x hx)).symm⟩⟩
+      s.projection.labels.map e3 = r →
+      ∃ f ∈ B, ∃ ι ∈ inversesFor gained s, r ∈ ι.evaluate (g ++ B) (pinEnv s env f) :=
+    fun _ t ht f hf e3 e he hag hr => ⟨f, hf, _, List.mem_map.mpr ⟨t, ht, rfl⟩,
+      List.mem_map.mpr ⟨e, he, hr ▸ (hwf.project_agreeOff hag).symm⟩⟩
   rw [hsame g, hsame (g ++ B)]
-  by_cases h1 : r ∈ s.evaluate g env0 <;> by_cases h2 : r ∈ s.evaluate (g ++ B) env0
-  · exact Or.inl (iff_of_true h1 h2)
-  · -- Lost.
-    obtain ⟨e3, he3, hr⟩ := List.mem_map.mp h1
-    obtain ⟨b, hb, t, ht, e, he, hag⟩ := lostMatches hf s.matchList hpin hus hds he3
-      fun h => h2 (List.mem_map.mpr ⟨e3, h, hr⟩)
-    exact Or.inr (hfound t (List.mem_append_right _ ht) b hb e3 e he hag hr)
-  · -- Gained.
+  constructor
+  · intro h1 h2
     obtain ⟨e3, he3, hr⟩ := List.mem_map.mp h2
-    obtain ⟨b, hb, t, ht, e, he, hag⟩ := gainedMatches hf s.matchList hpin hus hds he3
-      fun h => h1 (List.mem_map.mpr ⟨e3, h, hr⟩)
-    exact Or.inr (hfound t (List.mem_append_left _ ht) b hb e3 e he hag hr)
-  · exact Or.inl (iff_of_false h1 h2)
+    obtain ⟨b, hb, t, ht, e, he, hag⟩ := gainedMatches hf s.matchList (pinOnly_restrict hgiv)
+      hwf.pin_unused hwf.pin_undeclared he3 fun h => h1 (List.mem_map.mpr ⟨e3, h, hr⟩)
+    exact hfound true t ht b hb e3 e he hag hr
+  · intro h1 h2
+    obtain ⟨e3, he3, hr⟩ := List.mem_map.mp h1
+    obtain ⟨b, hb, t, ht, e, he, hag⟩ := lostMatches hf s.matchList (pinOnly_restrict hgiv)
+      hwf.pin_unused hwf.pin_undeclared he3 fun h => h2 (List.mem_map.mpr ⟨e3, h, hr⟩)
+    exact hfound false t ht b hb e3 e he hag hr
 
 end JinagaSpec

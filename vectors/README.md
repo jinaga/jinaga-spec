@@ -110,7 +110,8 @@ arrives only in the named cases `given-arrives` and
     "lost": [ [ ... ] ],                // rows in the result before and not after
     "inverses": [ { "specification": { ... }, "text": "..." } ],   // step 1, in order
     "reordered": [ { "specification": { ... }, "text": "..." } ],  // step 2: each of step 1, reordered, in order
-    "candidates": [ [ ... ] ]           // every row the inverses find, given each new fact, read on the graph with all of them
+    "candidates": [ [ ... ] ],          // every row the inverses find, given each new fact, read on the graph with all of them
+    "exact": { "adds": [ [ ... ] ], "removes": [ [ ... ] ] }  // only when the projection names every top-level unknown
   }
 }
 ```
@@ -131,6 +132,23 @@ candidate. `candidates` is the set of rows all of those reads find, and
 contains every row of `gained` and `lost` (`candidates_complete`).
 A fact's `predecessors` lists one entry per predecessor; a role may appear
 more than once.
+
+`expected.exact` gives the changes of the exact inverses (`changes`,
+`JinagaSpec/Exact.lean`), each read once with no re-check: `adds`, every row
+the add inverses (the inverses for gained rows, with the specification's
+top-level conditions re-attached) find, and `removes`, every row the remove
+inverses (the inverses for lost rows, each with one top-level existential
+condition flipped) find. Every row of `gained` is in `adds` and every row of
+`lost` in `removes`; every row of `adds` is in the result on the new graph,
+and no row of `removes` is (`exact_correct`). Within a batch, a row may be
+both gained and lost and so appear in `removes` though no reader held it:
+removing it changes nothing. The field is present only when the projection
+names every top-level unknown (`projectsUnknowns`), the case the theorem
+covers; `projection-drops-unknown` shows why. A vector usually changes the
+result, but three named cases do not, and show the exact inverses holding
+back a row the plain inverses find: `exists-not-exists-second-mirror` (no
+remove), `not-exists-not-exists-second-freeze` (no add) and
+`projection-drops-unknown` (outside the hypothesis, so it has no `exact`).
 
 `ports/typescript/run-inverse-vectors.ts` (`npm run inverse`) checks, for each
 vector:

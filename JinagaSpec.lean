@@ -13,6 +13,7 @@ import JinagaSpec.Maintain
 import JinagaSpec.Inverse
 import JinagaSpec.Candidates
 import JinagaSpec.Reorder
+import JinagaSpec.Exact
 import JinagaSpec.Proofs.Scoped
 import JinagaSpec.Proofs.Basic
 import JinagaSpec.Proofs.Locality
@@ -28,5 +29,6 @@ import JinagaSpec.Proofs.Fresh
 import JinagaSpec.Proofs.Candidates
 import JinagaSpec.Proofs.Reorder
 import JinagaSpec.Proofs.Stream
+import JinagaSpec.Proofs.Exact
 import JinagaSpec.GivenConditions
 import JinagaSpec.Proofs.GivenConditions

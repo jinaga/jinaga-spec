@@ -245,6 +245,21 @@ def BatchTally.add (t u : BatchTally) : BatchTally :=
     conditioned := t.conditioned + u.conditioned,
     conditionDroppedMissed := t.conditionDroppedMissed + u.conditionDroppedMissed }
 
+/-- A store, givens and a fresh batch of one to four facts. Every other time,
+the store is one that already has a result, so the batch has something to
+remove. Sometimes a subscription's given arrives in the batch. -/
+def genBatchCase (s : Specification) (n : Nat) : Gen (Graph × Env × List Fact) := do
+  let mut store ← genGraph s 8
+  let mut env ← genEnv s store
+  if n % 2 == 0 then
+    for _ in [0:10] do
+      if (s.evaluate store env).isEmpty then
+        store ← genGraph s 8
+        env ← genEnv s store
+  let B ← genBatch s store ((← below 4) + 1)
+  if ← chance 1 4 then env ← genEnv s (store ++ B)
+  return (store, env, B)
+
 /-- Question 1 of #11: every result the batch changes is a candidate. Question
 2, the weaker shape: a batch that changes something finds some candidate. One
 mutant reads each fact's inverses on the store and that fact alone; another
@@ -255,16 +270,7 @@ def checkBatches (s : Specification) (graphs : Nat) : Gen (BatchTally × Option 
   let mut t : BatchTally := {}
   let mut report := none
   for n in [0:graphs] do
-    let mut store ← genGraph s 8
-    let mut env ← genEnv s store
-    if n % 2 == 0 then
-      for _ in [0:10] do
-        if (s.evaluate store env).isEmpty then
-          store ← genGraph s 8
-          env ← genEnv s store
-    let B ← genBatch s store ((← below 4) + 1)
-    -- Sometimes a subscription's given arrives in the batch.
-    if ← chance 1 4 then env ← genEnv s (store ++ B)
+    let (store, env, B) ← genBatchCase s n
     -- Sometimes a given carries a condition.
     let mut c : ConditionedSpecification := .ofSpecification s
     if ← chance 1 3 then
@@ -295,6 +301,106 @@ def checkBatches (s : Specification) (graphs : Nat) : Gen (BatchTally × Option 
     if !missed.isEmpty && report.isNone then
       report := some s!"{describeConditioned c}graph\n{showGraph store}\nbatch\n{showGraph B}\nmissed {missed}"
   return (t, report)
+
+/-! ## Exact inverses
+
+`changes` (`Exact.lean`) reports adds and removes with no second read. On
+specifications whose projection names every top-level unknown (or a copy
+widened to name them), every add must be in the new result, no remove may be,
+every change must be reported, and applying the changes to the old result
+must give the new one. The named inverse cases are measured too: the remove
+mutant is expected on `exists-not-exists-second-mirror`, a shape random graphs
+rarely build. -/
+
+/-- `factChanges`, `changes` with the inverse families as parameters, for the
+mutants. The specification's own definitions stay unparameterized. -/
+def changesWith (adds removes : Specification → List Specification) (s : Specification) (env : Env)
+    (g : Graph) (B : List Fact) : List Row × List Row :=
+  let new := g ++ B
+  let each (f : Fact) : List Row × List Row :=
+    if s.given.any (env ·.name == some f.id) then (s.read new env, [])
+    else if s.given.all (new.has env) then
+      (((adds s).map reorderOrSelf).flatMap (·.evaluate new (pinEnv s env f)),
+       ((removes s).map reorderOrSelf).flatMap (·.evaluate new (pinEnv s env f)))
+    else ([], [])
+  (B.flatMap (each · |>.1), B.flatMap (each · |>.2))
+
+/-- The projection widened to name every top-level unknown. -/
+def widen (s : Specification) : Specification :=
+  let labels := (s.projection.labels ++ s.matchList.map (·.unknown.name)).eraseDups
+  { s with projection := .composite (labels.map fun l => { name := l, label := l }) }
+
+structure ExactTally where
+  batches : Nat := 0
+  gained : Nat := 0
+  lost : Nat := 0
+  adds : Nat := 0
+  removes : Nat := 0
+  addAbsent : Nat := 0
+  removePresent : Nat := 0
+  missedGained : Nat := 0
+  missedLost : Nat := 0
+  applyWrong : Nat := 0
+  noConjAddAbsent : Nat := 0
+  noFlipRemovePresent : Nat := 0
+  narrowBatches : Nat := 0
+  narrowRemovePresent : Nat := 0
+deriving Inhabited
+
+def ExactTally.add (t u : ExactTally) : ExactTally :=
+  { batches := t.batches + u.batches, gained := t.gained + u.gained, lost := t.lost + u.lost,
+    adds := t.adds + u.adds, removes := t.removes + u.removes,
+    addAbsent := t.addAbsent + u.addAbsent, removePresent := t.removePresent + u.removePresent,
+    missedGained := t.missedGained + u.missedGained, missedLost := t.missedLost + u.missedLost,
+    applyWrong := t.applyWrong + u.applyWrong, noConjAddAbsent := t.noConjAddAbsent + u.noConjAddAbsent,
+    noFlipRemovePresent := t.noFlipRemovePresent + u.noFlipRemovePresent,
+    narrowBatches := t.narrowBatches + u.narrowBatches,
+    narrowRemovePresent := t.narrowRemovePresent + u.narrowRemovePresent }
+
+/-- One batch: the theorems' four claims, the two mutants, and, when the
+projection leaves out a top-level unknown, how often a remove is wrong. -/
+def measureExact (s : Specification) (store : Graph) (env : Env) (B : List Fact) : ExactTally × Option String :=
+  let w := if projectsUnknowns s then s else widen s
+  let g' := store ++ B
+  let old := w.read store env
+  let new := w.read g' env
+  let gained := new.filter (!old.contains ·)
+  let lost := old.filter (!new.contains ·)
+  let (adds, removes) := changes w env store B
+  let noConj := (changesWith (inversesFor true) removeInverses w env store B).1
+  let noFlip := (changesWith addInverses (inversesFor false) w env store B).2
+  let narrow := !projectsUnknowns s
+  let narrowPresent := if narrow then
+      let n := s.read g' env
+      ((changes s env store B).2.filter (n.contains ·)).length
+    else 0
+  let t : ExactTally := {
+    batches := 1, gained := gained.length, lost := lost.length, adds := adds.length, removes := removes.length
+    addAbsent := (adds.filter (!new.contains ·)).length
+    removePresent := (removes.filter (new.contains ·)).length
+    missedGained := (gained.filter (!adds.contains ·)).length
+    missedLost := (lost.filter (!removes.contains ·)).length
+    applyWrong := if sameSet (applyChanges adds removes old) new then 0 else 1
+    noConjAddAbsent := (noConj.filter (!new.contains ·)).length
+    noFlipRemovePresent := (noFlip.filter (new.contains ·)).length
+    narrowBatches := if narrow then 1 else 0
+    narrowRemovePresent := narrowPresent }
+  let wrong := t.addAbsent + t.removePresent + t.missedGained + t.missedLost + t.applyWrong
+  (t, if wrong == 0 then none else
+    some s!"{describeSpecification w}graph\n{showGraph store}\nbatch\n{showGraph B}\nold {old}\nnew {new}\nadds {adds}\nremoves {removes}")
+
+def checkExact (s : Specification) (graphs : Nat) : Gen (ExactTally × Option String) := do
+  let mut t : ExactTally := {}
+  let mut report := none
+  for n in [0:graphs] do
+    let (store, env, B) ← genBatchCase s n
+    let (u, r) := measureExact s store env B
+    t := t.add u
+    if report.isNone then report := r
+  return (t, report)
+
+/-- How many of a list of inverses `reorderOrSelf` keeps as they were. -/
+def fallbacks (is : List Specification) : Nat := (is.filter fun i => (reorderChecked i).isNone).length
 
 /-! ## Named cases -/
 
@@ -490,6 +596,24 @@ def main (args : List String) : IO UInt32 := do
     gen := g
     bt := bt.add t
     if firstBatch.isNone then firstBatch := r
+  let mut et : ExactTally := {}
+  let mut firstExact : Option String := none
+  let mut reorderCounts := (0, 0, 0, 0, 0, 0, 0, 0)
+  -- The named cases first: they hold the shapes the mutants are expected on.
+  for c in inverseCases do
+    let (t, r) := measureExact c.reduced c.graph c.env c.batch
+    et := et.add t
+    if firstExact.isNone then firstExact := r
+  for s in specs do
+    let ((t, r), g) := (checkExact s 20).run gen
+    gen := g
+    et := et.add t
+    if firstExact.isNone then firstExact := r
+    let (a, b, c, d, e, f, h, i) := reorderCounts
+    reorderCounts := (a + (inversesFor true s).length, b + fallbacks (inversesFor true s),
+      c + (addInverses s).length, d + fallbacks (addInverses s),
+      e + (inversesFor false s).length, f + fallbacks (inversesFor false s),
+      h + (removeInverses s).length, i + fallbacks (removeInverses s))
   let mut rt : ReorderTally := {}
   let mut firstReorder : Option String := none
   for s in specs do
@@ -510,12 +634,23 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"sound:    {tally.addAbsent} \"add\" reports of a result the graph lacks, {tally.removePresent} \"remove\" reports of a result it still has"
   IO.println s!"by rule, over all {specs.length} specifications: #338 as proposed misses {miss338} changed results, `candidates` misses {missCoarse}"
   IO.println s!"batches: {bt.batches} ({bt.linked} with facts naming each other), {bt.changed} results changed, {bt.givenArrived} with a given arriving, `candidates` misses {bt.missed}, {bt.untriggered} changed with no candidate; mutant \"read each fact alone\" misses {bt.aloneMissed}, \"ignore a given arriving\" misses {bt.givenIgnoredMissed}, \"drop conditions on a given\" misses {bt.conditionDroppedMissed} ({bt.conditioned} batches with one)"
+  IO.println s!"exact: {et.batches} batches ({et.narrowBatches} with the projection widened), {et.gained} rows gained, {et.lost} lost, {et.adds} adds, {et.removes} removes"
+  IO.println s!"exact sound:    {et.addAbsent} adds of a row the new result lacks, {et.removePresent} removes of a row it has"
+  IO.println s!"exact complete: {et.missedGained} gained rows not added, {et.missedLost} lost rows not removed; {et.applyWrong} batches where applying the changes does not give the new result"
+  IO.println s!"exact precondition: on the {et.narrowBatches} batches whose projection leaves out a top-level unknown, {et.narrowRemovePresent} removes of a row the new result still has"
+  let (a, b, c, d, e, f, h, i) := reorderCounts
+  IO.println s!"exact reorder fallback: gained {b} of {a} plain, {d} of {c} with conditions re-attached; lost {f} of {e} plain, {i} of {h} with a remove test"
   IO.println "named cases:"
   namedCase "exists { notExists } (jinaga.js#338)" existsNotExists
   namedCase "two sibling notExists" siblingNotExists
+  for c in inverseCases.filter (·.unchanged) do
+    let (adds, removes) := changes c.reduced c.env c.graph c.batch
+    IO.println s!"  {c.name}: {(candidates c.reduced c.env c.graph c.batch).eraseDups.length} candidates; exact inverses add {adds.eraseDups.length}, remove {removes.eraseDups.length}{if projectsUnknowns c.reduced then "" else " (outside ProjectsUnknowns)"}"
   IO.println "mutants:"
   IO.println s!"  \"notify a fact the store already has\": caught on {notFresh.1} of {notFresh.2} specifications"
   IO.println s!"  \"drop existential conditions\": caught on {dropped.1} of {dropped.2} specifications with one"
+  IO.println s!"  \"add inverses without the re-attached conditions\": caught on {et.noConjAddAbsent} rows"
+  IO.println s!"  \"remove inverses without the flipped test\": caught on {et.noFlipRemovePresent} rows"
   -- jinaga.js's inverses (this port) are measured, not required to pass: their
   -- misses are recorded in docs/findings.md. What must hold is the coarse rule,
   -- and every mutant must be caught.
@@ -524,12 +659,16 @@ def main (args : List String) : IO UInt32 := do
   if let some r := firstReorder then IO.println s!"\nFIRST REORDER PROBLEM\n{r}"
   if let some r := firstCoarse then IO.println s!"\nFIRST MISS BY `candidates`\n{r}"
   if let some r := firstBatch then IO.println s!"\nFIRST BATCH MISS BY `candidates`\n{r}"
+  if let some r := firstExact then IO.println s!"\nFIRST EXACT PROBLEM\n{r}"
   let uncaught := (if notFresh.1 == 0 then ["notify a fact the store already has"] else []) ++
     (if dropped.1 == 0 then ["drop existential conditions"] else []) ++
     (if miss338 == 0 then ["#338 as proposed"] else []) ++
     (if bt.aloneMissed == 0 then ["read each fact alone"] else []) ++
     (if bt.givenIgnoredMissed == 0 then ["ignore a given arriving"] else []) ++
-    (if bt.conditionDroppedMissed == 0 then ["drop conditions on a given"] else [])
+    (if bt.conditionDroppedMissed == 0 then ["drop conditions on a given"] else []) ++
+    (if et.noConjAddAbsent == 0 then ["add inverses without the re-attached conditions"] else []) ++
+    (if et.noFlipRemovePresent == 0 then ["remove inverses without the flipped test"] else [])
   unless uncaught.isEmpty do IO.println s!"\nMUTANTS NOT CAUGHT: {uncaught}"
   let uncaught := uncaught ++ (if rt.mutantCaught == 0 then ["swap roles of every path condition"] else [])
-  return if missCoarse == 0 && bt.missed == 0 && uncaught.isEmpty && firstReorder.isNone then 0 else 1
+  return if missCoarse == 0 && bt.missed == 0 && uncaught.isEmpty && firstReorder.isNone &&
+    firstExact.isNone then 0 else 1

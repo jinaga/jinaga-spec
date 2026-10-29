@@ -5,7 +5,9 @@ import JinagaSpec.GivenConditions
 # Named cases for inversion
 
 Each is a specification, a graph, the subscription's givens, and a fresh batch
-of facts that changes the result. Most batches are one fact. `lake exe vectors`
+of facts that changes the result, or, for a few that show an exact inverse
+holding back a candidate (`Exact.lean`), leaves it as it was. Most batches are
+one fact. `lake exe vectors`
 writes one inverse vector per case (`vectors/inverse/`), and `check-inverse`
 measures each.
 -/
@@ -23,6 +25,8 @@ structure InverseCase where
   batch : List Fact
   /-- Conditions on the givens, by the given's name. -/
   conditions : List (Name × List GivenCondition) := []
+  /-- The batch leaves the result as it was. -/
+  unchanged : Bool := false
 
 private def r (n t : Name) : Role := role n t
 
@@ -185,7 +189,38 @@ def inverseCases : List InverseCase := [
       (fact "n")
     givens := [("p1", 0)]
     graph := [⟨0, "Account", []⟩, ⟨1, "Name", [("account", 0)]⟩]
-    batch := [⟨2, "Name", [("account", 0), ("prior", 1)]⟩, ⟨3, "Name", [("account", 0), ("prior", 2)]⟩] }
+    batch := [⟨2, "Name", [("account", 0), ("prior", 1)]⟩, ⟨3, "Name", [("account", 0), ("prior", 2)]⟩] },
+  { name := "exists-not-exists-second-mirror"
+    description := "exists { notExists }: accounts with a current mirror. The account has two mirrors, and one is retired. The account stays: the inverse for lost results finds it, but its remove test, no current mirror, fails, so there is no remove."
+    source := "exact inverses"
+    spec := mirrorSpec
+    givens := [("p1", 0)]
+    graph := [⟨0, "Root", []⟩, ⟨1, "Account", [("root", 0)]⟩, ⟨2, "Mirror", [("account", 1)]⟩,
+      ⟨3, "Mirror", [("account", 1)]⟩]
+    batch := [⟨4, "Retired", [("mirror", 2)]⟩]
+    unchanged := true },
+  { name := "not-exists-not-exists-second-freeze"
+    description := "notExists { notExists }: an account with no unrestored freeze. The account has two freezes, and one is unfrozen. The account stays out: the inverse for gained results finds it, but the re-attached condition, no unrestored freeze, fails, so there is no add."
+    source := "exact inverses"
+    spec := freezeSpec
+    givens := [("p1", 0)]
+    graph := [⟨0, "Owner", []⟩, ⟨1, "Account", [("owner", 0)]⟩, ⟨2, "Freeze", [("account", 1)]⟩,
+      ⟨3, "Freeze", [("account", 1)]⟩]
+    batch := [⟨4, "Unfreeze", [("freeze", 2)]⟩]
+    unchanged := true },
+  { name := "projection-drops-unknown"
+    description := "Tasks with an open assignment, projecting the task only, so outside ProjectsUnknowns. The task has two open assignments, and one is completed. The task stays, but the remove test holds for the completed assignment's solution, so the remove inverses report it: the exact inverses are exact for solutions, not rows, here."
+    source := "exact inverses"
+    spec := spec [("p1", "Project")]
+      [unknown "t" "Task" [path [r "project" "Project"] "p1"],
+       unknown "a" "Assignment" [path [r "task" "Task"] "t",
+        notExists [unknown "c" "Completion" [path [r "assignment" "Assignment"] "a"]]]]
+      (fact "t")
+    givens := [("p1", 0)]
+    graph := [⟨0, "Project", []⟩, ⟨1, "Task", [("project", 0)]⟩, ⟨2, "Assignment", [("task", 1)]⟩,
+      ⟨3, "Assignment", [("task", 1)]⟩]
+    batch := [⟨4, "Completion", [("assignment", 2)]⟩]
+    unchanged := true }
 ]
 where
   mirrorSpec := spec [("p1", "Root")]

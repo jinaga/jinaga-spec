@@ -43,6 +43,23 @@ theorem recheck_each (result : Graph → List Row) (g : Graph) :
     grind
 
 /-- After any sequence of batches, starting from a held set that equals the
+result, the held set equals the result, provided each step's update takes a
+held set that equals the result before the batch to one that equals it after. -/
+theorem advance_correct (result : Graph → List Row) (update : Graph → List Fact → List Row → List Row) :
+    ∀ (bs : List (List Fact)) (g : Graph) (held : List Row),
+      (∀ r, r ∈ held ↔ r ∈ result g) →
+      (∀ pre B post, bs = pre ++ B :: post → ∀ held, (∀ r, r ∈ held ↔ r ∈ result (g ++ pre.flatten)) →
+        ∀ r, r ∈ update (g ++ pre.flatten) B held ↔ r ∈ result (g ++ pre.flatten ++ B)) →
+      ∀ r, r ∈ (bs.foldl (advance update) (g, held)).2 ↔ r ∈ result (g ++ bs.flatten)
+  | [], g, held, hheld, _ => by simpa using hheld
+  | B :: bs, g, held, hheld, hstep => by
+    have h := advance_correct result update bs (g ++ B) _
+      (by simpa using hstep [] B bs rfl held (by simpa using hheld))
+      (fun pre B' post h held' hheld' => by
+        simpa using hstep (B :: pre) B' post (by simp [h]) held' (by simpa using hheld'))
+    simpa [advance] using h
+
+/-- After any sequence of batches, starting from a held set that equals the
 result, the held set equals the result, provided each step's candidates cover
 that step's change. -/
 theorem maintain_correct (result : Graph → List Row) (candidates : Graph → List Fact → List Row) :
@@ -50,13 +67,9 @@ theorem maintain_correct (result : Graph → List Row) (candidates : Graph → L
       (∀ r, r ∈ held ↔ r ∈ result g) →
       (∀ pre B post, bs = pre ++ B :: post →
         Covers result (g ++ pre.flatten) B (candidates (g ++ pre.flatten) B)) →
-      ∀ r, r ∈ (bs.foldl (maintainStep result candidates) (g, held)).2 ↔ r ∈ result (g ++ bs.flatten)
-  | [], g, held, hheld, _ => by simpa using hheld
-  | B :: bs, g, held, hheld, hcov => by
-    have h := maintain_correct result candidates bs (g ++ B) _
-      (recheck_correct hheld (by simpa using hcov [] B bs rfl))
-      (fun pre B' post h => by simpa using hcov (B :: pre) B' post (by simp [h]))
-    simpa [maintainStep] using h
+      ∀ r, r ∈ (bs.foldl (maintainStep result candidates) (g, held)).2 ↔ r ∈ result (g ++ bs.flatten) :=
+  fun bs g held hheld hcov => advance_correct result _ bs g held hheld
+    fun pre B post h _ hheld => recheck_correct hheld (hcov pre B post h)
 
 /-! ## Arrival order -/
 
