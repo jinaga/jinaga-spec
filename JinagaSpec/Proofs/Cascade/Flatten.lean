@@ -754,7 +754,7 @@ theorem applyAll_inherited {k : Key} {pa pb : Props} :
       obtain ⟨V', hV', hget⟩ := ih _ m1 hnd.2 hm1 fun y hy => by
         have : y ≠ x := fun h => hnd.1 (h ▸ hy)
         simp [m1, Props.set, this, hx y (List.mem_cons_of_mem _ hy)]
-      refine ⟨V', by simp [List.filterMap_cons, hxe, Tree.applyAll, h1, hV'], fun id => ?_⟩
+      refine ⟨V', by simp [hxe, Tree.applyAll, h1, hV'], fun id => ?_⟩
       rw [hget, get_update]
       by_cases hid : id = ([O], k)
       · subst hid
@@ -916,5 +916,252 @@ theorem flatten_parent_placed (hPO : P ≠ O) {T T' : Tree} (hwf : T.WF) {k a b 
   · simp only [hin, ↓reduceIte]
     exact (flatten_parent_frame hPO hwf.nodup hwf'.nodup (apply_same he) l0 k0 fun hl n hg hp =>
       hin ⟨hl, (mem_children hwf.nodup).mpr ⟨n, hg, hp⟩⟩).symm
+
+/-! ## A child's events -/
+
+theorem level_child (hPO : P ≠ O) : flatten.level P C O [P, C] = some [O] := by
+  simp [flatten.level, hPO]
+
+/-- A child's parent is a parent node, which has a root row as its parent. -/
+theorem child_parent {T : Tree} (hwf : T.WF) {k : Key} {n : Node} (hn : T.get ([P, C], k) = some n) :
+    ∃ pk pn g, n.parent = some pk ∧ T.get ([P], pk) = some pn ∧ pn.parent = some g ∧
+      (T.get ([], g)).isSome := by
+  obtain ⟨pk, hpk, hpks⟩ := parent_above hwf hn (by simp)
+  obtain ⟨pn, hpn⟩ := Option.isSome_iff_exists.mp hpks
+  have hpn' : T.get ([P], pk) = some pn := by simpa using hpn
+  obtain ⟨g, hg, hgs⟩ := parent_above hwf hpn' (by simp)
+  exact ⟨pk, pn, g, hpk, hpn', hg, by simpa using hgs⟩
+
+/-- A row may be placed under a root row of the output. -/
+theorem parentOk_row (hPO : P ≠ O) {T : Tree} (hnd : (T.map (·.1)).Nodup) {g : Key}
+    (hg : (T.get ([], g)).isSome) : (flatten.F P C O I T).parentOk [O] (some g) = true := by
+  simp only [Tree.parentOk, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff]
+  exact ⟨by simp, by simpa [get_flatten_root hPO hnd] using hg⟩
+
+section child
+variable {T T' : Tree} {k : Key}
+
+/-- The output away from a child's row, after an event at that child. -/
+theorem flatten_child_frame (hPO : P ≠ O) (hwf : T.WF) {e : Event} (he : T.apply e = some T')
+    (hid : e.id = ([P, C], k)) {l0 : Level} {k0 : Key} (h : (l0, k0) ≠ ([O], k)) :
+    (flatten.F P C O I T').get (l0, k0) = (flatten.F P C O I T).get (l0, k0) := by
+  have hwf' := apply_wf hwf he
+  refine flatten_frame hPO hwf.nodup hwf'.nodup (l := [P, C]) (k := k) (by simp) ?_ l0 k0
+    (source_ne_of_ne hPO (level_child hPO) h)
+  intro id hne; exact apply_same he id (by rw [hid]; exact hne)
+
+theorem flatten_child_added (hPO : P ≠ O) (hwf : T.WF) {p : Option Key} {ps : Props}
+    (he : T.apply (.added [P, C] k p ps) = some T') :
+    ∃ U, (flatten.F P C O I T).applyAll
+        (match p.bind fun pk => T.get ([P], pk) with
+          | some pn => [.added [O] k pn.parent (flattenProps I pn.props ps)]
+          | none => []) = some U ∧
+      U.Equiv (flatten.F P C O I T') := by
+  have hwf' := apply_wf hwf he
+  obtain ⟨hn, hp, rfl⟩ := apply_added.mp he
+  obtain ⟨pk, rfl⟩ : ∃ pk, p = some pk := by
+    cases p with
+    | some pk => exact ⟨pk, rfl⟩
+    | none => simp [Tree.parentOk] at hp
+  simp only [Tree.parentOk, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff] at hp
+  obtain ⟨pn, hpn⟩ := Option.isSome_iff_exists.mp hp.2
+  have hpn' : T.get ([P], pk) = some pn := by simpa using hpn
+  obtain ⟨g, hg, hgs⟩ := parent_above hwf hpn' (by simp)
+  simp only [Option.bind_some, hpn']
+  refine ⟨_, by rw [applyAll_single]; exact apply_added.mpr ⟨by
+      rw [get_flatten_row hPO hwf.nodup, hn]; rfl, by rw [hg]; exact parentOk_row hPO hwf.nodup (by simpa using hgs), rfl⟩, ?_⟩
+  rintro ⟨l0, k0⟩
+  rw [get_cons]
+  by_cases h : ([O], k) = (l0, k0)
+  · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+    have hn' : Tree.get ((([P, C], k), ⟨some pk, ps⟩) :: T) ([P, C], k) = some ⟨some pk, ps⟩ := by
+      rw [get_cons]; simp
+    have hpn'' : Tree.get ((([P, C], k), ⟨some pk, ps⟩) :: T) ([P], pk) = some pn := by
+      rw [get_cons]; simp [hpn']
+    rw [get_row_of_child hPO hwf'.nodup hn' rfl hpn'']
+    simp
+  · simp only [h, ↓reduceIte]
+    exact (flatten_child_frame hPO hwf he rfl (Ne.symm h)).symm
+
+theorem flatten_child_removed (hPO : P ≠ O) (hwf : T.WF) (he : T.apply (.removed [P, C] k) = some T') :
+    ∃ U, (flatten.F P C O I T).apply (.removed [O] k) = some U ∧ U.Equiv (flatten.F P C O I T') := by
+  have hwf' := apply_wf hwf he
+  obtain ⟨hs, hc, rfl⟩ := apply_removed.mp he
+  obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hs
+  have hc' : (flatten.F P C O I T).hasChild [O] k = false := by
+    cases h : (flatten.F P C O I T).hasChild [O] k
+    · rfl
+    · rw [hasChild_of_flatten hPO hwf (level_child hPO) h] at hc; cases hc
+  have hrow : ((flatten.F P C O I T).get ([O], k)).isSome := by
+    have := node_isSome (P := P) (C := C) (I := I) hwf hn
+    rw [get_flatten_row hPO hwf.nodup, hn]
+    simpa [flatten.node] using this
+  refine ⟨_, apply_removed.mpr ⟨hrow, hc', rfl⟩, ?_⟩
+  rintro ⟨l0, k0⟩
+  rw [get_filter]
+  by_cases h : (l0, k0) = ([O], k)
+  · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+    rw [get_flatten_row hPO hwf'.nodup, get_filter]; simp
+  · simp only [h, ↓reduceIte]
+    exact (flatten_child_frame hPO hwf he rfl h).symm
+
+theorem flatten_child_modified (hPO : P ≠ O) (hwf : T.WF) {x : String} {old new : Option Val}
+    (he : T.apply (.modified [P, C] k x old new) = some T') :
+    ∃ U, (flatten.F P C O I T).applyAll
+        (if x ∈ I then [] else [.modified [O] k x old new]) = some U ∧
+      U.Equiv (flatten.F P C O I T') := by
+  have hwf' := apply_wf hwf he
+  obtain ⟨n, hn, h1, h2, rfl⟩ := apply_modified.mp he
+  obtain ⟨pk, pn, g, hpk, hpn, -, -⟩ := child_parent hwf hn
+  have hn' : (T.update ([P, C], k) fun n => { n with props := n.props.set x new }).get ([P, C], k) =
+      some { n with props := n.props.set x new } := by rw [get_update]; simp [hn]
+  have hpn' : (T.update ([P, C], k) fun n => { n with props := n.props.set x new }).get ([P], pk) =
+      some pn := by rw [get_update]; simp [hpn]
+  have hrow := get_row_of_child (I := I) (O := O) hPO hwf.nodup hn hpk hpn
+  have hrow' := get_row_of_child (I := I) (O := O) hPO hwf'.nodup hn' hpk hpn'
+  by_cases hx : x ∈ I
+  · simp only [hx, ↓reduceIte]
+    refine ⟨_, rfl, ?_⟩
+    rintro ⟨l0, k0⟩
+    by_cases h : (l0, k0) = ([O], k)
+    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+      rw [hrow, hrow', flattenProps_set_mem_child hx]
+    · exact (flatten_child_frame hPO hwf he rfl h).symm
+  · simp only [hx, ↓reduceIte]
+    refine ⟨_, by rw [applyAll_single]; exact apply_modified.mpr ⟨_, hrow, by simp [flattenProps, hx, h1], h2, rfl⟩, ?_⟩
+    rintro ⟨l0, k0⟩
+    rw [get_update]
+    by_cases h : (l0, k0) = ([O], k)
+    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+      rw [hrow, hrow', flattenProps_set_not_mem_child hx]; simp
+    · simp only [h, ↓reduceIte]
+      exact (flatten_child_frame hPO hwf he rfl h).symm
+
+theorem flatten_child_placed (hPO : P ≠ O) (hwf : T.WF) {a b : Key}
+    (he : T.apply (.placed [P, C] k a b) = some T') :
+    ∃ U, (flatten.F P C O I T).applyAll
+        (match T.get ([P], a), T.get ([P], b) with
+          | some pa, some pb =>
+            (match pa.parent, pb.parent with
+              | some ga, some gb => if ga = gb then [] else [.placed [O] k ga gb]
+              | _, _ => []) ++
+            flatten.inheritedChanges O I k pa.props pb.props
+          | _, _ => []) = some U ∧
+      U.Equiv (flatten.F P C O I T') := by
+  have hwf' := apply_wf hwf he
+  obtain ⟨n, hn, h1, h2, h3, rfl⟩ := apply_placed.mp he
+  obtain ⟨pk, pa, ga, hpk, hpa, hga, -⟩ := child_parent hwf hn
+  rw [h1, Option.some.injEq] at hpk
+  subst hpk
+  simp only [Tree.parentOk, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff] at h3
+  obtain ⟨pb, hpb⟩ := Option.isSome_iff_exists.mp h3.2
+  have hpb' : T.get ([P], b) = some pb := by simpa using hpb
+  obtain ⟨gb, hgb, hgbs⟩ := parent_above hwf hpb' (by simp)
+  simp only [hpa, hpb', hga, hgb]
+  have hrow := get_row_of_child (I := I) (O := O) hPO hwf.nodup hn h1 hpa
+  -- First the row moves to the new parent's root row, if that differs.
+  obtain ⟨V, hV, hVrow, hVsame⟩ : ∃ V, (flatten.F P C O I T).applyAll
+      (if ga = gb then [] else [.placed [O] k ga gb]) = some V ∧
+      V.get ([O], k) = some ⟨some gb, flattenProps I pa.props n.props⟩ ∧
+      ∀ id, id ≠ ([O], k) → V.get id = (flatten.F P C O I T).get id := by
+    by_cases hg : ga = gb
+    · subst hg; exact ⟨_, by simp only [↓reduceIte]; rfl, by rw [hrow, hga], fun _ _ => rfl⟩
+    · refine ⟨_, by
+        simp only [hg, ↓reduceIte, applyAll_single]
+        exact apply_placed.mpr ⟨_, hrow, hga, hg, parentOk_row hPO hwf.nodup (by simpa using hgbs), rfl⟩,
+        by rw [get_update]; simp [hrow], fun id hid => by rw [get_update]; simp [hid]⟩
+  -- Then it takes on the new parent's inherited values.
+  obtain ⟨V', hV', hget⟩ := applyAll_inherited (O := O) (k := k) (pa := pa.props) (pb := pb.props)
+    (dedup I) V _ (nodup_dedup I) hVrow fun x hx => by simp [flattenProps, mem_dedup.mp hx]
+  refine ⟨V', by rw [applyAll_append, hV]; exact hV', ?_⟩
+  rintro ⟨l0, k0⟩
+  rw [hget]
+  have hn' : (T.update ([P, C], k) fun n => { n with parent := some b }).get ([P, C], k) =
+      some { n with parent := some b } := by rw [get_update]; simp [hn]
+  have hpb'' : (T.update ([P, C], k) fun n => { n with parent := some b }).get ([P], b) = some pb := by
+    rw [get_update]; simp [hpb']
+  by_cases h : (l0, k0) = ([O], k)
+  · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+    rw [get_row_of_child hPO hwf'.nodup hn' rfl hpb'', hgb]
+    simp only [↓reduceIte, Option.some.injEq, Node.mk.injEq, true_and]
+    funext x
+    by_cases hx : x ∈ I
+    · simp [flattenProps, mem_dedup, hx]
+    · simp [flattenProps, mem_dedup, hx]
+  · simp only [h, ↓reduceIte]
+    rw [hVsame _ h]
+    exact (flatten_child_frame hPO hwf he rfl h).symm
+
+end child
+
+/-! ## Correctness -/
+
+/-- **`flatten_correct`.** `flatten` at the root is correct: each parent and child
+event reaches the rows it affects, and a child that moves takes on its new
+parent's values (the change jinaga/jinaga-cascade-core#30 lost). -/
+theorem flatten_correct (P C O : String) (I : List String) (hPO : P ≠ O) :
+    Correct (flattenStep P C O I) (flatten.F P C O I) := by
+  intro T e T' hwf he
+  have relocate : ∀ (l : Level) (ev : Level → Event),
+      (((flatten.level P C O l).map ev).toList) =
+        match flatten.level P C O l with | some l' => [ev l'] | none => [] := by
+    intro l ev; cases flatten.level P C O l <;> rfl
+  cases e with
+  | added l k p ps =>
+    simp only [flattenStep]
+    by_cases hlP : l = [P]
+    · subst hlP; exact ⟨_, by simp only [↓reduceIte]; rfl, flatten_parent_added hPO hwf he⟩
+    · by_cases hPC : l = [P, C]
+      · subst hPC; simp only [hlP, ↓reduceIte]; exact flatten_child_added hPO hwf he
+      · simp only [hlP, hPC, ↓reduceIte, relocate]
+        cases hl : flatten.level P C O l with
+        | none => exact ⟨_, rfl, flatten_dropped hPO hwf he (by simpa [Event.id] using hl) (by simpa [Event.id])⟩
+        | some l' =>
+          obtain ⟨U, hU, hUe⟩ := flatten_relocated_added hPO hwf hl hlP hPC he
+          exact ⟨U, by rw [applyAll_single]; exact hU, hUe⟩
+  | removed l k =>
+    simp only [flattenStep]
+    by_cases hlP : l = [P]
+    · subst hlP; exact ⟨_, by simp only [↓reduceIte]; rfl, flatten_parent_removed hPO hwf he⟩
+    · simp only [hlP, ↓reduceIte, relocate]
+      by_cases hPC : l = [P, C]
+      · subst hPC
+        rw [level_child hPO]
+        obtain ⟨U, hU, hUe⟩ := flatten_child_removed (I := I) hPO hwf he
+        exact ⟨U, by rw [applyAll_single]; exact hU, hUe⟩
+      · cases hl : flatten.level P C O l with
+        | none => exact ⟨_, rfl, flatten_dropped hPO hwf he (by simpa [Event.id] using hl) (by simpa [Event.id])⟩
+        | some l' =>
+          obtain ⟨U, hU, hUe⟩ := flatten_relocated_removed hPO hwf hl hlP hPC he
+          exact ⟨U, by rw [applyAll_single]; exact hU, hUe⟩
+  | modified l k x old new =>
+    simp only [flattenStep]
+    by_cases hlP : l = [P]
+    · subst hlP; simp only [↓reduceIte]; exact flatten_parent_modified hPO hwf he
+    · by_cases hPC : l = [P, C]
+      · subst hPC
+        obtain ⟨U, hU, hUe⟩ := flatten_child_modified (I := I) hPO hwf he
+        refine ⟨U, ?_, hUe⟩
+        by_cases hx : x ∈ I
+        · simpa [hlP, hx] using hU
+        · simpa [hlP, hx, relocate, level_child hPO] using hU
+      · simp only [hlP, hPC, false_and, ↓reduceIte, relocate]
+        cases hl : flatten.level P C O l with
+        | none => exact ⟨_, rfl, flatten_dropped hPO hwf he (by simpa [Event.id] using hl) (by simpa [Event.id])⟩
+        | some l' =>
+          obtain ⟨U, hU, hUe⟩ := flatten_relocated_modified hPO hwf hl hlP hPC he
+          exact ⟨U, by rw [applyAll_single]; exact hU, hUe⟩
+  | placed l k a b =>
+    simp only [flattenStep]
+    by_cases hlP : l = [P]
+    · subst hlP; simp only [↓reduceIte]; exact flatten_parent_placed hPO hwf he
+    · by_cases hPC : l = [P, C]
+      · subst hPC; simp only [hlP, ↓reduceIte]; exact flatten_child_placed hPO hwf he
+      · simp only [hlP, hPC, ↓reduceIte, relocate]
+        cases hl : flatten.level P C O l with
+        | none => exact ⟨_, rfl, flatten_dropped hPO hwf he (by simpa [Event.id] using hl) (by simpa [Event.id])⟩
+        | some l' =>
+          obtain ⟨U, hU, hUe⟩ := flatten_relocated_placed hPO hwf hl hlP hPC he
+          exact ⟨U, by rw [applyAll_single]; exact hU, hUe⟩
 
 end JinagaSpec.Cascade
