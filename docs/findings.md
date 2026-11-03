@@ -792,6 +792,37 @@ TypeScript aggregate passes through an upstream value of its own property, which
 the model's step hides; that matters only when two steps define a property of
 the same name.
 
+## Cascade: `flatten`
+
+`flatten` is the step where jinaga/jinaga-cascade-core#30 was found: a child
+that moved to another parent kept its old parent's values, because the output
+did not listen for them. Modelling it raised the question of what a flattened
+row shows when its parent and child share a name. TypeScript answered it two
+ways at once: the child's value won on add only if the child had one, while the
+parent's later changes were ignored whenever the child declared the name. An
+aggregate declares its property before it has a value, so the rows depended on
+arrival order. jinaga/jinaga-cascade-core#38 makes a shared name an error, at the
+type level and, for declared names, at run time.
+
+The model takes the parent's names `I` as a parameter: a row shows the parent's
+values for those and the child's for the rest. It ignores a child's value for a
+name in `I`, so it needs no contract on its input. The TypeScript agrees with it
+when two things hold of the payloads. `I` must list every property a parent's
+payload carries: the TypeScript reads the inherited names from the parent's
+descriptor, so an undeclared parent property is inherited on add but never
+declared mutable, and is not updated after a move. And no child payload may
+carry a name in `I`: #38 rejects names both descriptors declare, and the types
+reject every shared name, but an undeclared child property in an untyped
+pipeline shows the child's value. Both are the same gap: a descriptor that does
+not declare every property its payloads carry. The proof reads the output through `get`: each output level comes
+from one input level, and a row from a child and its parent. The frame lemmas
+say an event changes the output only at its image; the work is in the events
+that reach many rows, a parent's change or move, and a child's move, which
+changes its row's parent and then each inherited value that differs.
+
+`flatten_keeps` checks the descriptor rule #34 introduced, `mutablePlacement`
+and inherited mutability, against the step.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -821,6 +852,7 @@ the same name.
 | `Proofs/Cascade/Session.lean` | Nested arrays that hold a tree hold each node where the placement index locates it; located events keep them holding the tree; queueing and flushing keep the session's invariant, and recording a placement after the push would drop a child. |
 | `Proofs/Cascade/Sig.lean` | Each step emits only what its descriptor declares can change or move; keeping a signature composes, so a subscriber to a pipeline's descriptor hears every event. |
 | `Proofs/Cascade/Cache.lean` | The TypeScript caches of `groupBy`, the aggregates and `defineProperty` emit exactly the model's events, so the steps as written are correct. |
+| `Proofs/Cascade/Flatten.lean` | `flatten` at the root is correct: parents' changes and moves reach their rows, and a moved child takes on its new parent's values; it emits only what its descriptor declares. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The
