@@ -277,9 +277,12 @@ knows, and its computed value). Each implements its step (`…_implements`): fro
 a cache that describes the input, it emits exactly the step's events, and its
 new cache describes the new input. So over any input the protocol accepts the
 cached step emits what the step emits (`implements_run`), and is correct
-(`…_cached_correct`). `defineProperty`'s cache tracks only the properties the
-caller lists, and needs the same contract as its correctness: `f` reads only
-those.
+(`…_cached_correct`). Like the TypeScript, an aggregate refreshes its snapshot
+of a child only for the aggregated property, and `defineProperty` only for the
+properties the caller lists; each needs the contract that what it computes reads
+only those. The order in which a TypeScript step notifies listeners, which puts
+a derived change before its cause, is not modelled: the two events touch different
+nodes or properties, but that either order reaches the same tree is not proved.
 
 ## Reading the definitions
 

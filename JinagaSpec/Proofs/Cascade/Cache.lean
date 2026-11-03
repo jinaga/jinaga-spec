@@ -370,6 +370,41 @@ theorem sum_update {T : Tree} (hnd : (T.map (·.1)).Nodup) {id : Id} {n : Node}
       · simp only [List.filter_cons, hP, ↓reduceIte, List.map_cons, List.sum_cons]; omega
       · simp only [List.filter_cons, hP, Bool.false_eq_true, ↓reduceIte]; exact this
 
+/-! ## Values known up to unlisted changes -/
+
+theorem set_comm {a b : String} (h : a ≠ b) (ps : Props) (u v : Option Val) :
+    (ps.set a u).set b v = (ps.set b v).set a u := by
+  funext x
+  by_cases hb : x = b
+  · subst hb; simp [Props.set, Ne.symm h]
+  · by_cases ha : x = a
+    · subst ha; simp [Props.set, h]
+    · simp [Props.set, ha, hb]
+
+/-- A function that reads only `deps` ignores changes to other properties. -/
+theorem setAll_unlisted {β : Type} {f : Props → β} {deps : List String}
+    (hdeps : ∀ ps p v, p ∉ deps → f (ps.set p v) = f ps) (ps : Props) :
+    ∀ changes : List (String × Option Val), (∀ x ∈ changes, x.1 ∉ deps) → f (ps.setAll changes) = f ps := by
+  intro changes
+  induction changes with
+  | nil => intro _; rfl
+  | cons x changes ih =>
+    intro h
+    simp only [Props.setAll, List.foldr_cons] at ih ⊢
+    rw [hdeps _ _ _ (h x (List.mem_cons_self ..))]
+    exact ih fun y hy => h y (List.mem_cons_of_mem _ hy)
+
+theorem setAll_set (ps : Props) (p : String) (v : Option Val) :
+    ∀ changes : List (String × Option Val), (∀ x ∈ changes, x.1 ≠ p) →
+      (ps.setAll changes).set p v = (ps.set p v).setAll changes := by
+  intro changes
+  induction changes with
+  | nil => intro _; rfl
+  | cons x changes ih =>
+    intro h
+    simp only [Props.setAll, List.foldr_cons] at ih ⊢
+    rw [set_comm (h x (List.mem_cons_self ..)), ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
+
 /-! ## `sum` and `count` -/
 
 /-- Whether entry `e` contributes to parent `r`'s aggregate. -/
@@ -432,8 +467,8 @@ theorem deposit_items (contributes : Props → Bool) (w : Props → Int) (a : Ag
   unfold AggCache.deposit; split <;> rfl
 
 /-- The cached aggregate is the tree's. -/
-theorem value_eq {c : Level} {contributes : Props → Bool} {w : Props → Int} {a : AggCache} {T : Tree}
-    (h : a.Describes c contributes w T) (r : Key) : a.value r = aggregate c contributes w T r := by
+theorem value_eq {c : Level} {contributes : Props → Bool} {w : Props → Int} {tracked : List String}
+    {a : AggCache} {T : Tree} (h : a.Describes c contributes w tracked T) (r : Key) : a.value r = aggregate c contributes w T r := by
   unfold AggCache.value aggregate
   rw [h.count r, h.total r]
   split <;> simp_all
@@ -446,71 +481,102 @@ theorem contributesTo_other {c l : Level} (contributes : Props → Bool) (r : Ke
     (h : l ≠ c ∨ n.parent = none) : contributesTo c contributes r ((l, k), n) = false := by
   rcases h with h | h <;> simp [contributesTo, h]
 
-section
-variable {c : Level} {contributes : Props → Bool} {w : Props → Int} {a : AggCache} {T : Tree}
+theorem withdraw_congr {contributes : Props → Bool} {w : Props → Int} (a : AggCache) (r : Key)
+    {ps₁ ps₂ : Props} (hc : contributes ps₁ = contributes ps₂) (hw : w ps₁ = w ps₂) :
+    a.withdraw contributes w r ps₁ = a.withdraw contributes w r ps₂ := by
+  unfold AggCache.withdraw; rw [hc, hw]
 
-theorem count_eq (h : a.Describes c contributes w T) (r : Key) :
+theorem deposit_congr {contributes : Props → Bool} {w : Props → Int} (a : AggCache) (r : Key)
+    {ps₁ ps₂ : Props} (hc : contributes ps₁ = contributes ps₂) (hw : w ps₁ = w ps₂) :
+    a.deposit contributes w r ps₁ = a.deposit contributes w r ps₂ := by
+  unfold AggCache.deposit; rw [hc, hw]
+
+section
+variable {c : Level} {contributes : Props → Bool} {w : Props → Int} {tracked : List String}
+  {a : AggCache} {T : Tree}
+
+theorem count_eq (h : a.Describes c contributes w tracked T) (r : Key) :
     a.count r = T.countP (contributesTo c contributes r) := by
   rw [h.count r, contributors_eq, List.countP_eq_length_filter]
 
-theorem total_eq (h : a.Describes c contributes w T) (r : Key) :
+theorem total_eq (h : a.Describes c contributes w tracked T) (r : Key) :
     a.total r = ((T.filter (contributesTo c contributes r)).map (fun e : Id × Node => w e.2.props)).sum := by
   rw [h.total r, contributors_eq]
 
 theorem describes_of {a : AggCache} {U : Tree}
-    (hi : ∀ k, a.items k = (U.get (c, k)).bind fun n => n.parent.map fun r => (r, n.props))
+    (habs : ∀ k, ((U.get (c, k)).bind (·.parent)) = none → a.items k = none)
+    (hpres : ∀ k n r, U.get (c, k) = some n → n.parent = some r → ∃ known changes,
+      a.items k = some (r, known) ∧ (∀ x ∈ changes, x.1 ∉ tracked) ∧ n.props = known.setAll changes)
     (hc : ∀ r, a.count r = U.countP (contributesTo c contributes r))
     (ht : ∀ r, a.total r = ((U.filter (contributesTo c contributes r)).map (fun e : Id × Node => w e.2.props)).sum) :
-    a.Describes c contributes w U :=
-  ⟨hi, fun r => by rw [hc r, contributors_eq, List.countP_eq_length_filter],
+    a.Describes c contributes w tracked U :=
+  ⟨habs, hpres, fun r => by rw [hc r, contributors_eq, List.countP_eq_length_filter],
     fun r => by rw [ht r, contributors_eq]⟩
 
 /-- A node that is not a contributing child arrives: nothing changes. -/
-theorem describes_cons_other (h : a.Describes c contributes w T) {l : Level} {k : Key} {n : Node}
+theorem describes_cons_other (h : a.Describes c contributes w tracked T) {l : Level} {k : Key} {n : Node}
     (hn : T.get (l, k) = none) (hl : l ≠ c ∨ n.parent = none) :
-    a.Describes c contributes w (((l, k), n) :: T) := by
-  refine describes_of (fun k' => ?_) (fun r => ?_) (fun r => ?_)
-  · rw [h.items k', get_cons]
-    split
+    a.Describes c contributes w tracked (((l, k), n) :: T) := by
+  refine describes_of (fun k' hb => ?_) (fun k' n' r hg hp => ?_) (fun r => ?_) (fun r => ?_)
+  · rw [get_cons] at hb
+    split at hb
     · rename_i heq
-      obtain ⟨hlc, hk⟩ := Prod.mk.inj heq
-      subst hlc hk
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq
+      exact h.absent _ (by simp [hn])
+    · exact h.absent k' hb
+  · rw [get_cons] at hg
+    split at hg
+    · rename_i heq
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq
+      simp at hg; subst hg
       rcases hl with hl | hl
       · exact absurd rfl hl
-      · simp [hn, hl]
-    · rfl
+      · rw [hl] at hp; cases hp
+    · exact h.present k' n' r hg hp
   · rw [count_eq h, List.countP_cons, contributesTo_other _ _ _ _ hl]; simp
   · rw [total_eq h, List.filter_cons, contributesTo_other _ _ _ _ hl]; simp
 
 /-- A child arrives under parent `r`, and contributes to it. -/
-theorem describes_cons_child (h : a.Describes c contributes w T) {k r : Key} {ps : Props}
+theorem describes_cons_child (h : a.Describes c contributes w tracked T) {k r : Key} {ps : Props}
     (hn : T.get (c, k) = none) :
     ({ a.deposit contributes w r ps with items := Map.set a.items k (some (r, ps)) } : AggCache).Describes
-      c contributes w (((c, k), ⟨some r, ps⟩) :: T) := by
-  refine describes_of (fun k' => ?_) (fun r' => ?_) (fun r' => ?_)
-  · simp only [Map.set, get_cons, Prod.mk.injEq, true_and]
+      c contributes w tracked (((c, k), ⟨some r, ps⟩) :: T) := by
+  refine describes_of (fun k' hb => ?_) (fun k' n' r' hg hp => ?_) (fun r' => ?_) (fun r' => ?_)
+  · simp only [get_cons, Prod.mk.injEq, true_and] at hb
     by_cases hk : k' = k
-    · subst hk; simp
-    · simp [hk, Ne.symm hk, h.items k']
+    · subst hk; simp at hb
+    · simp only [Ne.symm hk, ↓reduceIte] at hb
+      simp [Map.set, hk, h.absent k' hb]
+  · simp only [get_cons, Prod.mk.injEq, true_and] at hg
+    by_cases hk : k' = k
+    · subst hk
+      simp at hg; subst hg
+      simp at hp; subst hp
+      exact ⟨ps, [], by simp [Map.set], by simp, rfl⟩
+    · simp only [Ne.symm hk, ↓reduceIte] at hg
+      simpa [Map.set, hk] using h.present k' n' r' hg hp
   · simp only [deposit_count, count_eq h, List.countP_cons, contributesTo_at]
     by_cases hr : r = r' <;> by_cases hc : contributes ps = true <;> simp [hr, hc] <;> omega
   · simp only [deposit_total, total_eq h, List.filter_cons, contributesTo_at]
     by_cases hr : r = r' <;> by_cases hc : contributes ps = true <;> simp [hr, hc] <;> omega
 
 /-- A node that is not a contributing child leaves: nothing changes. -/
-theorem describes_filter_other (h : a.Describes c contributes w T) (hnd : (T.map (·.1)).Nodup)
+theorem describes_filter_other (h : a.Describes c contributes w tracked T) (hnd : (T.map (·.1)).Nodup)
     {l : Level} {k : Key} {n : Node} (hn : T.get (l, k) = some n) (hl : l ≠ c ∨ n.parent = none) :
-    a.Describes c contributes w (T.filter (·.1 != (l, k))) := by
-  refine describes_of (fun k' => ?_) (fun r => ?_) (fun r => ?_)
-  · rw [h.items k', get_filter]
-    split
+    a.Describes c contributes w tracked (T.filter (·.1 != (l, k))) := by
+  refine describes_of (fun k' hb => ?_) (fun k' n' r hg hp => ?_) (fun r => ?_) (fun r => ?_)
+  · rw [get_filter] at hb
+    split at hb
     · rename_i heq
-      obtain ⟨hlc, hk⟩ := Prod.mk.inj heq
-      subst hlc hk
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq
       rcases hl with hl | hl
       · exact absurd rfl hl
-      · simp [hn, hl]
-    · rfl
+      · exact h.absent _ (by simp [hn, hl])
+    · exact h.absent k' hb
+  · rw [get_filter] at hg
+    split at hg
+    · simp at hg
+    · exact h.present k' n' r hg hp
   · have := countP_filter_ne hnd hn (contributesTo c contributes r)
     rw [contributesTo_other _ _ _ _ hl] at this
     rw [count_eq h]; simpa using this.symm
@@ -519,15 +585,19 @@ theorem describes_filter_other (h : a.Describes c contributes w T) (hnd : (T.map
     rw [total_eq h]; simpa using this.symm
 
 /-- Child `k` under parent `r` leaves, and its contribution with it. -/
-theorem describes_filter_child (h : a.Describes c contributes w T) (hnd : (T.map (·.1)).Nodup)
+theorem describes_filter_child (h : a.Describes c contributes w tracked T) (hnd : (T.map (·.1)).Nodup)
     {k r : Key} {n : Node} (hn : T.get (c, k) = some n) (hp : n.parent = some r) :
     ({ a.withdraw contributes w r n.props with items := Map.set a.items k none } : AggCache).Describes
-      c contributes w (T.filter (·.1 != (c, k))) := by
-  refine describes_of (fun k' => ?_) (fun r' => ?_) (fun r' => ?_)
-  · simp only [Map.set, get_filter, Prod.mk.injEq, true_and]
-    by_cases hk : k' = k
-    · subst hk; simp
-    · simp [hk, h.items k']
+      c contributes w tracked (T.filter (·.1 != (c, k))) := by
+  refine describes_of (fun k' hb => ?_) (fun k' n' r' hg hp' => ?_) (fun r' => ?_) (fun r' => ?_)
+  · by_cases hk : k' = k
+    · simp [Map.set, hk]
+    · rw [get_filter, ite_eq_right (by simpa using hk)] at hb
+      simp [Map.set, hk, h.absent k' hb]
+  · by_cases hk : k' = k
+    · subst hk; rw [get_filter] at hg; simp at hg
+    · rw [get_filter, ite_eq_right (by simpa using hk)] at hg
+      simpa [Map.set, hk] using h.present k' n' r' hg hp'
   · have := countP_filter_ne hnd hn (contributesTo c contributes r')
     rw [contributesTo_at, hp] at this
     simp only [withdraw_count, count_eq h]
@@ -538,22 +608,30 @@ theorem describes_filter_child (h : a.Describes c contributes w T) (hnd : (T.map
     by_cases hr : r = r' <;> by_cases hc : contributes n.props = true <;> simp [hr, hc] at this ⊢ <;> omega
 
 /-- A node that is not a contributing child changes: nothing changes. -/
-theorem describes_update_other (h : a.Describes c contributes w T) (hnd : (T.map (·.1)).Nodup)
+theorem describes_update_other (h : a.Describes c contributes w tracked T) (hnd : (T.map (·.1)).Nodup)
     {l : Level} {k : Key} {n : Node} (hn : T.get (l, k) = some n) (f : Node → Node)
     (hl : l ≠ c ∨ (n.parent = none ∧ (f n).parent = none)) :
-    a.Describes c contributes w (T.update (l, k) f) := by
+    a.Describes c contributes w tracked (T.update (l, k) f) := by
   have h1 : l ≠ c ∨ n.parent = none := hl.imp id (·.1)
   have h2 : l ≠ c ∨ (f n).parent = none := hl.imp id (·.2)
-  refine describes_of (fun k' => ?_) (fun r => ?_) (fun r => ?_)
-  · rw [h.items k', get_update]
-    split
+  refine describes_of (fun k' hb => ?_) (fun k' n' r hg hp => ?_) (fun r => ?_) (fun r => ?_)
+  · rw [get_update] at hb
+    split at hb
     · rename_i heq
-      obtain ⟨hlc, hk⟩ := Prod.mk.inj heq
-      subst hlc hk
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq
       rcases hl with hl | hl
       · exact absurd rfl hl
-      · simp [hn, hl.1, hl.2]
-    · rfl
+      · exact h.absent _ (by simp [hn, hl.1])
+    · exact h.absent k' hb
+  · rw [get_update] at hg
+    split at hg
+    · rename_i heq
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq
+      simp [hn] at hg; subst hg
+      rcases hl with hl | hl
+      · exact absurd rfl hl
+      · rw [hl.2] at hp; cases hp
+    · exact h.present k' n' r hg hp
   · have := countP_update hnd hn f (contributesTo c contributes r)
     rw [contributesTo_other _ _ _ _ h1, contributesTo_other _ _ _ _ h2] at this
     rw [count_eq h]; simpa using this.symm
@@ -561,19 +639,66 @@ theorem describes_update_other (h : a.Describes c contributes w T) (hnd : (T.map
     rw [contributesTo_other _ _ _ _ h1, contributesTo_other _ _ _ _ h2] at this
     rw [total_eq h]; simpa using this.symm
 
+/-- A child's untracked property changes. Its contribution does not, and the
+cache does not see it: its snapshot is now one more change behind. -/
+theorem describes_update_untracked (h : a.Describes c contributes w tracked T) (hnd : (T.map (·.1)).Nodup)
+    {k r : Key} {n : Node} (hn : T.get (c, k) = some n) (hp : n.parent = some r) {p : String}
+    (hpt : p ∉ tracked) (v : Option Val) (hcon : contributes (n.props.set p v) = contributes n.props)
+    (hw : w (n.props.set p v) = w n.props) :
+    a.Describes c contributes w tracked (T.update (c, k) fun n => { n with props := n.props.set p v }) := by
+  refine describes_of (fun k' hb => ?_) (fun k' n' r' hg hp' => ?_) (fun x => ?_) (fun x => ?_)
+  · rw [get_update] at hb
+    split at hb
+    · rename_i heq
+      obtain ⟨-, rfl⟩ := Prod.mk.inj heq
+      simp [hn, hp] at hb
+    · exact h.absent k' hb
+  · rw [get_update] at hg
+    split at hg
+    · rename_i heq
+      obtain ⟨-, rfl⟩ := Prod.mk.inj heq
+      simp [hn] at hg; subst hg
+      simp only at hp'
+      rw [hp] at hp'; cases hp'
+      obtain ⟨known, changes, hi, hch, hprops⟩ := h.present _ n r hn hp
+      refine ⟨known, (p, v) :: changes, hi, ?_, by simp [Props.setAll, hprops]⟩
+      intro y hy
+      rcases List.mem_cons.mp hy with rfl | hy
+      · exact hpt
+      · exact hch y hy
+    · exact h.present k' n' r' hg hp'
+  · have := countP_update hnd hn (fun n => { n with props := n.props.set p v }) (contributesTo c contributes x)
+    rw [contributesTo_at, contributesTo_at] at this
+    simp only [hcon] at this
+    rw [count_eq h]; omega
+  · have := sum_update hnd hn (fun n => { n with props := n.props.set p v }) (contributesTo c contributes x)
+      (fun e : Id × Node => w e.2.props)
+    rw [contributesTo_at, contributesTo_at] at this
+    simp only [hcon, hw] at this
+    rw [total_eq h]; omega
+
 /-- Child `k` changes or moves, from parent `r` to `(f n)`'s parent `r'`: its old
-contribution is withdrawn and its new one deposited. -/
-theorem describes_update_child (h : a.Describes c contributes w T) (hnd : (T.map (·.1)).Nodup)
+contribution is withdrawn and its new one deposited, and its snapshot replaced. -/
+theorem describes_update_child (h : a.Describes c contributes w tracked T) (hnd : (T.map (·.1)).Nodup)
     {k r r' : Key} {n : Node} (hn : T.get (c, k) = some n) (hp : n.parent = some r) (f : Node → Node)
-    (hp' : (f n).parent = some r') :
+    (hp' : (f n).parent = some r') {known' : Props}
+    (hk : ∃ changes, (∀ x ∈ changes, x.1 ∉ tracked) ∧ (f n).props = known'.setAll changes) :
     ({ (a.withdraw contributes w r n.props).deposit contributes w r' (f n).props with
-        items := Map.set a.items k (some (r', (f n).props)) } : AggCache).Describes
-      c contributes w (T.update (c, k) f) := by
-  refine describes_of (fun k' => ?_) (fun x => ?_) (fun x => ?_)
-  · simp only [Map.set, get_update, Prod.mk.injEq, true_and]
-    by_cases hk : k' = k
-    · subst hk; simp [hn, hp']
-    · simp [hk, h.items k']
+        items := Map.set a.items k (some (r', known')) } : AggCache).Describes
+      c contributes w tracked (T.update (c, k) f) := by
+  refine describes_of (fun k' hb => ?_) (fun k' n' r'' hg hp'' => ?_) (fun x => ?_) (fun x => ?_)
+  · by_cases hk' : k' = k
+    · subst hk'; rw [get_update] at hb; simp [hn, hp'] at hb
+    · rw [get_update, ite_eq_right (by simpa using hk')] at hb
+      simp [Map.set, hk', h.absent k' hb]
+  · by_cases hk' : k' = k
+    · subst hk'
+      rw [get_update] at hg; simp [hn] at hg; subst hg
+      rw [hp'] at hp''; cases hp''
+      obtain ⟨changes, hch, hprops⟩ := hk
+      exact ⟨known', changes, by simp [Map.set], hch, hprops⟩
+    · rw [get_update, ite_eq_right (by simpa using hk')] at hg
+      simpa [Map.set, hk'] using h.present k' n' r'' hg hp''
   · have := countP_update hnd hn f (contributesTo c contributes x)
     have hpos := countP_filter_ne hnd hn (contributesTo c contributes x)
     rw [contributesTo_at, contributesTo_at, hp, hp'] at this
@@ -602,14 +727,27 @@ theorem parent_root {T : Tree} (hwf : T.WF) {k : Key} {n : Node} (h : T.get ([],
   | none => rfl
   | some r => rw [hp] at this; simp [Tree.parentOk] at this
 
-/-- **`aggregate_implements`.** The aggregate's cache, each child's parent and
-values and each parent's count and total, implements the aggregate. -/
-theorem aggregate_implements (c : Level) (q : String) (contributes : Props → Bool) (w : Props → Int) :
-    Implements (aggregate.cached c q contributes w) (aggregateStep c q contributes w)
-      (AggCache.Describes c contributes w) := by
-  refine ⟨⟨fun _ => rfl, fun _ => rfl, fun _ => rfl⟩, ?_⟩
+/-- **`aggregate_implements`.** The aggregate's cache, each child's parent and a
+snapshot of its tracked values, and each parent's count and total, implements
+the aggregate, when what a child contributes reads only tracked properties. In
+TypeScript the tracked property is the aggregated one, when it is mutable. -/
+theorem aggregate_implements (c : Level) (q : String) (contributes : Props → Bool) (w : Props → Int)
+    (tracked : List String)
+    (hcon : ∀ ps p v, p ∉ tracked → contributes (ps.set p v) = contributes ps)
+    (hw : ∀ ps p v, p ∉ tracked → w (ps.set p v) = w ps) :
+    Implements (aggregate.cached c q contributes w tracked) (aggregateStep c q contributes w)
+      (AggCache.Describes c contributes w tracked) := by
+  refine ⟨⟨fun _ _ => rfl, fun _ _ _ h => by simp at h, fun _ => rfl, fun _ => rfl⟩, ?_⟩
   intro a T e T' hR hwf ha
   have hnd := hwf.nodup
+  -- A snapshot contributes what the current values do.
+  have snap : ∀ {k n r}, T.get (c, k) = some n → n.parent = some r → ∃ known changes,
+      a.items k = some (r, known) ∧ (∀ x ∈ changes, x.1 ∉ tracked) ∧ n.props = known.setAll changes ∧
+        contributes known = contributes n.props ∧ w known = w n.props := by
+    intro k n r hn hp
+    obtain ⟨known, changes, hi, hch, hprops⟩ := hR.present k n r hn hp
+    exact ⟨known, changes, hi, hch, hprops, by rw [hprops, setAll_unlisted hcon _ _ hch],
+      by rw [hprops, setAll_unlisted hw _ _ hch]⟩
   cases e with
   | added l k p ps =>
     obtain ⟨hn, hp, rfl⟩ := apply_added.mp ha
@@ -651,13 +789,14 @@ theorem aggregate_implements (c : Level) (q : String) (contributes : Props → B
     · subst h2
       cases hpar : n.parent with
       | none =>
-        have hik : a.items k = none := by rw [hR.items k, hn]; simp [hpar]
+        have hik : a.items k = none := hR.absent k (by simp [hn, hpar])
         have hR' := describes_filter_other hR hnd hn (Or.inr hpar)
         refine ⟨?_, by simpa [aggregate.cached, hik] using hR'⟩
         simp [aggregate.cached, aggregateStep, ha, hik, hn, hpar]
       | some r =>
-        have hik : a.items k = some (r, n.props) := by rw [hR.items k, hn]; simp [hpar]
+        obtain ⟨known, -, hik, -, -, hc, hwk⟩ := snap hn hpar
         have hR' := describes_filter_child hR hnd hn hpar
+        rw [← withdraw_congr a r hc hwk] at hR'
         refine ⟨?_, by simpa [aggregate.cached, hik] using hR'⟩
         simp only [aggregate.cached, aggregateStep, ha, hik, hn, hpar, ↓reduceIte, Option.bind_some,
           Option.toList_some, List.flatMap_singleton, ← value_eq hR, ← value_eq hR']
@@ -684,25 +823,44 @@ theorem aggregate_implements (c : Level) (q : String) (contributes : Props → B
       · subst h2
         cases hpar : n.parent with
         | none =>
-          have hik : a.items k = none := by rw [hR.items k, hn]; simp [hpar]
-          have hR' := describes_update_other hR hnd hn (fun n : Node => { n with props := n.props.set p new }) (Or.inr ⟨hpar, hpar⟩)
+          have hik : a.items k = none := hR.absent k (by simp [hn, hpar])
+          have hR' := describes_update_other hR hnd hn
+            (fun n : Node => { n with props := n.props.set p new }) (Or.inr ⟨hpar, hpar⟩)
           refine ⟨?_, by simpa [aggregate.cached, h1, hik] using hR'⟩
           simp [aggregate.cached, aggregateStep, ha, h1, hik, hn, hpar]
         | some r =>
-          have hik : a.items k = some (r, n.props) := by rw [hR.items k, hn]; simp [hpar]
-          have hR' := describes_update_child hR hnd hn hpar (fun n : Node => { n with props := n.props.set p new }) hpar
-          refine ⟨?_, by simpa [aggregate.cached, h1, hik] using hR'⟩
-          simp only [aggregate.cached, aggregateStep, ha, h1, hik, hn, hpar, ↓reduceIte,
-            Option.bind_some, Option.toList_some, List.flatMap_singleton, ← value_eq hR, ← value_eq hR']
-      · have hR' := describes_update_other hR hnd hn (fun n : Node => { n with props := n.props.set p new }) (Or.inl h2)
+          obtain ⟨known, changes, hik, hch, hprops, hc, hwk⟩ := snap hn hpar
+          by_cases hpt : p ∈ tracked
+          · -- A tracked change: the snapshot and the contribution are refreshed.
+            have hsame : n.props.set p new = (known.set p new).setAll changes := by
+              rw [hprops, setAll_set _ _ _ _ (fun x hx h => hch x hx (h ▸ hpt))]
+            have hc' : contributes (known.set p new) = contributes (n.props.set p new) := by
+              rw [hsame, setAll_unlisted hcon _ _ hch]
+            have hw' : w (known.set p new) = w (n.props.set p new) := by
+              rw [hsame, setAll_unlisted hw _ _ hch]
+            have hR' := describes_update_child (known' := known.set p new) hR hnd hn hpar
+              (fun n : Node => { n with props := n.props.set p new }) hpar ⟨changes, hch, hsame⟩
+            rw [← withdraw_congr a r hc hwk, ← deposit_congr _ r hc' hw'] at hR'
+            refine ⟨?_, by simpa [aggregate.cached, h1, hik, hpt] using hR'⟩
+            simp only [aggregate.cached, aggregateStep, ha, h1, hik, hn, hpar, hpt, ↓reduceIte,
+              Option.bind_some, Option.toList_some, List.flatMap_singleton, ← value_eq hR, ← value_eq hR']
+          · -- An untracked change: nothing the aggregate reads.
+            have hR' := describes_update_untracked hR hnd hn hpar hpt new (hcon _ _ _ hpt) (hw _ _ _ hpt)
+            refine ⟨?_, by simpa [aggregate.cached, h1, hik, hpt] using hR'⟩
+            simp only [aggregate.cached, aggregateStep, ha, h1, hik, hn, hpar, hpt, ↓reduceIte,
+              Option.bind_some, Option.toList_some, List.flatMap_singleton, ← value_eq hR, ← value_eq hR']
+      · have hR' := describes_update_other hR hnd hn
+          (fun n : Node => { n with props := n.props.set p new }) (Or.inl h2)
         refine ⟨?_, by simpa [aggregate.cached, h1, h2] using hR'⟩
         simp [aggregate.cached, aggregateStep, ha, h1, h2]
   | placed l k x y =>
     obtain ⟨n, hn, hpa, -, -, rfl⟩ := apply_placed.mp ha
     by_cases h2 : l = c
     · subst h2
-      have hik : a.items k = some (x, n.props) := by rw [hR.items k, hn]; simp [hpa]
-      have hR' := describes_update_child hR hnd hn hpa (fun n : Node => { n with parent := some y }) rfl
+      obtain ⟨known, changes, hik, hch, hprops, hc, hwk⟩ := snap hn hpa
+      have hR' := describes_update_child (known' := known) hR hnd hn hpa
+        (fun n : Node => { n with parent := some y }) rfl ⟨changes, hch, hprops⟩
+      rw [← withdraw_congr a x hc hwk, ← deposit_congr _ y hc hwk] at hR'
       refine ⟨?_, by simpa [aggregate.cached, hik] using hR'⟩
       simp only [aggregate.cached, aggregateStep, ha, hik, ↓reduceIte, ← value_eq hR, ← value_eq hR']
     · have hR' := describes_update_other hR hnd hn (fun n : Node => { n with parent := some y }) (Or.inl h2)
@@ -710,39 +868,6 @@ theorem aggregate_implements (c : Level) (q : String) (contributes : Props → B
       simp [aggregate.cached, aggregateStep, ha, h2]
 
 /-! ## `defineProperty` -/
-
-theorem set_comm {a b : String} (h : a ≠ b) (ps : Props) (u v : Option Val) :
-    (ps.set a u).set b v = (ps.set b v).set a u := by
-  funext x
-  by_cases hb : x = b
-  · subst hb; simp [Props.set, Ne.symm h]
-  · by_cases ha : x = a
-    · subst ha; simp [Props.set, h]
-    · simp [Props.set, ha, hb]
-
-/-- A function that reads only `deps` ignores changes to other properties. -/
-theorem setAll_unlisted {f : Props → Option Val} {deps : List String}
-    (hdeps : ∀ ps p v, p ∉ deps → f (ps.set p v) = f ps) (ps : Props) :
-    ∀ changes : List (String × Option Val), (∀ x ∈ changes, x.1 ∉ deps) → f (ps.setAll changes) = f ps := by
-  intro changes
-  induction changes with
-  | nil => intro _; rfl
-  | cons x changes ih =>
-    intro h
-    simp only [Props.setAll, List.foldr_cons] at ih ⊢
-    rw [hdeps _ _ _ (h x (List.mem_cons_self ..))]
-    exact ih fun y hy => h y (List.mem_cons_of_mem _ hy)
-
-theorem setAll_set (ps : Props) (p : String) (v : Option Val) :
-    ∀ changes : List (String × Option Val), (∀ x ∈ changes, x.1 ≠ p) →
-      (ps.setAll changes).set p v = (ps.set p v).setAll changes := by
-  intro changes
-  induction changes with
-  | nil => intro _; rfl
-  | cons x changes ih =>
-    intro h
-    simp only [Props.setAll, List.foldr_cons] at ih ⊢
-    rw [set_comm (h x (List.mem_cons_self ..)), ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
 
 /-- **`defineProperty_implements`.** `defineProperty`'s cache, the values it
 knows of each node and its computed value, implements `defineProperty`, under
@@ -899,12 +1024,16 @@ theorem groupBy_cached_correct (G : List String) (C : String) {es : List Event} 
 
 /-- **`aggregate_cached_correct`.** -/
 theorem aggregate_cached_correct (c : Level) (hc : c ≠ []) (q : String) (contributes : Props → Bool)
-    (w : Props → Int) {es : List Event} {T' : Tree} (h : Tree.applyAll [] es = some T') :
+    (w : Props → Int) (tracked : List String)
+    (hcon : ∀ ps p v, p ∉ tracked → contributes (ps.set p v) = contributes ps)
+    (hw : ∀ ps p v, p ∉ tracked → w (ps.set p v) = w ps)
+    {es : List Event} {T' : Tree} (h : Tree.applyAll [] es = some T') :
     ∃ U, (aggregate.F c q contributes w []).applyAll
-        ((aggregate.cached c q contributes w).run (aggregate.cached c q contributes w).init es) = some U ∧
+        ((aggregate.cached c q contributes w tracked).run (aggregate.cached c q contributes w tracked).init es) =
+          some U ∧
       U.Equiv (aggregate.F c q contributes w T') :=
-  implements_correct (aggregate_implements c q contributes w) (aggregate_correct c hc q contributes w)
-    (aggregate_denotation c q contributes w) h
+  implements_correct (aggregate_implements c q contributes w tracked hcon hw)
+    (aggregate_correct c hc q contributes w) (aggregate_denotation c q contributes w) h
 
 /-- **`defineProperty_cached_correct`.** -/
 theorem defineProperty_cached_correct (s : Level) (q : String) (f : Props → Option Val)

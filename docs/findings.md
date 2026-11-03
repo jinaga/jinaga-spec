@@ -749,8 +749,22 @@ changes to unlisted properties. That is harmless under the contract the step's
 correctness already needs, that its function reads only the listed properties,
 and the proof uses exactly that.
 
+The aggregate's cache is stale in the same way: the TypeScript refreshes a
+child's snapshot only for the aggregated property, so its description, too,
+allows changes to untracked properties, under the contract that what a child
+contributes reads only the tracked one.
+
 `filter` is not modelled: its TypeScript cache is the complete state of every
 node at or below its scope, which is the tree.
+
+Two differences between the model's steps and the TypeScript's are outside this
+refinement. A TypeScript step's own listener runs before the step passes an
+event on, so it emits a derived change before its cause; the two are at
+different nodes or properties, so either order should reach the same tree, but
+that is not proved here. And the
+TypeScript aggregate passes through an upstream value of its own property, which
+the model's step hides; that matters only when two steps define a property of
+the same name.
 
 ## Where the proof effort went
 

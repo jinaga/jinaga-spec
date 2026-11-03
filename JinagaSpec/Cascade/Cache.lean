@@ -18,8 +18,22 @@ accepts (`implements_run`), so every theorem about the tree step holds of the
 cached one.
 
 The caches here are written to be read next to the TypeScript, as maps from keys
-to values. `filter` is not here: its TypeScript cache is the complete state of
-every node at or below its scope, which is the tree itself.
+to values, and refresh what the TypeScript refreshes: an aggregate's snapshot of
+a child only for the aggregated property, `defineProperty`'s only for the
+properties the caller lists. `filter` is not here: its TypeScript cache is the
+complete state of every node at or below its scope, which is the tree itself.
+
+What is proved is that each cache implements the model's step. Two differences
+between the model's steps and the TypeScript's are outside it. A TypeScript step
+notifies its own listener before passing an event on, so it emits a derived
+change before the event that caused it (`defineProperty`'s new value before the
+dependency's change, an aggregate's before the child's event); the model emits
+them the other way round. The two events are at different nodes or properties,
+so either order should take the output to the same tree; that swap is not proved
+here. And a step that defines a
+property hides that property's upstream value and changes; the TypeScript
+aggregate passes them through, which only matters when an upstream step already
+defines a property of the same name.
 -/
 namespace JinagaSpec.Cascade
 
@@ -104,11 +118,18 @@ structure GroupCache.Describes (G : List String) (c : GroupCache) (T : Tree) : P
   rows : ∀ k, c.rows k = (T.get ([], k)).map (pick G ·.props)
   sizes : ∀ g, c.sizes g = T.countP (isMember G g)
 
+/-- Apply changes to values, last first. A cache that tracks only some
+properties knows a node's values up to changes to the others. -/
+def Props.setAll (ps : Props) (changes : List (String × Option Val)) : Props :=
+  changes.foldr (fun x ps => ps.set x.1 x.2) ps
+
 /-! ## `sum` and `count` -/
 
-/-- `CommutativeAggregateStep`'s cache: each child's parent and values (`items`),
-and each parent's number of contributing children (`contributorCounts`) and
-their total (`aggregateValues`). -/
+/-- `CommutativeAggregateStep`'s cache: each child's parent and a snapshot of
+its values (`items`), and each parent's number of contributing children
+(`contributorCounts`) and their total (`aggregateValues`). The snapshot is
+refreshed only for the tracked properties: the aggregated one, when it is
+mutable. -/
 structure AggCache where
   items : Key → Option (Key × Props)
   count : Key → Nat
@@ -133,9 +154,10 @@ def AggCache.deposit (contributes : Props → Bool) (w : Props → Int) (a : Agg
   else a
 
 /-- `CommutativeAggregateStep`: each child's contribution moves with it; a parent
-whose aggregate changed is told so. -/
-def aggregate.cached (c : Level) (q : String) (contributes : Props → Bool) (w : Props → Int) :
-    Cached AggCache where
+whose aggregate changed is told so. A change to an untracked property is not
+seen. -/
+def aggregate.cached (c : Level) (q : String) (contributes : Props → Bool) (w : Props → Int)
+    (tracked : List String) : Cached AggCache where
   init := ⟨fun _ => none, fun _ => 0, fun _ => 0⟩
   handle a e :=
     let touch (a' : AggCache) (r : Key) : List Event :=
@@ -165,9 +187,11 @@ def aggregate.cached (c : Level) (q : String) (contributes : Props → Bool) (w 
       else if l = c then
         match a.items k with
         | some (r, ps) =>
-          let ps' := ps.set p new
-          let a' := { deposit (withdraw a r ps) r ps' with items := Map.set a.items k (some (r, ps')) }
-          (a', .modified l k p old new :: touch a' r)
+          if p ∈ tracked then
+            let ps' := ps.set p new
+            let a' := { deposit (withdraw a r ps) r ps' with items := Map.set a.items k (some (r, ps')) }
+            (a', .modified l k p old new :: touch a' r)
+          else (a, [.modified l k p old new])
         | none => (a, [.modified l k p old new])
       else (a, [.modified l k p old new])
     | .placed l k x y =>
@@ -179,11 +203,14 @@ def aggregate.cached (c : Level) (q : String) (contributes : Props → Bool) (w 
         | none => (a, [.placed l k x y])
       else (a, [.placed l k x y])
 
-/-- The cache describes the tree: each child's parent and values, and each
+/-- The cache describes the tree: each child's parent, with a snapshot of its
+values that differs from them only by changes to untracked properties, and each
 parent's contributing children's number and total. -/
 structure AggCache.Describes (c : Level) (contributes : Props → Bool) (w : Props → Int)
-    (a : AggCache) (T : Tree) : Prop where
-  items : ∀ k, a.items k = (T.get (c, k)).bind fun n => n.parent.map fun r => (r, n.props)
+    (tracked : List String) (a : AggCache) (T : Tree) : Prop where
+  absent : ∀ k, ((T.get (c, k)).bind (·.parent)) = none → a.items k = none
+  present : ∀ k n r, T.get (c, k) = some n → n.parent = some r → ∃ known changes,
+    a.items k = some (r, known) ∧ (∀ x ∈ changes, x.1 ∉ tracked) ∧ n.props = known.setAll changes
   count : ∀ r, a.count r = (contributors c contributes T r).length
   total : ∀ r, a.total r = ((contributors c contributes T r).map (w ·.2.props)).sum
 
@@ -223,10 +250,6 @@ def defineProperty.cached (s : Level) (q : String) (f : Props → Option Val) (d
         | none => (d, [])
       else (d, [.modified l k p old new])
     | .placed l k a b => (d, [.placed l k a b])
-
-/-- Apply changes to values, last first. -/
-def Props.setAll (ps : Props) (changes : List (String × Option Val)) : Props :=
-  changes.foldr (fun x ps => ps.set x.1 x.2) ps
 
 /-- The cache describes the tree: each node at `s` is cached with its computed
 value, and its current values are the known ones with changes to unlisted
