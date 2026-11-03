@@ -1,5 +1,6 @@
 import JinagaSpec.Cascade.Flatten
 import JinagaSpec.Proofs.Cascade.GroupBy
+import JinagaSpec.Proofs.Cascade.Sig
 
 /-!
 # Cascade: `flatten` at the root
@@ -1163,5 +1164,98 @@ theorem flatten_correct (P C O : String) (I : List String) (hPO : P ≠ O) :
         | some l' =>
           obtain ⟨U, hU, hUe⟩ := flatten_relocated_placed hPO hwf hl hlP hPC he
           exact ⟨U, by rw [applyAll_single]; exact hU, hUe⟩
+
+/-! ## What `flatten` declares -/
+
+theorem source_row : flatten.source P C O [O] = some [P, C] := by simp [flatten.source]
+
+/-- A relocated event is declared at its new level if it was at its old one. -/
+theorem declared_relocated (hPO : P ≠ O) {σ : Sig} {l l' : Level} (hl : flatten.level P C O l = some l')
+    (hPC : l ≠ [P, C]) :
+    (∀ x, (flatten.sig P C O I σ).mutable l' x = σ.mutable l x) ∧
+      (flatten.sig P C O I σ).movable l' = σ.movable l := by
+  have hs := (level_source hPO l l').mp hl
+  simp [flatten.sig, hs, hPC]
+
+/-- **`flatten_keeps`.** `flatten` emits only what its descriptor declares: the
+rule jinaga/jinaga-cascade-core#34 added for `mutablePlacement` and inherited
+values. -/
+theorem flatten_keeps (P C O : String) (I : List String) (hPO : P ≠ O) (σ : Sig) :
+    Keeps (flattenStep P C O I) σ (flatten.sig P C O I σ) := by
+  intro T e _ hd e' he'
+  have relocate : ∀ (l : Level) (ev : Level → Event),
+      e' ∈ ((flatten.level P C O l).map ev).toList → ∃ l', flatten.level P C O l = some l' ∧ e' = ev l' := by
+    intro l ev h
+    cases hl : flatten.level P C O l with
+    | none => simp [hl] at h
+    | some l' => simp [hl] at h; exact ⟨l', rfl, h⟩
+  have rowMutable : ∀ x, (flatten.sig P C O I σ).mutable [O] x =
+      (if x ∈ I then σ.mutable [P] x || σ.movable [P, C] else σ.mutable [P, C] x) := by
+    intro x; simp [flatten.sig, source_row]
+  have rowMovable : (flatten.sig P C O I σ).movable [O] = (σ.movable [P] || σ.movable [P, C]) := by
+    simp [flatten.sig, source_row]
+  cases e with
+  | added l k p ps =>
+    simp only [flattenStep] at he'
+    split at he'
+    · simp at he'
+    · split at he'
+      · split at he' <;> simp at he' <;> subst he' <;> trivial
+      · obtain ⟨_, _, rfl⟩ := relocate _ _ he'; trivial
+  | removed l k =>
+    simp only [flattenStep] at he'
+    split at he'
+    · simp at he'
+    · obtain ⟨_, _, rfl⟩ := relocate _ _ he'; trivial
+  | modified l k x old new =>
+    simp only [flattenStep] at he'
+    split at he'
+    · rename_i hlP; subst hlP
+      split at he'
+      · rename_i hx
+        obtain ⟨c, -, rfl⟩ := List.mem_map.mp he'
+        simp only [Event.Declared, rowMutable, hx, ↓reduceIte, Bool.or_eq_true]
+        exact Or.inl hd
+      · simp at he'
+    · split at he'
+      · simp at he'
+      · rename_i hlP hnot
+        obtain ⟨l', hl, rfl⟩ := relocate _ _ he'
+        by_cases hPC : l = [P, C]
+        · subst hPC
+          have hx : x ∉ I := fun hx => hnot ⟨rfl, hx⟩
+          rw [level_child hPO, Option.some.injEq] at hl
+          subst hl
+          simpa [Event.Declared, rowMutable, hx] using hd
+        · simpa [Event.Declared, (declared_relocated hPO hl hPC).1] using hd
+  | placed l k a b =>
+    simp only [flattenStep] at he'
+    split at he'
+    · rename_i hlP; subst hlP
+      obtain ⟨c, -, rfl⟩ := List.mem_map.mp he'
+      simp only [Event.Declared, rowMovable, Bool.or_eq_true]
+      exact Or.inl hd
+    · split at he'
+      · rename_i hlP hPC; subst hPC
+        split at he'
+        · rcases List.mem_append.mp he' with h | h
+          · split at h
+            · split at h
+              · simp at h
+              · simp at h; subst h
+                simp only [Event.Declared, rowMovable, Bool.or_eq_true]
+                exact Or.inr hd
+            · simp at h
+          · obtain ⟨x, hx, hxe⟩ := List.mem_filterMap.mp h
+            split at hxe
+            · cases hxe
+            · simp at hxe; subst hxe
+              have hxI : x ∈ I := mem_dedup.mp hx
+              simp only [Event.Declared, rowMutable, hxI, ↓reduceIte, Bool.or_eq_true]
+              exact Or.inr hd
+        · simp at he'
+      · rename_i hlP hPC
+        obtain ⟨l', hl, rfl⟩ := relocate _ _ he'
+        simpa [Event.Declared, (declared_relocated hPO hl hPC).2] using hd
 
 end JinagaSpec.Cascade

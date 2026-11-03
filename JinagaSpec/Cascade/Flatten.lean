@@ -1,4 +1,4 @@
-import JinagaSpec.Cascade.Steps
+import JinagaSpec.Cascade.Sig
 
 /-!
 # Cascade: `flatten` at the root
@@ -102,5 +102,22 @@ def flattenStep (P C O : String) (I : List String) : Step where
           flatten.inheritedChanges O I k pa.props pb.props
         | _, _ => []
       else relocate l fun l' => .placed l' k a b
+
+/-- What `flatten` declares can change (its descriptor transform). A flattened
+row moves when its parent or its child can. An inherited value changes when the
+parent's can, or when the child can move to another parent; the child's own
+values change when they could before. Every other kept level declares what its
+input level did. -/
+def flatten.sig (P C O : String) (I : List String) (σ : Sig) : Sig where
+  mutable l x :=
+    match flatten.source P C O l with
+    | none => false
+    | some s =>
+      if s = [P, C] then (if x ∈ I then σ.mutable [P] x || σ.movable [P, C] else σ.mutable [P, C] x)
+      else σ.mutable s x
+  movable l :=
+    match flatten.source P C O l with
+    | none => false
+    | some s => if s = [P, C] then σ.movable [P] || σ.movable [P, C] else σ.movable s
 
 end JinagaSpec.Cascade
