@@ -244,7 +244,18 @@ the properties the caller lists), `sum` and `count` (`aggregate_correct`, for an
 contribution and weight), `groupBy` at the root (`groupBy_correct`, where a
 regroup is one `placed` event), and `filter` at the root (`filter_correct`,
 which adds or removes a whole subtree when a row's visibility changes, and never
-forwards the change that caused it). `tiers_correct` composes five of them into
+forwards the change that caused it).
+
+`flatten` at the root (`Flatten.lean`, `flatten_correct`) replaces each root
+row's parents and their children with one array of rows: a child, under its
+parent's root row, with its parent's values for the inherited names. A parent's
+change reaches each of its rows, a parent's move moves them, and a child that
+moves takes on its new parent's values, which jinaga/jinaga-cascade-core#30
+lost. `flatten_keeps` proves its descriptor rule: a row can move when its parent
+or child can, and an inherited value changes when the parent's can or the child
+can move. The TypeScript matches the model when the descriptors are complete:
+the parent's declares every property its payload carries, and no child payload
+carries one of those names. `tiers_correct` composes five of them into
 the pipeline that reproduced #29 without `enrich`.
 
 The input (`Input.lean`) turns what a caller does into events. A child's key
@@ -378,7 +389,7 @@ harder to hide, but they are not a proof about the TypeScript.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
 5. Cascade: the remaining steps (`min`,
-   `max`, `average`, `pickBy*`, `flatten`, `enrich`, `cumulativeSum`,
+   `max`, `average`, `pickBy*`, `enrich`, `cumulativeSum`,
    `replaceToDelta`), nested scopes, and conformance vectors and mutants that
    bind the model to `@jinaga/cascade-core`.
 
