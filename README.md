@@ -42,7 +42,7 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
-| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), and the steps' caches (`Cache.lean`). |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), and the steps over ordered siblings (`Ordered.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
@@ -256,7 +256,21 @@ lost. `flatten_keeps` proves its descriptor rule: a row can move when its parent
 or child can, and an inherited value changes when the parent's can or the child
 can move. The TypeScript matches the model when the descriptors are complete:
 the parent's declares every property its payload carries, and no child payload
-carries one of those names. `tiers_correct` composes five of them into
+carries one of those names.
+
+`cumulativeSum` and `replaceToDelta` (`Ordered.lean`) give each node values
+computed from its siblings in order: a running total, or the difference from
+the node before it. Both overwrite some properties of one level with values
+computed from the whole input (`overlay.F`); forwarding each event and then
+changing each node whose value changed is correct whatever the values are
+(`overlay_correct`). The order is a parameter, assumed only to be a strict total
+order on nodes with distinct keys, as both TypeScript steps make theirs by
+breaking ties on the key. Under it, a node's predecessor does not depend on the
+order of the tree (`replaceToDelta_denotation`), and both values are what the
+TypeScript computes from its sorted list: the sum over a node's prefix
+(`cumulativeSum_val_sorted`) and the node just before it (`predecessor_sorted`).
+
+`tiers_correct` composes five steps into
 the pipeline that reproduced #29 without `enrich`.
 
 The input (`Input.lean`) turns what a caller does into events. A child's key
@@ -389,8 +403,7 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: the remaining steps (`pickBy*`, `enrich`, `cumulativeSum`,
-   `replaceToDelta`), nested scopes, and conformance vectors and mutants that
+5. Cascade: the remaining steps (`pickBy*`, `enrich`), nested scopes, and conformance vectors and mutants that
    bind the model to `@jinaga/cascade-core`.
 
 ## License

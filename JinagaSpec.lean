@@ -52,3 +52,5 @@ import JinagaSpec.Cascade.Cache
 import JinagaSpec.Proofs.Cascade.Cache
 import JinagaSpec.Cascade.Flatten
 import JinagaSpec.Proofs.Cascade.Flatten
+import JinagaSpec.Cascade.Ordered
+import JinagaSpec.Proofs.Cascade.Ordered

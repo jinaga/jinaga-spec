@@ -823,6 +823,37 @@ changes its row's parent and then each inherited value that differs.
 `flatten_keeps` checks the descriptor rule #34 introduced, `mutablePlacement`
 and inherited mutability, against the step.
 
+## Cascade: steps over ordered siblings
+
+`cumulativeSum` and `replaceToDelta` are the steps whose output depends on an
+order. Both TypeScript steps keep each parent's items in a sorted list and
+update the items after the one that changed. Both sort by their `orderBy`
+values and break ties on the key, so the list is a total order and arrival
+never decides it. The model takes the comparison as a parameter and assumes
+only that it is a strict total order on nodes with distinct keys; how numbers,
+strings and missing values compare is outside it.
+
+The two steps turned out to be one. Each overwrites some properties of one
+level with values computed from the whole input tree: a running total over the
+node and the siblings before it, or the difference between a node's value and
+its predecessor's. A step that forwards each event, hides upstream changes to
+those properties, and then emits a change for every node whose value differs is
+correct whatever the values are (`overlay_correct`), so the order matters only
+to the values. A running total ignores the order of the tree's list without any
+assumption. A predecessor, the greatest of the siblings before a node, needs a
+total order to be unique, and with one it ignores the list's order
+(`latest_perm`). The bridge to the TypeScript is the sorted list: a running
+total is the sum over the node's prefix of it (`cumulativeSum_val_sorted`), and
+a predecessor is the node just before it (`predecessor_sorted`). The model emits
+a change for every node whose value differs, where the TypeScript visits only
+the suffix; the values before the change are the same, so the events are.
+
+`cumulativeSum`'s descriptor transform is the identity: the TypeScript requires
+each summed property to be mutable already, and under that requirement the
+step emits only what its input declares (`cumulativeSum_keeps`).
+`replaceToDelta` declares its outputs mutable at the events' level
+(`replaceToDelta_keeps`).
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -853,6 +884,7 @@ and inherited mutability, against the step.
 | `Proofs/Cascade/Sig.lean` | Each step emits only what its descriptor declares can change or move; keeping a signature composes, so a subscriber to a pipeline's descriptor hears every event. |
 | `Proofs/Cascade/Cache.lean` | The TypeScript caches of `groupBy`, the aggregates and `defineProperty` emit exactly the model's events, so the steps as written are correct. |
 | `Proofs/Cascade/Flatten.lean` | `flatten` at the root is correct: parents' changes and moves reach their rows, and a moved child takes on its new parent's values; it emits only what its descriptor declares. |
+| `Proofs/Cascade/Ordered.lean` | A step that overwrites properties with values computed from the input is correct for any values; `cumulativeSum` and `replaceToDelta` are instances, their values ignore list order under a strict total order, and they match the TypeScript's sorted list. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The
@@ -867,8 +899,8 @@ became 350, with the check included.
 ## Not covered
 
 `field`/`hash`/`time` projections and nested specification projections are
-not modelled. In the cascade model: the steps other than `dropProperty`,
-`defineProperty`, `sum`, `count`, `groupBy` and `filter`; scopes below the root;
-the TypeScript steps' caches; and the output session. Conditions on givens are modelled for the inverse algorithm and
+not modelled. In the cascade model: `pickBy*` and `enrich`; `groupBy`,
+`filter` and `flatten` below the root; and the caches of the steps other than
+`groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
 the stream, not for the split. `buildFeeds`, skeleton canonicity
 and distribution soundness are not started.
