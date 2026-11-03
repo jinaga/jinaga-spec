@@ -42,7 +42,7 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
-| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), and the steps themselves (`Steps.lean`). |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), and the output session (`Session.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
@@ -256,6 +256,19 @@ to exactly what it received; `ops_correct` and `ops_order_independent` carry the
 pipeline theorems from events to operations, under one contract: a row is not
 added twice.
 
+The output session (`Session.lean`) keeps the nested keyed arrays React renders.
+Events name only a node's parent, so the session keeps a placement index and
+locates each event when it queues it; a flush runs the queue in one `setState`.
+The arrays are modelled by their located entries: each node with its level and
+its ancestors' keys, which is a nested keyed array up to the order of each
+array. Nested arrays that hold a tree hold each node where the index locates it
+(`located`), so an accepted event, located and run, leaves arrays that hold the
+new tree (`session_apply`). Queueing and flushing keep the session's invariant,
+and a flush drops no operation (`inv_enqueue`, `inv_flush`). The index records a
+placement before the operation is pushed, because the push can flush and the
+flush can call back: `record_before_push` shows a child queued from that
+callback is dropped if the placement is recorded after.
+
 A step here reads its whole input tree. A TypeScript step keeps a smaller cache
 (an aggregate per parent, the members of each group). That the cache agrees
 with the tree is a separate refinement, not yet proved.
@@ -343,7 +356,7 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: the output session's placement index, the remaining steps (`min`,
+5. Cascade: the remaining steps (`min`,
    `max`, `average`, `pickBy*`, `flatten`, `enrich`, `cumulativeSum`,
    `replaceToDelta`), nested scopes, and conformance vectors and mutants that
    bind the model to `@jinaga/cascade-core`.

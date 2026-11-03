@@ -695,6 +695,38 @@ are always accepted. Its one contract is that a row is not added twice, which
 Jinaga's observer also guarantees. The proof reuses `removeAll` and the subtree
 lemmas from `filter`: removing a row is evicting its subtree.
 
+## Cascade: the output session
+
+The last step's events reach the output session, which turns them into the
+nested keyed arrays a React component renders. An event names a node and its
+parent; to reach the node in nested arrays, the session needs every ancestor's
+key. So it keeps a placement index, the parent of each node it has queued, and
+locates an event when it queues it. Two things must hold.
+
+**The arrays follow the tree.** The model represents the arrays by their
+located entries: a node, its level, and its ancestors' keys. That is a nested
+keyed array up to the order of each array, and keeps what can go wrong: an
+operation at a missing location fails, removing a node removes what is nested
+in it, and moving a node moves its subtree, whose key paths change from under
+the old parent to under the new one. The invariant is only that the arrays are
+nested, each entry's parent entry present, and hold the tree's nodes. That each
+entry sits where the index locates it is then a theorem (`located`), and
+`session_apply` follows event by event, with each proof local to the entries an
+operation touches.
+
+**The index is current whenever a flush can run.** Queueing an operation can
+flush, and `setState` can call back into the session before the queueing
+returns: a subscriber reacts to a row by adding its child. The session's
+invariant is that the arrays hold the flushed tree and the queue, each operation
+located against the index as it was then, replays it to the index. Queueing and
+flushing keep it (`inv_enqueue`, `inv_flush`), and under it no operation is ever
+dropped at a flush. It holds at the callback only because the TypeScript records
+the placement before it pushes the operation. `record_before_push` is the
+counterexample to the other order: the callback's child finds no parent.
+
+Not modelled: the recursive array code itself (`updateArrayAt`), the order of
+items within an array, and the epoch and dispose checks.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -721,6 +753,7 @@ lemmas from `filter`: removing a row is evicting its subtree.
 | `Proofs/Cascade/GroupBy.lean` | `groupBy` at the root, including the move that #29 broke. |
 | `Proofs/Cascade/Filter.lean` | `filter` at the root: visibility is local to a subtree, and admitting or evicting it is exact. |
 | `Proofs/Cascade/Input.lean` | Composed keys are unique; the input's events are always accepted and take it to what it received; pipelines are correct and order independent over what a caller does. |
+| `Proofs/Cascade/Session.lean` | Nested arrays that hold a tree hold each node where the placement index locates it; located events keep them holding the tree; queueing and flushing keep the session's invariant, and recording a placement after the push would drop a child. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The

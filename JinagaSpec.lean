@@ -44,3 +44,5 @@ import JinagaSpec.Proofs.Cascade.Filter
 import JinagaSpec.Proofs.Cascade.Pipeline
 import JinagaSpec.Cascade.Input
 import JinagaSpec.Proofs.Cascade.Input
+import JinagaSpec.Cascade.Session
+import JinagaSpec.Proofs.Cascade.Session
