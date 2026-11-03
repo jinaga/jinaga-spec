@@ -122,7 +122,7 @@ def groupKey (G : List String) (ps : Props) : Key := .group (G.map ps)
 /-- A group's props: its grouping values. -/
 def groupProps (G : List String) : Key → Props
   | .group vs => fun p => ((G.zip vs).find? (·.1 = p)).bind (·.2)
-  | .row _ => fun _ => none
+  | _ => fun _ => none
 
 /-- A row's props without its grouping values, which belong to its group. -/
 def omitProps (G : List String) (ps : Props) : Props := fun p => if p ∈ G then none else ps p

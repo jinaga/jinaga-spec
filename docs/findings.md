@@ -674,6 +674,27 @@ proof rests on two generic lemmas about adding and removing a list of nodes in
 depth order (`addAll`, `removeAll`) and one about what a change at one node
 does (`Local`, `local_update`).
 
+## Cascade: the input
+
+A caller of `@jinaga/cascade-core` adds root rows, and the children of declared
+source arrays, named by their ancestors' natural keys. Two questions about that
+input were open after the first cascade step.
+
+**Can a child arrive before its parent?** Not through Jinaga:
+`jinaga.js`'s observer delivers a nested collection's rows only from inside their
+parent's `onAdded`, and holds early children until then. So an orphan means the
+input was wired out of order. The input refuses it with a diagnostic
+(jinaga/jinaga-cascade-core#33) rather than holding it: a second buffer would
+duplicate the observer's, and would hide the wiring mistake.
+
+**Are composed keys unique?** Yes. `nodeKey_inj` shows a row's key determines
+its natural keys, so a natural key need only be unique among its siblings.
+
+With those, `input_correct` needs no hypothesis about order: the input's events
+are always accepted. Its one contract is that a row is not added twice, which
+Jinaga's observer also guarantees. The proof reuses `removeAll` and the subtree
+lemmas from `filter`: removing a row is evicting its subtree.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -699,6 +720,7 @@ does (`Local`, `local_update`).
 | `Proofs/Cascade/Aggregate.lean` | `sum` and `count`: forwarding each event and changing the aggregate of each affected parent. |
 | `Proofs/Cascade/GroupBy.lean` | `groupBy` at the root, including the move that #29 broke. |
 | `Proofs/Cascade/Filter.lean` | `filter` at the root: visibility is local to a subtree, and admitting or evicting it is exact. |
+| `Proofs/Cascade/Input.lean` | Composed keys are unique; the input's events are always accepted and take it to what it received; pipelines are correct and order independent over what a caller does. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The

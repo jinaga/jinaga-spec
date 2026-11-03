@@ -247,6 +247,15 @@ which adds or removes a whole subtree when a row's visibility changes, and never
 forwards the change that caused it). `tiers_correct` composes five of them into
 the pipeline that reproduced #29 without `enrich`.
 
+The input (`Input.lean`) turns what a caller does into events. A child's key
+is its parent's key and its own natural key (`nodeKey_inj`: composed keys are
+unique). A child whose parent is not present is refused (`orphan_refused`,
+jinaga/jinaga-cascade-core#31), and removing a row removes its subtree, children
+first. `input_correct` proves the input's events are always accepted and take it
+to exactly what it received; `ops_correct` and `ops_order_independent` carry the
+pipeline theorems from events to operations, under one contract: a row is not
+added twice.
+
 A step here reads its whole input tree. A TypeScript step keeps a smaller cache
 (an aggregate per parent, the members of each group). That the cache agrees
 with the tree is a separate refinement, not yet proved.
@@ -334,10 +343,10 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: the remaining steps (`min`, `max`, `average`, `pickBy*`, `flatten`,
-   `enrich`, `cumulativeSum`, `replaceToDelta`), nested scopes, the output
-   session's placement index, and conformance vectors and mutants that bind the
-   model to `@jinaga/cascade-core`.
+5. Cascade: the output session's placement index, the remaining steps (`min`,
+   `max`, `average`, `pickBy*`, `flatten`, `enrich`, `cumulativeSum`,
+   `replaceToDelta`), nested scopes, and conformance vectors and mutants that
+   bind the model to `@jinaga/cascade-core`.
 
 ## License
 

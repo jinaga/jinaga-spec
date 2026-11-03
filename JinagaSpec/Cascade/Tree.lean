@@ -27,11 +27,14 @@ abbrev Level := List String
 abbrev Val := Int
 abbrev Props := String → Option Val
 
-/-- A key. Input rows have `row` keys. A root-level `groupBy` derives a group's
-key from its grouping values, so two groups share a key exactly when they share
-their values. -/
+/-- A key. A root row has a `row` key. A child fed through `collection()` has a
+`child` key: its parent's key and its own natural key, so it is unique within
+its level even when its natural key is not. A root-level `groupBy` derives a
+group's key from its grouping values, so two groups share a key exactly when
+they share their values. -/
 inductive Key where
   | row (n : Nat)
+  | child (parent : Key) (k : Nat)
   | group (values : List (Option Val))
   deriving DecidableEq, Repr
 

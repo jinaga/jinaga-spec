@@ -42,3 +42,5 @@ import JinagaSpec.Proofs.Cascade.Aggregate
 import JinagaSpec.Proofs.Cascade.GroupBy
 import JinagaSpec.Proofs.Cascade.Filter
 import JinagaSpec.Proofs.Cascade.Pipeline
+import JinagaSpec.Cascade.Input
+import JinagaSpec.Proofs.Cascade.Input
