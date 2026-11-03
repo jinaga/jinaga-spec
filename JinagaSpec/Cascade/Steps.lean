@@ -109,9 +109,14 @@ with none, and absent if no child has one. -/
 def minOf (p : String) : List Props → Option Val := fun ps => optMin (ps.filterMap (· p))
 def maxOf (p : String) : List Props → Option Val := fun ps => optMax (ps.filterMap (· p))
 
-/-- `average(p)`: the mean of the defined `p`, absent if no child has one. The
-TypeScript computes a real mean; the model's values are integers, so it divides
-as integers. What the step emits does not depend on the arithmetic. -/
+/-- `average(p)`: the mean of the defined `p`, absent if no child has one.
+
+The model's values are integers, so this divides as integers, and it is a
+stand-in for the TypeScript's real mean rather than a model of it: a change the
+rounding hides (the mean of 1 and 2 against that of 1 and 1) is a change the
+TypeScript emits and this does not. `aggregate_correct` holds for any function
+of the children's values, so it holds of the real mean as well; what the model
+cannot do is compute one. -/
 def averageOf (p : String) : List Props → Option Val := fun ps =>
   match ps.filterMap (· p) with
   | [] => none
