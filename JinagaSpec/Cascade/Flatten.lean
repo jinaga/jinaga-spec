@@ -10,10 +10,22 @@ which is unique within its level, and what was below the child stays below it.
 The parent's other arrays are not kept.
 
 A flattened row takes the parent's values for the names in `I`, the parent's
-properties, and the child's values for the rest. In TypeScript a parent and a
-child may not share a declared name (jinaga/jinaga-cascade-core#38), so a child
-has no value for a name in `I`; the model ignores one if it does, and needs no
-contract on its input.
+properties, and the child's values for the rest. The model ignores a child's
+value for a name in `I`, so it needs no contract on its input. The TypeScript
+agrees with it under two assumptions about the payloads, which the TypeScript
+checks only in part:
+
+- `I` lists every property a parent's payload carries. The TypeScript reads the
+  inherited names from the parent's descriptor; a payload property the
+  descriptor does not declare is inherited on add but never declared mutable,
+  so it is not updated after a move.
+- No child payload carries a name in `I`. jinaga/jinaga-cascade-core#38 rejects
+  a name both descriptors declare, and the types reject every shared name; for
+  an undeclared child property in an untyped pipeline, the TypeScript shows the
+  child's value where the model shows the parent's.
+
+Both are cases of a descriptor that does not declare every property its
+payloads carry.
 
 When a parent's value changes, every one of its flattened rows changes with it.
 When a parent moves to another root row, its flattened rows move with it. When a
@@ -107,7 +119,8 @@ def flattenStep (P C O : String) (I : List String) : Step where
 row moves when its parent or its child can. An inherited value changes when the
 parent's can, or when the child can move to another parent; the child's own
 values change when they could before. Every other kept level declares what its
-input level did. -/
+input level did. This matches the TypeScript transform when `I` is the parent
+descriptor's names and that descriptor is complete (see the header). -/
 def flatten.sig (P C O : String) (I : List String) (σ : Sig) : Sig where
   mutable l x :=
     match flatten.source P C O l with

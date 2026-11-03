@@ -806,8 +806,15 @@ type level and, for declared names, at run time.
 
 The model takes the parent's names `I` as a parameter: a row shows the parent's
 values for those and the child's for the rest. It ignores a child's value for a
-name in `I`, so it needs no contract, and agrees with TypeScript whenever names
-are disjoint. The proof reads the output through `get`: each output level comes
+name in `I`, so it needs no contract on its input. The TypeScript agrees with it
+when two things hold of the payloads. `I` must list every property a parent's
+payload carries: the TypeScript reads the inherited names from the parent's
+descriptor, so an undeclared parent property is inherited on add but never
+declared mutable, and is not updated after a move. And no child payload may
+carry a name in `I`: #38 rejects names both descriptors declare, and the types
+reject every shared name, but an undeclared child property in an untyped
+pipeline shows the child's value. Both are the same gap: a descriptor that does
+not declare every property its payloads carry. The proof reads the output through `get`: each output level comes
 from one input level, and a row from a child and its parent. The frame lemmas
 say an event changes the output only at its image; the work is in the events
 that reach many rows, a parent's change or move, and a child's move, which

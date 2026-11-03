@@ -253,7 +253,9 @@ change reaches each of its rows, a parent's move moves them, and a child that
 moves takes on its new parent's values, which jinaga/jinaga-cascade-core#30
 lost. `flatten_keeps` proves its descriptor rule: a row can move when its parent
 or child can, and an inherited value changes when the parent's can or the child
-can move. `tiers_correct` composes five of them into
+can move. The TypeScript matches the model when the descriptors are complete:
+the parent's declares every property its payload carries, and no child payload
+carries one of those names. `tiers_correct` composes five of them into
 the pipeline that reproduced #29 without `enrich`.
 
 The input (`Input.lean`) turns what a caller does into events. A child's key
