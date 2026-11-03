@@ -10,6 +10,8 @@ to the arrays, and the arrays then hold the new tree (`session_apply`).
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-! ## Entries and the tree they hold -/
 
 theorem holds_iff {A : Arrays} {l : Level} {kp : List Key} {k : Key} :
@@ -549,7 +551,10 @@ theorem record_before_push (ps : Props) :
     let S : Session := ⟨[], [], []⟩
     (∃ S₁ S₂ S₃, S.enqueue row = some S₁ ∧ S₁.flush = some S₂ ∧ S₂.enqueue child = some S₃) ∧
     (∃ S₂, ({ S with queue := [.add [] [] (.row 1) ps] } : Session).flush = some S₂ ∧
-      S₂.enqueue child = none) :=
-  ⟨⟨_, _, _, rfl, rfl, rfl⟩, ⟨_, rfl, rfl⟩⟩
+      S₂.enqueue child = none) := by
+  simp [Session.enqueue, Session.flush, Tree.locate, Tree.ancestors, Tree.ancestorsN, Tree.apply,
+    Tree.get, Tree.parentOk, Arrays.runAll, Arrays.run, Arrays.addNode, Arrays.parentHeld]
+
+end
 
 end JinagaSpec.Cascade

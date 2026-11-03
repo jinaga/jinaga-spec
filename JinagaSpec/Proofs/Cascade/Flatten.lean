@@ -11,6 +11,8 @@ and its parent. `flatten_correct` follows event by event.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 variable {P C O : String} {I : List String}
 
 /-! ## Levels -/
@@ -1257,5 +1259,7 @@ theorem flatten_keeps (P C O : String) (I : List String) (hPO : P ≠ O) (σ : S
       · rename_i hlP hPC
         obtain ⟨l', hl, rfl⟩ := relocate _ _ he'
         simpa [Event.Declared, (declared_relocated hPO hl hPC).2] using hd
+
+end
 
 end JinagaSpec.Cascade

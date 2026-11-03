@@ -15,6 +15,8 @@ TypeScript writes them are correct (`…_cached_correct`).
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-! ## Implementing a step -/
 
 /-- **`implements_run`.** Over events the input accepts, a cached step emits
@@ -1045,5 +1047,7 @@ theorem defineProperty_cached_correct (s : Level) (q : String) (f : Props → Op
       U.Equiv (defineProperty.F s q f T') :=
   implements_correct (defineProperty_implements s q f deps hq hdeps)
     (defineProperty_correct s q f deps hq hdeps) (defineProperty_denotation s q f) h
+
+end
 
 end JinagaSpec.Cascade

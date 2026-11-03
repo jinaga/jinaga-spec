@@ -13,6 +13,8 @@ descriptor hears every one (`ops_heard`).
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 theorem declared_added (σ : Sig) (l : Level) (k : Key) (p : Option Key) (ps : Props) :
     (Event.added l k p ps).Declared σ := trivial
 
@@ -332,5 +334,7 @@ theorem tiersSig_facts :
       tiersSig.mutable ["groups"] "total" = true ∧ tiersSig.mutable [] "tierTotal" = true ∧
       tiersSig.mutable ["groups", "items"] "v" = false := by
   decide
+
+end
 
 end JinagaSpec.Cascade

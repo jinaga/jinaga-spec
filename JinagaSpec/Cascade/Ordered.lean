@@ -45,6 +45,8 @@ where the model compares a step to its cache; these caches are not modelled.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-- `lt` is a strict total order on nodes with distinct keys. -/
 structure StrictTotal (lt : Key × Props → Key × Props → Bool) : Prop where
   irrefl : ∀ a, lt a a = false
@@ -97,13 +99,14 @@ def siblings (c : Level) (T : Tree) (p : Option Key) : List (Key × Props) :=
 /-! ## `cumulativeSum` -/
 
 /-- The running total of `x` at node `(c, k)`: the sum of `x` over the node and
-its siblings before it, an absent value counting 0. The TypeScript writes it
+its siblings before it, an absent value or an object counting 0
+(`toFiniteNumber`). The TypeScript writes it
 over `x` (`composeOutputProps`). -/
 def cumulativeSum.val (c : Level) (lt : Key × Props → Key × Props → Bool) (T : Tree) (k : Key)
     (x : String) : Option Val :=
-  (T.get (c, k)).map fun n =>
+  (T.get (c, k)).map fun n => .int
     (((siblings c T n.parent).filter fun y => y.1 == k || lt y (k, n.props)).map
-      fun y => (y.2 x).getD 0).sum
+      fun y => ((y.2 x).map Val.num).getD 0).sum
 
 /-- `cumulativeSum(c, orderBy, P)`. -/
 def cumulativeSum.F (c : Level) (lt : Key × Props → Key × Props → Bool) (P : List String) :
@@ -135,13 +138,14 @@ def predecessor (c : Level) (lt : Key × Props → Key × Props → Bool) (T : T
 abbrev Deltas := List (String × String)
 
 /-- Output `o` of node `(c, k)`, for the pair `(p, o)`: its `p` less its
-predecessor's, an absent value counting 0, and the first node's predecessor
-counting 0 (`computeDeltaForProperty`). -/
+predecessor's, an absent value or an object counting 0, and the first node's
+predecessor counting 0 (`computeDeltaForProperty`). -/
 def replaceToDelta.val (c : Level) (lt : Key × Props → Key × Props → Bool) (D : Deltas) (T : Tree)
     (k : Key) (o : String) : Option Val :=
   match D.find? (·.2 = o), T.get (c, k) with
   | some (p, _), some n =>
-    some ((n.props p).getD 0 - (((predecessor c lt T k n).bind (·.2 p)).getD 0))
+    some (.int (((n.props p).map Val.num).getD 0 -
+      (((predecessor c lt T k n).bind (·.2 p)).map Val.num).getD 0))
   | _, _ => none
 
 /-- `replaceToDelta(…, orderBy, properties, outputs)` on the events at `c`. -/
@@ -151,5 +155,7 @@ def replaceToDelta.F (c : Level) (lt : Key × Props → Key × Props → Bool) (
 
 def replaceToDeltaStep (c : Level) (lt : Key × Props → Key × Props → Bool) (D : Deltas) : Step :=
   overlayStep c (D.map (·.2)) (replaceToDelta.val c lt D)
+
+end
 
 end JinagaSpec.Cascade

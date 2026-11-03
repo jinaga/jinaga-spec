@@ -37,6 +37,8 @@ defines a property of the same name.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-- A step that reads only its own cache. -/
 structure Cached (C : Type) where
   init : C
@@ -137,7 +139,7 @@ structure AggCache where
 
 /-- A parent's aggregate: absent while no child contributes. -/
 def AggCache.value (a : AggCache) (r : Key) : Option Val :=
-  if a.count r = 0 then none else some (a.total r)
+  if a.count r = 0 then none else some (.int (a.total r))
 
 /-- Take a child's contribution from parent `r`. -/
 def AggCache.withdraw (contributes : Props → Bool) (w : Props → Int) (a : AggCache) (r : Key)
@@ -260,5 +262,7 @@ structure DefineCache.Describes (s : Level) (f : Props → Option Val) (deps : L
   present : ∀ k n, T.get (s, k) = some n → ∃ known changes,
     d.items k = some (known, f n.props) ∧ (∀ x ∈ changes, x.1 ∉ deps) ∧
       n.props = known.setAll changes
+
+end
 
 end JinagaSpec.Cascade

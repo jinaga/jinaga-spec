@@ -11,6 +11,8 @@ each step handles the rest.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 variable {s : Level} {φ : Key → Props → Props}
 
 def mapNode (s : Level) (φ : Key → Props → Props) (id : Id) (n : Node) : Node :=
@@ -274,5 +276,7 @@ theorem defineProperty_correct (s : Level) (q : String) (f : Props → Option Va
             simp [hn, mapNode, hsame, Props.set_comm _ hp]
           · rfl
     · simpa [hl, applyAll_single] using mapProps_forward hwf he (by simp [Event.propsLevel, hl])
+
+end
 
 end JinagaSpec.Cascade

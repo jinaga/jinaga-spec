@@ -17,6 +17,8 @@ list (`prefix_of_sorted`, `latest_of_sorted`).
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 variable {c : Level} {Q : List String} {val : Tree → Key → String → Option Val}
 
 /-! ## `overlay` -/
@@ -309,7 +311,7 @@ theorem cumulativeSum_denotation (c : Level) (lt : Key × Props → Key × Props
     | none => rfl
     | some n =>
       simp only [Option.map_some, Option.some.injEq]
-      exact perm_sum_int (((siblings_perm hT hU h _).filter _).map _)
+      rw [perm_sum_int (((siblings_perm hT hU h _).filter _).map _)]
 
 /-- **`cumulativeSum_correct`.** -/
 theorem cumulativeSum_correct (c : Level) (lt : Key × Props → Key × Props → Bool)
@@ -350,7 +352,8 @@ theorem cumulativeSum_val_sorted (hlt : StrictTotal lt) {T : Tree} (hwf : T.WF) 
     (hn : T.get (c, k) = some n) {pre post : List (Key × Props)}
     (hperm : (siblings c T n.parent).Perm (pre ++ (k, n.props) :: post))
     (hs : (pre ++ (k, n.props) :: post).Pairwise fun a b => lt a b = true) (x : String) :
-    cumulativeSum.val c lt T k x = some (((pre ++ [(k, n.props)]).map fun y => (y.2 x).getD 0).sum) := by
+    cumulativeSum.val c lt T k x =
+      some (.int (((pre ++ [(k, n.props)]).map fun y => ((y.2 x).map Val.num).getD 0).sum)) := by
   have hnd := (hperm.map (·.1)).nodup_iff.mp (nodup_siblings hwf.nodup n.parent)
   simp only [cumulativeSum.val, hn, Option.map_some, Option.some.injEq]
   rw [perm_sum_int ((hperm.filter _).map _)]
@@ -546,5 +549,7 @@ theorem cumulativeSum_keeps (c : Level) (lt : Key × Props → Key × Props → 
 theorem replaceToDelta_keeps (c : Level) (lt : Key × Props → Key × Props → Bool) (D : Deltas)
     (σ : Sig) : Keeps (replaceToDeltaStep c lt D) σ (overlay.sig c (D.map (·.2)) σ) :=
   overlay_keeps _ _ _ σ
+
+end
 
 end JinagaSpec.Cascade
