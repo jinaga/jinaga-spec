@@ -855,6 +855,23 @@ item after both changes and changes back: moving `A` between `B` and `C`, with
 values 1, 2 and 3, emits `C`: 6 → 5, then 5 → 6. The output ends with the
 model's values, but a subscriber sees the transient one.
 
+`pickByMin` and `pickByMax` raised the question of what a property holds when it
+holds a node. Abstractly, the step adds one thing per parent, which child is
+picked; the object the TypeScript writes is the picked child's props, which the
+tree already holds. That suggested references between nodes. But a later step
+can remove the node a reference points at: `flatten` removes the parents' level,
+and a pick on a root row among its parents would then point at nothing, where
+the TypeScript's copy survives. A step cannot reach inside an object, so
+downstream the copy is the step's output, not a cache of it. A value is now a
+number or an object (`Val.obj`), and a pick is a copy of the picked child's
+props. The reference is the TypeScript's cache, its heap and `lastEmitted`. The
+pick is the same step as the running total, one level up: correct for any values
+(`pickBy_correct`), independent of the list's order under a strict total order
+(`pickBy_denotation`), and the top of the TypeScript's heap (`picked_sorted`).
+The TypeScript updates the copy only on the picked child's declared mutable
+properties, so the copy is current when the child's descriptor is complete; the
+model, which hears every change, does not see that gap.
+
 `cumulativeSum`'s descriptor transform is the identity: the TypeScript requires
 each summed property to be mutable already, and under that requirement the
 step emits only what its input declares (`cumulativeSum_keeps`).
@@ -891,7 +908,7 @@ step emits only what its input declares (`cumulativeSum_keeps`).
 | `Proofs/Cascade/Sig.lean` | Each step emits only what its descriptor declares can change or move; keeping a signature composes, so a subscriber to a pipeline's descriptor hears every event. |
 | `Proofs/Cascade/Cache.lean` | The TypeScript caches of `groupBy`, the aggregates and `defineProperty` emit exactly the model's events, so the steps as written are correct. |
 | `Proofs/Cascade/Flatten.lean` | `flatten` at the root is correct: parents' changes and moves reach their rows, and a moved child takes on its new parent's values; it emits only what its descriptor declares. |
-| `Proofs/Cascade/Ordered.lean` | A step that overwrites properties with values computed from the input is correct for any values; `cumulativeSum` and `replaceToDelta` are instances, their values ignore list order under a strict total order, and they match the TypeScript's sorted list. |
+| `Proofs/Cascade/Ordered.lean` | A step that overwrites properties with values computed from the input is correct for any values; `cumulativeSum`, `replaceToDelta` and `pickBy*` are instances, their values ignore list order under a strict total order, and they match the TypeScript's sorted list or heap. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The
@@ -906,7 +923,7 @@ became 350, with the check included.
 ## Not covered
 
 `field`/`hash`/`time` projections and nested specification projections are
-not modelled. In the cascade model: `pickBy*` and `enrich`; `groupBy`,
+not modelled. In the cascade model: `enrich`; `groupBy`,
 `filter` and `flatten` below the root; and the caches of the steps other than
 `groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
 the stream, not for the split. `buildFeeds`, skeleton canonicity

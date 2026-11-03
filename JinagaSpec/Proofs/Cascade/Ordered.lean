@@ -550,6 +550,39 @@ theorem replaceToDelta_keeps (c : Level) (lt : Key × Props → Key × Props →
     (σ : Sig) : Keeps (replaceToDeltaStep c lt D) σ (overlay.sig c (D.map (·.2)) σ) :=
   overlay_keeps _ _ _ σ
 
+/-! ## `pickByMin`, `pickByMax` -/
+
+/-- Under a strict total order, the pick does not depend on the order of the
+tree's list. -/
+theorem pickBy_denotation (hlt : StrictTotal lt) (c : Level) (has : Props → Bool) (q : String) :
+    Denotation (pickBy.F c lt has q) :=
+  overlay_denotation fun T U hT hU h => by
+    funext k x
+    unfold pickBy.val picked
+    rw [latest_perm hlt ((nodup_siblings hT.nodup (some k)).sublist (List.filter_sublist.map _))
+      ((siblings_perm hT hU h _).filter _)]
+
+/-- **`pickBy_correct`.** -/
+theorem pickBy_correct (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool)
+    (q : String) : Correct (pickByStep c lt has q) (pickBy.F c lt has q) :=
+  overlay_correct _ _ _
+
+/-- The pick is the last of the children with a comparison value, sorted: the
+top of the TypeScript's heap. -/
+theorem picked_sorted (hlt : StrictTotal lt) {T : Tree} (hwf : T.WF) {has : Props → Bool} {k : Key}
+    {l : List (Key × Props)} (hperm : ((siblings c T (some k)).filter fun y => has y.2).Perm l)
+    (hs : l.Pairwise fun a b => lt a b = true) :
+    picked c lt has T k = l.getLast? := by
+  unfold picked
+  rw [latest_perm hlt ((nodup_siblings hwf.nodup (some k)).sublist (List.filter_sublist.map _)) hperm]
+  exact latest_sorted hlt l hs
+
+/-- `pickBy*` declares its property mutable at the parents' level
+(`transformPickByMinMaxDescriptor`). -/
+theorem pickBy_keeps (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool)
+    (q : String) (σ : Sig) : Keeps (pickByStep c lt has q) σ (overlay.sig c.dropLast [q] σ) :=
+  overlay_keeps _ _ _ σ
+
 end
 
 end JinagaSpec.Cascade
