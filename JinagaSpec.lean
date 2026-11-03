@@ -46,3 +46,5 @@ import JinagaSpec.Cascade.Input
 import JinagaSpec.Proofs.Cascade.Input
 import JinagaSpec.Cascade.Session
 import JinagaSpec.Proofs.Cascade.Session
+import JinagaSpec.Cascade.Sig
+import JinagaSpec.Proofs.Cascade.Sig
