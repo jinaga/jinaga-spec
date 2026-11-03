@@ -727,6 +727,31 @@ counterexample to the other order: the callback's child finds no parent.
 Not modelled: the recursive array code itself (`updateArrayAt`), the order of
 items within an array, and the epoch and dispose checks.
 
+## Cascade: the steps' caches
+
+A step in the model reads its whole input tree; a TypeScript step reads only the
+cache it keeps. For `groupBy`, an aggregate and `defineProperty`, the cache is
+modelled as the TypeScript keeps it, and the cached step implements the model's
+step: when the cache describes the input tree and the tree accepts an event, the
+cached step emits exactly the step's events, and its new cache describes the
+new tree.
+
+The descriptions say what each cache must hold. `groupBy`'s holds each root
+row's grouping values and each group's number of root rows; deciding whether a
+group is created or removed reads only the size. An aggregate's holds each
+child's parent and values, and each parent's number of contributing children
+and their total, so a parent with no contributors has no aggregate, as the model
+requires. `defineProperty`'s is the interesting one: the TypeScript records a
+node's values when it is added, and afterwards only changes to the properties
+the caller lists. Its view of a node is out of date for every other property.
+The description says how: the current values are the known ones with some
+changes to unlisted properties. That is harmless under the contract the step's
+correctness already needs, that its function reads only the listed properties,
+and the proof uses exactly that.
+
+`filter` is not modelled: its TypeScript cache is the complete state of every
+node at or below its scope, which is the tree.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -754,6 +779,7 @@ items within an array, and the epoch and dispose checks.
 | `Proofs/Cascade/Filter.lean` | `filter` at the root: visibility is local to a subtree, and admitting or evicting it is exact. |
 | `Proofs/Cascade/Input.lean` | Composed keys are unique; the input's events are always accepted and take it to what it received; pipelines are correct and order independent over what a caller does. |
 | `Proofs/Cascade/Session.lean` | Nested arrays that hold a tree hold each node where the placement index locates it; located events keep them holding the tree; queueing and flushing keep the session's invariant, and recording a placement after the push would drop a child. |
+| `Proofs/Cascade/Cache.lean` | The TypeScript caches of `groupBy`, the aggregates and `defineProperty` emit exactly the model's events, so the steps as written are correct. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The

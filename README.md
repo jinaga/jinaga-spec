@@ -42,7 +42,7 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
-| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), and the output session (`Session.lean`). |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), and the steps' caches (`Cache.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
@@ -270,8 +270,16 @@ flush can call back: `record_before_push` shows a child queued from that
 callback is dropped if the placement is recorded after.
 
 A step here reads its whole input tree. A TypeScript step keeps a smaller cache
-(an aggregate per parent, the members of each group). That the cache agrees
-with the tree is a separate refinement, not yet proved.
+and reads only that. `Cache.lean` models the caches of `groupBy` (each row's
+grouping values, each group's size), the aggregates (each child's parent and
+values, each parent's count and total) and `defineProperty` (the values it
+knows, and its computed value). Each implements its step (`…_implements`): from
+a cache that describes the input, it emits exactly the step's events, and its
+new cache describes the new input. So over any input the protocol accepts the
+cached step emits what the step emits (`implements_run`), and is correct
+(`…_cached_correct`). `defineProperty`'s cache tracks only the properties the
+caller lists, and needs the same contract as its correctness: `f` reads only
+those.
 
 ## Reading the definitions
 
