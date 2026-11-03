@@ -100,17 +100,17 @@ theorem defineProperty_keeps (s : Level) (q : String) (f : Props → Option Val)
         · simp at he'
     · simp at he'; subst he'; exact mono hd
 
-theorem aggregate_keeps (c : Level) (q : String) (contributes : Props → Bool) (w : Props → Int)
-    (σ : Sig) : Keeps (aggregateStep c q contributes w) σ (aggregate.sig c q σ) := by
+theorem aggregate_keeps (c : Level) (q : String) (contributes : Props → Bool)
+    (g : List Props → Option Val) (σ : Sig) : Keeps (aggregateStep c q contributes g) σ (aggregate.sig c q σ) := by
   intro T e _ hd e' he'
   have mono : ∀ {x : Event}, x.Declared σ → x.Declared (aggregate.sig c q σ) :=
     fun h => declared_mono (σ := σ) (σ' := aggregate.sig c q σ)
       (fun l p h' => by simp [aggregate.sig, h']) (fun _ h' => h') h
   -- Every change the step makes is to the aggregate of a parent.
   have touch : ∀ (U : Tree) (k : Key) (x : Event),
-      x ∈ (if aggregate c contributes w T k = aggregate c contributes w U k then []
-        else [Event.modified c.dropLast k q (aggregate c contributes w T k)
-          (aggregate c contributes w U k)]) → x.Declared (aggregate.sig c q σ) := by
+      x ∈ (if aggregate c contributes g T k = aggregate c contributes g U k then []
+        else [Event.modified c.dropLast k q (aggregate c contributes g T k)
+          (aggregate c contributes g U k)]) → x.Declared (aggregate.sig c q σ) := by
     intro U k x hx
     split at hx
     · simp at hx

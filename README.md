@@ -240,8 +240,9 @@ theorem order_independent (hS : Correct S F) (hF : Denotation F) {T T₁ T₂ : 
 ```
 
 Proved correct: `dropProperty`, `defineProperty` (when its function reads only
-the properties the caller lists), `sum` and `count` (`aggregate_correct`, for any
-contribution and weight), `groupBy` at the root (`groupBy_correct`, where a
+the properties the caller lists), the aggregates (`aggregate_correct`, for any
+function of the contributing children's values, and a denotation when that
+function ignores their order: `sum` and `count`, `min`, `max` and `average`), `groupBy` at the root (`groupBy_correct`, where a
 regroup is one `placed` event), and `filter` at the root (`filter_correct`,
 which adds or removes a whole subtree when a row's visibility changes, and never
 forwards the change that caused it). `tiers_correct` composes five of them into
@@ -377,9 +378,8 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: the remaining steps (`min`,
-   `max`, `average`, `pickBy*`, `flatten`, `enrich`, `cumulativeSum`,
-   `replaceToDelta`), nested scopes, and conformance vectors and mutants that
+5. Cascade: the remaining steps (`pickBy*`, `flatten`, `enrich`,
+   `cumulativeSum`, `replaceToDelta`), nested scopes, and conformance vectors and mutants that
    bind the model to `@jinaga/cascade-core`.
 
 ## License

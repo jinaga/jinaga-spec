@@ -62,40 +62,72 @@ def defineProperty (s : Level) (q : String) (f : Props → Option Val) (deps : L
       else [.modified l k p old new]
     | e => [e]
 
-/-! ## `sum` and `count` -/
+/-! ## Aggregates: `sum`, `count`, `min`, `max`, `average` -/
 
 /-- The children of `(c.dropLast, k)` at level `c` that contribute to its
 aggregate. -/
 def contributors (c : Level) (contributes : Props → Bool) (T : Tree) (k : Key) : Tree :=
   T.filter fun e => e.1.1 = c ∧ e.2.parent = some k ∧ contributes e.2.props
 
-/-- The aggregate of a parent's contributing children. It is absent when there
-are none, however many there were before. -/
-def aggregate (c : Level) (contributes : Props → Bool) (w : Props → Int) (T : Tree) (k : Key) :
-    Option Val :=
+/-- The aggregate of a parent's contributing children: `g` of their values. It is
+absent when there are none, however many there were before. -/
+def aggregate (c : Level) (contributes : Props → Bool) (g : List Props → Option Val) (T : Tree)
+    (k : Key) : Option Val :=
   match contributors c contributes T k with
   | [] => none
-  | cs => some (cs.map (w ·.2.props)).sum
+  | cs => g (cs.map (·.2.props))
 
-/-- A commutative aggregate over the children at level `c`, written to property
-`q` of their parents. `sum(p)` contributes each child's `p`: from every child if
-`p` is immutable (an absent value counts 0), and from the children where it is
-defined if it is mutable. `count` contributes 1 from every child. -/
-def aggregate.F (c : Level) (q : String) (contributes : Props → Bool) (w : Props → Int)
+/-- An aggregate over the children at level `c`, written to property `q` of their
+parents. -/
+def aggregate.F (c : Level) (q : String) (contributes : Props → Bool) (g : List Props → Option Val)
     (T : Tree) : Tree :=
-  T.mapProps c.dropLast fun k ps => ps.set q (aggregate c contributes w T k)
+  T.mapProps c.dropLast fun k ps => ps.set q (aggregate c contributes g T k)
+
+/-- `sum(p)` and `count`: the total of each child's weight. `sum(p)` weighs a
+child by its `p`: every child if `p` is immutable (an absent value counts 0),
+and the children where it is defined if it is mutable. `count` weighs each 1. -/
+def sumBy (w : Props → Int) : List Props → Option Val := fun ps => some (ps.map w).sum
+
+/-- One value into a running least. -/
+def minStep (x : Val) : Option Val → Option Val
+  | none => some x
+  | some a => some (min x a)
+
+/-- One value into a running greatest. -/
+def maxStep (x : Val) : Option Val → Option Val
+  | none => some x
+  | some a => some (max x a)
+
+/-- The least of some values, if there are any. -/
+def optMin : List Val → Option Val := List.foldr minStep none
+
+/-- The greatest of some values, if there are any. -/
+def optMax : List Val → Option Val := List.foldr maxStep none
+
+/-- `min(p)` and `max(p)`: the least or greatest defined `p`, ignoring children
+with none, and absent if no child has one. -/
+def minOf (p : String) : List Props → Option Val := fun ps => optMin (ps.filterMap (· p))
+def maxOf (p : String) : List Props → Option Val := fun ps => optMax (ps.filterMap (· p))
+
+/-- `average(p)`: the mean of the defined `p`, absent if no child has one. The
+TypeScript computes a real mean; the model's values are integers, so it divides
+as integers. What the step emits does not depend on the arithmetic. -/
+def averageOf (p : String) : List Props → Option Val := fun ps =>
+  match ps.filterMap (· p) with
+  | [] => none
+  | vs => some (vs.sum / vs.length)
 
 /-- Forward each event. When a child at `c` arrives, leaves, changes or moves,
 emit a change to the aggregate of each parent it affects, if the aggregate
 changed. A parent arrives with its aggregate; upstream changes to `q` on a
 parent are hidden. -/
-def aggregateStep (c : Level) (q : String) (contributes : Props → Bool) (w : Props → Int) :
+def aggregateStep (c : Level) (q : String) (contributes : Props → Bool) (g : List Props → Option Val) :
     Step where
   handle T e :=
     match T.apply e with
     | none => []
     | some T' =>
-      let agg := aggregate c contributes w
+      let agg := aggregate c contributes g
       let touch (k : Key) : List Event :=
         if agg T k = agg T' k then [] else [.modified c.dropLast k q (agg T k) (agg T' k)]
       let parentOf (k : Key) : List Key := ((T.get (c, k)).bind (·.parent)).toList
