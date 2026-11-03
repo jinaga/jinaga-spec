@@ -410,6 +410,15 @@ theorem upClosed_outside {T : Tree} (hwf : T.WF) (x : Id) :
     simp [Tree.parentOk] at this
   · exact hs (inSubtree_child hl hm hq h)
 
+/-- Equivalent trees agree on every node's visibility, so `filter` maps them to
+equivalent outputs. -/
+theorem filter_denotation (P : Props → Bool) : Denotation (filter.F P) := by
+  refine ⟨fun _ hT => filterF_wf hT, fun T U _ _ h id => ?_⟩
+  have hvis : visible P T id = visible P U id :=
+    visible_congr (S := fun _ => True) (fun _ _ _ _ _ _ _ => trivial)
+      (fun z _ => by rw [h z]) (fun r _ => by rw [h ([], r)]) trivial
+  rw [get_filterF, get_filterF, hvis, h id]
+
 /-! ## An event that changes one node -/
 
 theorem inSubtree_self (T : Tree) (x : Id) : inSubtree T x x = true := by
