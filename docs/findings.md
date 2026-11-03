@@ -727,6 +727,33 @@ counterexample to the other order: the callback's child finds no parent.
 Not modelled: the recursive array code itself (`updateArrayAt`), the order of
 items within an array, and the epoch and dispose checks.
 
+## Cascade: what can change after add
+
+A consumer of a step's events subscribes to what the step's descriptor declares:
+the output session registers `onModified` only for each level's mutable
+properties. A change the descriptor does not declare is never heard.
+jinaga/jinaga-cascade-core#30 was such a case: `flatten` emitted changes to a
+flattened row's inherited values after a move, but declared none of them, so
+the output kept the old parent's values. Fixing it showed two more facts the
+descriptor had to carry. Whether a level's nodes can move is a value of its own
+(`mutablePlacement`), and each level's mutable properties belong to that level:
+a list shared by every level let a `sum` miss `replaceToDelta`'s outputs, and
+let a property at one level change what another of the same name declared.
+
+The model's signature is that part of a descriptor: a mutable flag per level and
+property, and a movable flag per level. Each step's `….sig` mirrors its
+TypeScript descriptor transform, and `…_keeps` proves that for every event its
+input declares, the step emits only events its output declares. The proofs are
+per event and need no invariant: the step's own events show what it can emit.
+`groupBy` is the one that turns a change into a move, which is why
+`movable [C]` holds exactly when a grouping value is mutable. Declaring more
+than a step emits is allowed.
+
+`ops_heard` is the property the output relies on: for anything a caller does, a
+subscriber to the pipeline's descriptor hears every event. The TypeScript
+checks the moves half of this by test: every `onPlaced` a pipeline emits is at
+a level its descriptor declares movable.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -754,6 +781,7 @@ items within an array, and the epoch and dispose checks.
 | `Proofs/Cascade/Filter.lean` | `filter` at the root: visibility is local to a subtree, and admitting or evicting it is exact. |
 | `Proofs/Cascade/Input.lean` | Composed keys are unique; the input's events are always accepted and take it to what it received; pipelines are correct and order independent over what a caller does. |
 | `Proofs/Cascade/Session.lean` | Nested arrays that hold a tree hold each node where the placement index locates it; located events keep them holding the tree; queueing and flushing keep the session's invariant, and recording a placement after the push would drop a child. |
+| `Proofs/Cascade/Sig.lean` | Each step emits only what its descriptor declares can change or move; keeping a signature composes, so a subscriber to a pipeline's descriptor hears every event. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The
