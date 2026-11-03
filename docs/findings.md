@@ -828,10 +828,13 @@ and inherited mutability, against the step.
 `cumulativeSum` and `replaceToDelta` are the steps whose output depends on an
 order. Both TypeScript steps keep each parent's items in a sorted list and
 update the items after the one that changed. Both sort by their `orderBy`
-values and break ties on the key, so the list is a total order and arrival
-never decides it. The model takes the comparison as a parameter and assumes
-only that it is a strict total order on nodes with distinct keys; how numbers,
-strings and missing values compare is outside it.
+values and break ties on the key. The model takes the comparison as a parameter
+and assumes that it is a strict total order on nodes with distinct keys. The
+TypeScript does not guarantee that: the key makes the comparison total, but both
+comparators compare two numbers as numbers and anything else as strings, which
+is not transitive (`2 < 10`, `10 < "11"`, `"11" < 2`). With mixed `orderBy`
+types, the sorted list depends on the order items arrived in. The proofs apply
+when the values make the comparison transitive, such as values of one type.
 
 The two steps turned out to be one. Each overwrites some properties of one
 level with values computed from the whole input tree: a running total over the
@@ -844,9 +847,13 @@ assumption. A predecessor, the greatest of the siblings before a node, needs a
 total order to be unique, and with one it ignores the list's order
 (`latest_perm`). The bridge to the TypeScript is the sorted list: a running
 total is the sum over the node's prefix of it (`cumulativeSum_val_sorted`), and
-a predecessor is the node just before it (`predecessor_sorted`). The model emits
-a change for every node whose value differs, where the TypeScript visits only
-the suffix; the values before the change are the same, so the events are.
+a predecessor is the node just before it (`predecessor_sorted`). These are
+correspondences of values, not of events. The model emits one change for each
+node whose value differs. When an `orderBy` change moves an item, the TypeScript
+updates the items after its old place and then those after its new one, so an
+item after both changes and changes back: moving `A` between `B` and `C`, with
+values 1, 2 and 3, emits `C`: 6 → 5, then 5 → 6. The output ends with the
+model's values, but a subscriber sees the transient one.
 
 `cumulativeSum`'s descriptor transform is the identity: the TypeScript requires
 each summed property to be mutable already, and under that requirement the

@@ -263,9 +263,10 @@ computed from its siblings in order: a running total, or the difference from
 the node before it. Both overwrite some properties of one level with values
 computed from the whole input (`overlay.F`); forwarding each event and then
 changing each node whose value changed is correct whatever the values are
-(`overlay_correct`). The order is a parameter, assumed only to be a strict total
-order on nodes with distinct keys, as both TypeScript steps make theirs by
-breaking ties on the key. Under it, a node's predecessor does not depend on the
+(`overlay_correct`). The order is a parameter, assumed to be a strict total order
+on nodes with distinct keys. That is a condition on the TypeScript: its key
+tie-break makes the comparison total, but comparing mixed types as strings can
+make it intransitive (`2 < 10 < "11" < 2`). Under it, a node's predecessor does not depend on the
 order of the tree (`replaceToDelta_denotation`), and both values are what the
 TypeScript computes from its sorted list: the sum over a node's prefix
 (`cumulativeSum_val_sorted`) and the node just before it (`predecessor_sorted`).

@@ -13,13 +13,17 @@ whatever the values are, so long as equivalent trees give the same values.
 
 ## The order
 
-Both TypeScript steps sort each parent's items into a total order, so the order
-items arrive in never matters. `cumulativeSum` compares its `orderBy` values in
-turn, then the keys; `replaceToDelta` compares its `orderBy` values, which must
-include the collection key, then the keys. The model takes the comparison as a
-parameter `lt` on a node's key and props, and assumes only that it is a strict
-total order on nodes with distinct keys (`StrictTotal`). How values compare
-(numbers, strings, missing values) is outside the model.
+Both TypeScript steps sort each parent's items. `cumulativeSum` compares its
+`orderBy` values in turn, then the keys; `replaceToDelta` compares its `orderBy`
+values, which must include the collection key, then the keys. The model takes
+the comparison as a parameter `lt` on a node's key and props, and assumes that
+it is a strict total order on nodes with distinct keys (`StrictTotal`).
+
+That is a condition on the TypeScript, not something it guarantees. Breaking
+ties on the key makes the comparison total, but not transitive: both comparators
+compare two numbers as numbers and anything else as strings, so `2 < 10`,
+`10 < "11"` and `"11" < 2`. The proofs apply to a pipeline whose `orderBy`
+values make the comparison transitive, such as values of one type.
 
 `cumulativeSum`'s values need no assumption about `lt` to ignore list order;
 the assumption ties them to the TypeScript's sorted list (`prefix_of_sorted`).
@@ -27,13 +31,17 @@ the assumption ties them to the TypeScript's sorted list (`prefix_of_sorted`).
 siblings before a node is unique only under a total order (`latest_perm`), and
 it is the node just before in the sorted list (`latest_of_sorted`).
 
-## The TypeScript's suffix
+## The TypeScript's events
 
-The TypeScript keeps each parent's items in a sorted list and updates only the
-items after the one that changed. The model emits a change for every node whose
-value differs, which is the same set of events: the values before the change
-are the same (`overlayStep` does not need this, and `Cache.lean` is where the
-model compares a step to its cache).
+The TypeScript keeps each parent's items in a sorted list and updates the items
+after the one that changed. The model emits one change for each node whose value
+differs, which is what the sorted list's values say they should become. The two
+agree on values, not on events: when an `orderBy` value moves an item, the
+TypeScript takes it out of the list, updating the items after it, and puts it
+back, updating the items after its new place. An item after both places changes
+and changes back. Moving `A` between `B` and `C`, with values 1, 2 and 3, emits
+`C`: 6 → 5, then 5 → 6, where the model emits nothing for `C`. `Cache.lean` is
+where the model compares a step to its cache; these caches are not modelled.
 -/
 namespace JinagaSpec.Cascade
 
