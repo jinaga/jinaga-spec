@@ -32,3 +32,13 @@ import JinagaSpec.Proofs.Stream
 import JinagaSpec.Proofs.Exact
 import JinagaSpec.GivenConditions
 import JinagaSpec.Proofs.GivenConditions
+import JinagaSpec.Cascade.Tree
+import JinagaSpec.Cascade.Step
+import JinagaSpec.Cascade.Steps
+import JinagaSpec.Proofs.Cascade.Tree
+import JinagaSpec.Proofs.Cascade.Step
+import JinagaSpec.Proofs.Cascade.MapProps
+import JinagaSpec.Proofs.Cascade.Aggregate
+import JinagaSpec.Proofs.Cascade.GroupBy
+import JinagaSpec.Proofs.Cascade.Filter
+import JinagaSpec.Proofs.Cascade.Pipeline
