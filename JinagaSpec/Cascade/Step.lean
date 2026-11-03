@@ -15,8 +15,7 @@ parent before its children.
 
 The implementation here reads the whole input tree. A TypeScript step keeps a
 smaller cache instead (an aggregate per parent, the members of each group).
-That the cache agrees with the tree is a separate refinement; what is proved
-here is that the events each step emits are the right ones.
+`Cache.lean` models those caches and proves that they emit the same events.
 -/
 namespace JinagaSpec.Cascade
 

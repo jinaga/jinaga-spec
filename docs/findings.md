@@ -753,6 +753,44 @@ than a step emits is allowed.
 subscriber to the pipeline's descriptor hears every event. The TypeScript
 checks the moves half of this by test: every `onPlaced` a pipeline emits is at
 a level its descriptor declares movable.
+## Cascade: the steps' caches
+
+A step in the model reads its whole input tree; a TypeScript step reads only the
+cache it keeps. For `groupBy`, an aggregate and `defineProperty`, the cache is
+modelled as the TypeScript keeps it, and the cached step implements the model's
+step: when the cache describes the input tree and the tree accepts an event, the
+cached step emits exactly the step's events, and its new cache describes the
+new tree.
+
+The descriptions say what each cache must hold. `groupBy`'s holds each root
+row's grouping values and each group's number of root rows; deciding whether a
+group is created or removed reads only the size. An aggregate's holds each
+child's parent and values, and each parent's number of contributing children
+and their total, so a parent with no contributors has no aggregate, as the model
+requires. `defineProperty`'s is the interesting one: the TypeScript records a
+node's values when it is added, and afterwards only changes to the properties
+the caller lists. Its view of a node is out of date for every other property.
+The description says how: the current values are the known ones with some
+changes to unlisted properties. That is harmless under the contract the step's
+correctness already needs, that its function reads only the listed properties,
+and the proof uses exactly that.
+
+The aggregate's cache is stale in the same way: the TypeScript refreshes a
+child's snapshot only for the aggregated property, so its description, too,
+allows changes to untracked properties, under the contract that what a child
+contributes reads only the tracked one.
+
+`filter` is not modelled: its TypeScript cache is the complete state of every
+node at or below its scope, which is the tree.
+
+Two differences between the model's steps and the TypeScript's are outside this
+refinement. A TypeScript step's own listener runs before the step passes an
+event on, so it emits a derived change before its cause; the two are at
+different nodes or properties, so either order should reach the same tree, but
+that is not proved here. And the
+TypeScript aggregate passes through an upstream value of its own property, which
+the model's step hides; that matters only when two steps define a property of
+the same name.
 
 ## Where the proof effort went
 
@@ -782,6 +820,7 @@ a level its descriptor declares movable.
 | `Proofs/Cascade/Input.lean` | Composed keys are unique; the input's events are always accepted and take it to what it received; pipelines are correct and order independent over what a caller does. |
 | `Proofs/Cascade/Session.lean` | Nested arrays that hold a tree hold each node where the placement index locates it; located events keep them holding the tree; queueing and flushing keep the session's invariant, and recording a placement after the push would drop a child. |
 | `Proofs/Cascade/Sig.lean` | Each step emits only what its descriptor declares can change or move; keeping a signature composes, so a subscriber to a pipeline's descriptor hears every event. |
+| `Proofs/Cascade/Cache.lean` | The TypeScript caches of `groupBy`, the aggregates and `defineProperty` emit exactly the model's events, so the steps as written are correct. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The

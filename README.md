@@ -42,7 +42,7 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
-| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), and what each step declares can change (`Sig.lean`). |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), and the steps' caches (`Cache.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
@@ -280,8 +280,19 @@ does (`ops_declared`), and a subscriber to its descriptor hears all of them
 (`ops_heard`).
 
 A step here reads its whole input tree. A TypeScript step keeps a smaller cache
-(an aggregate per parent, the members of each group). That the cache agrees
-with the tree is a separate refinement, not yet proved.
+and reads only that. `Cache.lean` models the caches of `groupBy` (each row's
+grouping values, each group's size), the aggregates (each child's parent and
+values, each parent's count and total) and `defineProperty` (the values it
+knows, and its computed value). Each implements its step (`…_implements`): from
+a cache that describes the input, it emits exactly the step's events, and its
+new cache describes the new input. So over any input the protocol accepts the
+cached step emits what the step emits (`implements_run`), and is correct
+(`…_cached_correct`). Like the TypeScript, an aggregate refreshes its snapshot
+of a child only for the aggregated property, and `defineProperty` only for the
+properties the caller lists; each needs the contract that what it computes reads
+only those. The order in which a TypeScript step notifies listeners, which puts
+a derived change before its cause, is not modelled: the two events touch different
+nodes or properties, but that either order reaches the same tree is not proved.
 
 ## Reading the definitions
 
