@@ -38,10 +38,6 @@ theorem nodup_dedup {α : Type} [DecidableEq α] : ∀ (l : List α), (dedup l).
 
 /-! ## `get` of the output -/
 
-theorem get_append (A B : Tree) (id : Id) : Tree.get (A ++ B) id = (A.get id).or (B.get id) := by
-  simp only [Tree.get, List.find?_append]
-  cases A.find? (·.1 == id) <;> simp
-
 theorem get_groups (L : List Key) (node : Key → Node) (id : Id) :
     Tree.get (L.map fun g => (([], g), node g)) id =
       if id.1 = [] ∧ id.2 ∈ L then some (node id.2) else none := by
@@ -74,8 +70,7 @@ theorem get_items (T : Tree) (l : Level) (k : Key) :
       · subst hx
         by_cases h : l' = l ∧ k' = k
         · obtain ⟨rfl, rfl⟩ := h; simp
-        · have : ¬((l', k') = (l, k)) := fun he => h (Prod.mk.inj he)
-          simp [h, this]
+        · simp [h]
       · simp [Ne.symm hx, hx]
 
 /-- Whether some root row belongs to group `g`, read through `get`. -/
@@ -199,8 +194,8 @@ theorem any_filter_irrel {α : Type} (f p : α → Bool) (L : List α)
   | cons e L ih =>
     have ih' := ih fun e' he' => h e' (List.mem_cons_of_mem _ he')
     by_cases hp : p e = true
-    · simp [List.filter_cons, hp, ih']
-    · simp [List.filter_cons, hp, ih', h e List.mem_cons_self (by simpa using hp)]
+    · simp [hp, ih']
+    · simp [hp, ih', h e List.mem_cons_self (by simpa using hp)]
 
 theorem any_map_irrel {α : Type} (f : α → Bool) (g : α → α) (L : List α)
     (h : ∀ e ∈ L, f (g e) = f e) : (L.map g).any f = L.any f := by

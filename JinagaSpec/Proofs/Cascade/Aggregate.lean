@@ -74,7 +74,7 @@ theorem filter_filter_irrel {α : Type} (p q : α → Bool) (L : List α)
     by_cases hq : q e = true
     · simp [List.filter_cons, hq, ih']
     · have hp := h e List.mem_cons_self (by simpa using hq)
-      simp [List.filter_cons, hq, hp, ih']
+      simp [hq, hp, ih']
 
 /-- The contributors to parent `k` are unchanged by an event on node `y`
 that contributes to `k` neither before nor after. -/
@@ -157,7 +157,7 @@ theorem touchAll {P : Level} {q : String} {T' : Tree} :
         rwa [this]
       obtain ⟨V, hV, hVe⟩ := ih v₁' v₂ U hnd hv' (fun k hk => hex k (List.mem_cons_of_mem _ hk)) hU'
       refine ⟨V, ?_, hVe⟩
-      rw [touches_cons, if_pos hsame, List.nil_append, htail]; exact hV
+      rw [touches_cons, ite_eq_left hsame, List.nil_append, htail]; exact hV
     · have happ : U.apply (.modified P j q (v₁ j) (v₂ j)) = some (U.update (P, j)
           fun n => { n with props := n.props.set q (v₂ j) }) :=
         apply_modified.mpr ⟨_, hUj, by simp [mapNode, Props.set], hsame, rfl⟩
@@ -175,7 +175,7 @@ theorem touchAll {P : Level} {q : String} {T' : Tree} :
           · rfl
       obtain ⟨V, hV, hVe⟩ := ih v₁' v₂ _ hnd hv' (fun k hk => hex k (List.mem_cons_of_mem _ hk)) hU1
       refine ⟨V, ?_, hVe⟩
-      rw [touches_cons, if_neg hsame, List.singleton_append, Tree.applyAll, happ, Option.bind_some,
+      rw [touches_cons, ite_eq_right hsame, List.singleton_append, Tree.applyAll, happ, Option.bind_some,
         htail]
       exact hV
 

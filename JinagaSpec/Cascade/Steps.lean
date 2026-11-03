@@ -178,4 +178,64 @@ def groupBy (G : List String) (C : String) : Step where
     | .modified l k p old new => [.modified (C :: l) k p old new]
     | .placed l k a b => [.placed (C :: l) k a b]
 
+/-! ## `filter` at the root -/
+
+/-- Walk up `n` parents from node `(l, k)`, to the key of its ancestor `n`
+levels up. -/
+def Tree.walk (T : Tree) : Nat → Level → Key → Option Key
+  | 0, _, k => some k
+  | n + 1, l, k => (T.get (l, k)).bind fun m => m.parent.bind fun q => T.walk n l.dropLast q
+
+/-- A node is visible when its root ancestor passes the predicate. -/
+def visible (P : Props → Bool) (T : Tree) (id : Id) : Bool :=
+  match T.walk id.1.length id.1 id.2 with
+  | some r => (T.get ([], r)).any (P ·.props)
+  | none => false
+
+/-- `filter(P)` at the root: the root rows that pass `P`, with their subtrees. -/
+def filter.F (P : Props → Bool) (T : Tree) : Tree :=
+  T.filter fun e => visible P T e.1
+
+/-- Whether node `y` is `x` or below it. -/
+def inSubtree (T : Tree) (x y : Id) : Bool :=
+  x.1.length ≤ y.1.length && y.1.take x.1.length == x.1 &&
+    T.walk (y.1.length - x.1.length) y.1 y.2 == some x.2
+
+/-- Add `x` and its subtree, parents first, with their current values. -/
+def admit (T : Tree) (x : Id) : List Event :=
+  ((T.filter (inSubtree T x ·.1)).mergeSort fun a b => a.1.1.length ≤ b.1.1.length).map
+    fun e => .added e.1.1 e.1.2 e.2.parent e.2.props
+
+/-- Remove `x` and its subtree, children first. -/
+def evict (T : Tree) (x : Id) : List Event :=
+  ((T.filter (inSubtree T x ·.1)).mergeSort fun a b => b.1.1.length ≤ a.1.1.length).map
+    fun e => .removed e.1.1 e.1.2
+
+/-- A row's arrival or departure passes through when it is visible. When a
+predicate property of a root row changes, or a row moves, its visibility may
+change: if it becomes visible, add it and its subtree with their current values;
+if it becomes hidden, remove its subtree, children first. The change itself is
+then not forwarded, because the added rows already carry it.
+
+`deps` is the caller's list of the properties `P` reads (`mutableProperties` in
+TypeScript). The step is correct when `P` ignores every other property. -/
+def filterStep (P : Props → Bool) (deps : List String) : Step where
+  handle T e :=
+    match T.apply e with
+    | none => []
+    | some T' =>
+      let change (x : Id) : List Event :=
+        match visible P T x, visible P T' x with
+        | true, true => [e]
+        | false, true => admit T' x
+        | true, false => evict T x
+        | false, false => []
+      match e with
+      | .added l k _ _ => if visible P T' (l, k) then [e] else []
+      | .removed l k => if visible P T (l, k) then [e] else []
+      | .modified l k p _ _ =>
+        if l = [] ∧ p ∈ deps then change (l, k)
+        else if visible P T (l, k) then [e] else []
+      | .placed l k _ _ => change (l, k)
+
 end JinagaSpec.Cascade

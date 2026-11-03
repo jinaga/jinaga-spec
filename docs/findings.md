@@ -632,6 +632,48 @@ inverses, and 401 of 2,440 remove inverses (16%), against 228 of 1,349 plain
 lost-direction inverses (17%). So the alternative, attaching only the
 existential conditions, is not worth its extra lemma.
 
+## Cascade: identity and placement
+
+`@jinaga/cascade-core` maintains a tree of keyed arrays, and each pipeline step
+turns input events into output events. jinaga/jinaga-cascade-core#29 found a
+pipeline whose output depended on the order rows arrived. Generalizing it turned
+up the same fault in several steps: a step that moved or admitted a row re-sent
+it as new, carrying only the values it had when it first arrived, and left its
+subtree behind. The fix in jinaga/jinaga-cascade-core#32 addresses a node by its
+level and key, makes its parent a changeable value, and adds a `placed` event.
+This model was written to prove that design.
+
+`Tree.apply` states the protocol, and each refusal corresponds to a bug the
+review of #32 found. Requiring a change's `old` value to be current forbids the
+double count `filter` produced when it forwarded the change that admitted a row.
+Requiring `old ≠ new` forbids no-op events. Refusing to remove a node with
+children forced the `filter` and `flatten` fixes, and the input step's removal of
+children before their parent.
+
+Proving the steps turned up two things the TypeScript still does differently:
+
+- **An aggregate after its last contributor leaves.** The denotation gives a
+  parent with no contributing children no aggregate, however many it had before.
+  The TypeScript leaves the last value it computed (`0` for `sum`), so a parent
+  that lost its children and one that never had any differ. That depends on
+  history, which `order_independent` forbids.
+- **No-op events.** `sum` emits a change when a child contributes `0`, and
+  `pickBy*` emits on every update to a picked row, even when nothing changed.
+  `apply` refuses both.
+
+Two steps are correct only under a contract on the caller's function:
+`defineProperty` and `filter` re-evaluate only when a property the caller lists
+changes, so the function must read no other property. In TypeScript that list is
+`mutableProperties`.
+
+The proofs split along the steps. `andThen_correct` needs nothing about the
+steps beyond their own theorems, so `tiers_correct`, a five-step pipeline, has a
+one-term proof. The hardest step was `filter`: when a row's visibility changes,
+the step adds its subtree parents first or removes it children first, and the
+proof rests on two generic lemmas about adding and removing a list of nodes in
+depth order (`addAll`, `removeAll`) and one about what a change at one node
+does (`Local`, `local_update`).
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -652,6 +694,12 @@ existential conditions, is not worth its extra lemma.
 | `Proofs/Exact.lean` | Two match lists over the same unknowns read as one are a conjunction; the exact inverses are sound on the new graph and complete, so a stream that applies their changes is exact. |
 | `Proofs/Stream.lean` | The candidates cover every change a replica reads, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
 | `Proofs/GivenConditions.lean` | Reducing conditions on a given to a match keeps what a replica reads, so the stream of a conditioned specification is exact. |
+| `Proofs/Cascade/Tree.lean`, `Step.lean` | `apply` keeps a tree well formed and takes equivalent trees to equivalent trees; correct steps compose, and a pipeline's output depends only on its input. |
+| `Proofs/Cascade/MapProps.lean` | `dropProperty` and `defineProperty`, which change the props of one level. |
+| `Proofs/Cascade/Aggregate.lean` | `sum` and `count`: forwarding each event and changing the aggregate of each affected parent. |
+| `Proofs/Cascade/GroupBy.lean` | `groupBy` at the root, including the move that #29 broke. |
+| `Proofs/Cascade/Filter.lean` | `filter` at the root: visibility is local to a subtree, and admitting or evicting it is exact. |
+| `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
@@ -665,6 +713,8 @@ became 350, with the check included.
 ## Not covered
 
 `field`/`hash`/`time` projections and nested specification projections are
-not modelled. Conditions on givens are modelled for the inverse algorithm and
+not modelled. In the cascade model: the steps other than `dropProperty`,
+`defineProperty`, `sum`, `count`, `groupBy` and `filter`; scopes below the root;
+the TypeScript steps' caches; and the output session. Conditions on givens are modelled for the inverse algorithm and
 the stream, not for the split. `buildFeeds`, skeleton canonicity
 and distribution soundness are not started.

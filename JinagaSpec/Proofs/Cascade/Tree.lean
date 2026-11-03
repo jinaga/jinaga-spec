@@ -18,6 +18,10 @@ theorem get_cons (id id' : Id) (n : Node) (T : Tree) :
     Tree.get ((id', n) :: T) id = if id' = id then some n else T.get id := by
   by_cases h : id' = id <;> simp [Tree.get, h]
 
+theorem get_append (A B : Tree) (id : Id) : Tree.get (A ++ B) id = (A.get id).or (B.get id) := by
+  simp only [Tree.get, List.find?_append]
+  cases A.find? (·.1 == id) <;> simp
+
 theorem get_filter (T : Tree) (x id : Id) :
     Tree.get (T.filter (·.1 != x)) id = if id = x then none else T.get id := by
   induction T with
@@ -28,7 +32,7 @@ theorem get_filter (T : Tree) (x id : Id) :
     · subst hx
       simp only [List.filter_cons, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, ih, get_cons]
       by_cases h : id = id' <;> simp [h, Ne.symm]
-    · simp only [List.filter_cons, bne_iff_ne, ne_eq, hx, not_false_eq_true, decide_true,
+    · simp only [List.filter_cons, bne_iff_ne, ne_eq, hx, not_false_eq_true,
         ↓reduceIte, get_cons, ih]
       by_cases h : id = x
       · subst h; simp [hx]
@@ -94,7 +98,7 @@ theorem keys_filter (T : Tree) (x : Id) :
     (T.filter (·.1 != x)).map (·.1) = (T.map (·.1)).filter (· != x) := by
   induction T with
   | nil => rfl
-  | cons e T ih => by_cases h : e.1 = x <;> simp [List.filter_cons, h, ih]
+  | cons e T ih => by_cases h : e.1 = x <;> simp [h, ih]
 
 theorem keys_update (T : Tree) (x : Id) (f : Node → Node) :
     (T.update x f).map (·.1) = T.map (·.1) := by

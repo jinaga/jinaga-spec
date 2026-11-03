@@ -42,6 +42,8 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), and the steps themselves (`Steps.lean`). |
+| `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
 | `ports/typescript/` | Runs the vectors against `jinaga.js`, holds reference implementations of `isWellFormed` and of the inverse algorithm, and audits `jinaga.js`'s parser. |
@@ -205,6 +207,50 @@ moves them onto one new first match, `read_reduceGivenConditions` proves that
 the reduced specification reads the same results, and `stream_correct_given`
 carries the stream theorem over to it.
 
+## Cascade pipelines
+
+`@jinaga/cascade-core` maintains a tree of keyed arrays as rows arrive and
+leave. Each pipeline step reacts to one input event at a time and emits events
+for its output. jinaga/jinaga-cascade-core#29 showed the output could depend on
+the order rows arrived: `groupBy` moved a row by removing it and adding it again
+with the values it had at its first add.
+
+The model addresses a node by its level and its key, and makes its parent a
+value that changes (`placed`). `Tree.apply` is the protocol: it refuses adding
+a node that exists or whose parent does not, removing a node that still has
+children, a change whose old value is stale or equals the new one, and a move
+to a missing parent.
+
+A step is correct for a denotation `F` when its events take `F T` to `F T'`
+for every event that takes the input from `T` to `T'`:
+
+```lean
+def Correct (S : Step) (F : Tree → Tree) : Prop :=
+  ∀ (T : Tree) e T', T.WF → T.apply e = some T' →
+    ∃ U, (F T).applyAll (S.handle T e) = some U ∧ U.Equiv (F T')
+
+theorem andThen_correct (h₁ : Correct S₁ F₁) (hF₁ : Denotation F₁)
+    (h₂ : Correct S₂ F₂) (hF₂ : Denotation F₂) : Correct (S₁.andThen S₂ F₁) (F₂ ∘ F₁)
+
+theorem order_independent (hS : Correct S F) (hF : Denotation F) {T T₁ T₂ : Tree}
+    {es₁ es₂ : List Event} (hT : T.WF)
+    (h₁ : T.applyAll es₁ = some T₁) (h₂ : T.applyAll es₂ = some T₂) (h : T₁.Equiv T₂) :
+    ∃ U₁ U₂, (F T).applyAll (run S T es₁) = some U₁ ∧ (F T).applyAll (run S T es₂) = some U₂ ∧
+      U₁.Equiv U₂
+```
+
+Proved correct: `dropProperty`, `defineProperty` (when its function reads only
+the properties the caller lists), `sum` and `count` (`aggregate_correct`, for any
+contribution and weight), `groupBy` at the root (`groupBy_correct`, where a
+regroup is one `placed` event), and `filter` at the root (`filter_correct`,
+which adds or removes a whole subtree when a row's visibility changes, and never
+forwards the change that caused it). `tiers_correct` composes five of them into
+the pipeline that reproduced #29 without `enrich`.
+
+A step here reads its whole input tree. A TypeScript step keeps a smaller cache
+(an aggregate per parent, the members of each group). That the cache agrees
+with the tree is a separate refinement, not yet proved.
+
 ## Reading the definitions
 
 `Split.lean` and `Hoist.lean` are in a deliberately **portable subset**:
@@ -288,6 +334,10 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
+5. Cascade: the remaining steps (`min`, `max`, `average`, `pickBy*`, `flatten`,
+   `enrich`, `cumulativeSum`, `replaceToDelta`), nested scopes, the output
+   session's placement index, and conformance vectors and mutants that bind the
+   model to `@jinaga/cascade-core`.
 
 ## License
 
