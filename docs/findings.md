@@ -845,7 +845,7 @@ and inherited mutability, against the step.
 | `Proofs/GivenConditions.lean` | Reducing conditions on a given to a match keeps what a replica reads, so the stream of a conditioned specification is exact. |
 | `Proofs/Cascade/Tree.lean`, `Step.lean` | `apply` keeps a tree well formed and takes equivalent trees to equivalent trees; correct steps compose, and a pipeline's output depends only on its input. |
 | `Proofs/Cascade/MapProps.lean` | `dropProperty` and `defineProperty`, which change the props of one level. |
-| `Proofs/Cascade/Aggregate.lean` | `sum` and `count`: forwarding each event and changing the aggregate of each affected parent. |
+| `Proofs/Cascade/Aggregate.lean` | The aggregates (`sum`, `count`, `min`, `max`, `average`): forwarding each event and changing the aggregate of each affected parent. Correctness holds for any function of the contributing children's values; the denotation needs it to ignore their order. |
 | `Proofs/Cascade/GroupBy.lean` | `groupBy` at the root, including the move that #29 broke. |
 | `Proofs/Cascade/Filter.lean` | `filter` at the root: visibility is local to a subtree, and admitting or evicting it is exact. |
 | `Proofs/Cascade/Input.lean` | Composed keys are unique; the input's events are always accepted and take it to what it received; pipelines are correct and order independent over what a caller does. |

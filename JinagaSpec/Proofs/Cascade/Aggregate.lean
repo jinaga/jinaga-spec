@@ -1,7 +1,7 @@
 import JinagaSpec.Proofs.Cascade.MapProps
 
 /-!
-# Cascade: `sum` and `count`
+# Cascade: aggregates
 
 `aggregate_correct`: forwarding each event, then emitting one change per
 affected parent whose aggregate changed, keeps the output equal to the
@@ -11,7 +11,7 @@ a given parent contribute to it.
 -/
 namespace JinagaSpec.Cascade
 
-variable {c : Level} {contributes : Props → Bool} {w : Props → Int}
+variable {c : Level} {contributes : Props → Bool} {g : List Props → Option Val}
 
 /-! ## A tree's list order does not change an aggregate -/
 
@@ -32,23 +32,86 @@ theorem perm_of_equiv {T U : Tree} (hT : T.WF) (hU : U.WF) (h : T.Equiv U) : T.P
   · intro hm; exact mem_of_get ((h id).symm.trans (get_of_mem hT.nodup hm))
   · intro hm; exact mem_of_get ((h id).trans (get_of_mem hU.nodup hm))
 
-theorem aggregate_eq_of_perm {T U : Tree} {k : Key}
+/-- An aggregate reads only which children contribute. -/
+theorem aggregate_eq_of_eq {T U : Tree} {k : Key}
+    (h : contributors c contributes T k = contributors c contributes U k) :
+    aggregate c contributes g T k = aggregate c contributes g U k := by
+  unfold aggregate; rw [h]
+
+/-- An aggregate whose `g` ignores the order of its values ignores the order of
+the tree. -/
+theorem aggregate_eq_of_perm (hg : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → g l₁ = g l₂) {T U : Tree} {k : Key}
     (h : (contributors c contributes T k).Perm (contributors c contributes U k)) :
-    aggregate c contributes w T k = aggregate c contributes w U k := by
+    aggregate c contributes g T k = aggregate c contributes g U k := by
   unfold aggregate
   cases hT : contributors c contributes T k <;> cases hU : contributors c contributes U k
   · rfl
   · rw [hT, hU] at h; exact absurd h.symm.eq_nil (by simp)
   · rw [hT, hU] at h; exact absurd h.eq_nil (by simp)
-  · rw [hT, hU] at h; simp only [Option.some.injEq]; exact perm_sum_int (h.map _)
+  · rw [hT, hU] at h; exact hg _ _ (h.map _)
 
 theorem aggregate_denotation (c : Level) (q : String) (contributes : Props → Bool)
-    (w : Props → Int) : Denotation (aggregate.F c q contributes w) := by
+    (g : List Props → Option Val) (hg : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → g l₁ = g l₂) :
+    Denotation (aggregate.F c q contributes g) := by
   refine ⟨fun _ hT => mapProps_wf hT, fun T U hT hU h id => ?_⟩
   simp only [aggregate.F, get_mapProps, h id]
   congr 1; funext n; unfold mapNode; split
-  · dsimp only; rw [aggregate_eq_of_perm ((perm_of_equiv hT hU h).filter _)]
+  · dsimp only; rw [aggregate_eq_of_perm hg ((perm_of_equiv hT hU h).filter _)]
   · rfl
+
+/-! ## The aggregates ignore order -/
+
+theorem sumBy_perm (w : Props → Int) : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → sumBy w l₁ = sumBy w l₂ :=
+  fun _ _ h => by simp only [sumBy, Option.some.injEq]; exact perm_sum_int (h.map _)
+
+theorem minStep_comm (x y : Val) (a : Option Val) : minStep x (minStep y a) = minStep y (minStep x a) := by
+  cases a with
+  | none => simp only [minStep, Option.some.injEq]; exact Int.min_comm x y
+  | some a =>
+    simp only [minStep, Option.some.injEq]
+    rw [← Int.min_assoc, Int.min_comm x y, Int.min_assoc]
+
+theorem optMin_perm : ∀ {l₁ l₂ : List Val}, l₁.Perm l₂ → optMin l₁ = optMin l₂ := by
+  intro l₁ l₂ h
+  induction h with
+  | nil => rfl
+  | cons x _ ih => simp only [optMin, List.foldr_cons] at ih ⊢; rw [ih]
+  | swap x y l => simp only [optMin, List.foldr_cons]; exact minStep_comm y x _
+  | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+
+theorem maxStep_comm (x y : Val) (a : Option Val) : maxStep x (maxStep y a) = maxStep y (maxStep x a) := by
+  cases a with
+  | none => simp only [maxStep, Option.some.injEq]; exact Int.max_comm x y
+  | some a =>
+    simp only [maxStep, Option.some.injEq]
+    rw [← Int.max_assoc, Int.max_comm x y, Int.max_assoc]
+
+theorem optMax_perm : ∀ {l₁ l₂ : List Val}, l₁.Perm l₂ → optMax l₁ = optMax l₂ := by
+  intro l₁ l₂ h
+  induction h with
+  | nil => rfl
+  | cons x _ ih => simp only [optMax, List.foldr_cons] at ih ⊢; rw [ih]
+  | swap x y l => simp only [optMax, List.foldr_cons]; exact maxStep_comm y x _
+  | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+
+theorem minOf_perm (p : String) : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → minOf p l₁ = minOf p l₂ :=
+  fun _ _ h => optMin_perm (h.filterMap _)
+
+theorem maxOf_perm (p : String) : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → maxOf p l₁ = maxOf p l₂ :=
+  fun _ _ h => optMax_perm (h.filterMap _)
+
+theorem averageOf_perm (p : String) :
+    ∀ l₁ l₂ : List Props, l₁.Perm l₂ → averageOf p l₁ = averageOf p l₂ := by
+  intro l₁ l₂ h
+  have hv := h.filterMap (· p)
+  unfold averageOf
+  cases h1 : l₁.filterMap (· p) <;> cases h2 : l₂.filterMap (· p)
+  · rfl
+  · rw [h1, h2] at hv; exact absurd hv.symm.eq_nil (by simp)
+  · rw [h1, h2] at hv; exact absurd hv.eq_nil (by simp)
+  · rw [h1, h2] at hv
+    simp only [Option.some.injEq]
+    rw [perm_sum_int hv, hv.length_eq]
 
 /-! ## Which events leave an aggregate alone -/
 
@@ -189,14 +252,14 @@ theorem dropLast_ne {c : Level} (hc : c ≠ []) : c.dropLast ≠ c := fun h => b
 
 /-- Forward one event, then change the aggregates of parents `K`. -/
 theorem aggregate_finish {q : String} {T T' U : Tree} (e' : Event) (K : List Key)
-    (hU : (aggregate.F c q contributes w T).apply e' = some U)
-    (hUe : U.Equiv (T'.mapProps c.dropLast fun k ps => ps.set q (aggregate c contributes w T k)))
+    (hU : (aggregate.F c q contributes g T).apply e' = some U)
+    (hUe : U.Equiv (T'.mapProps c.dropLast fun k ps => ps.set q (aggregate c contributes g T k)))
     (hnd : K.Nodup)
-    (hchg : ∀ k, k ∉ K → aggregate c contributes w T k = aggregate c contributes w T' k)
+    (hchg : ∀ k, k ∉ K → aggregate c contributes g T k = aggregate c contributes g T' k)
     (hex : ∀ k ∈ K, (T'.get (c.dropLast, k)).isSome) :
-    ∃ V, (aggregate.F c q contributes w T).applyAll
-        (e' :: touches c.dropLast q (aggregate c contributes w T) (aggregate c contributes w T') K)
-        = some V ∧ V.Equiv (aggregate.F c q contributes w T') := by
+    ∃ V, (aggregate.F c q contributes g T).applyAll
+        (e' :: touches c.dropLast q (aggregate c contributes g T) (aggregate c contributes g T') K)
+        = some V ∧ V.Equiv (aggregate.F c q contributes g T') := by
   simp only [Tree.applyAll, hU, Option.bind_some]
   exact touchAll K _ _ U hnd hchg hex hUe
 
@@ -210,8 +273,8 @@ theorem parent_exists {T : Tree} (hwf : T.WF) {l : Level} {k j : Key} {n : Node}
 
 /-- **`aggregate_correct`.** -/
 theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes : Props → Bool)
-    (w : Props → Int) :
-    Correct (aggregateStep c q contributes w) (aggregate.F c q contributes w) := by
+    (g : List Props → Option Val) :
+    Correct (aggregateStep c q contributes g) (aggregate.F c q contributes g) := by
   intro T e T' hwf he
   have hP := dropLast_ne hc
   simp only [aggregateStep, he]
@@ -219,28 +282,28 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
   | added l k p ps =>
     obtain ⟨hn, hpok, rfl⟩ := apply_added.mp he
     have hsame : ∀ j, (l ≠ c ∨ p ≠ some j) →
-        aggregate c contributes w (((l, k), ⟨p, ps⟩) :: T) j = aggregate c contributes w T j := by
+        aggregate c contributes g (((l, k), ⟨p, ps⟩) :: T) j = aggregate c contributes g T j := by
       intro j hj
-      apply (aggregate_eq_of_perm (List.Perm.of_eq _)).symm
+      refine (aggregate_eq_of_eq ?_).symm
       simp only [contributors, List.filter_cons]
       rcases hj with hj | hj <;> simp [hj]
     by_cases hl : l = c.dropLast
     · subst hl
-      have hagg : aggregate c contributes w (((c.dropLast, k), ⟨p, ps⟩) :: T) =
-          aggregate c contributes w T := funext fun j => hsame j (Or.inl hP)
+      have hagg : aggregate c contributes g (((c.dropLast, k), ⟨p, ps⟩) :: T) =
+          aggregate c contributes g T := funext fun j => hsame j (Or.inl hP)
       simp only [↓reduceIte, applyAll_single, aggregate.F, hagg]
-      exact mapProps_added (φ := fun k ps => ps.set q (aggregate c contributes w T k)) he
+      exact mapProps_added (φ := fun k ps => ps.set q (aggregate c contributes g T k)) he
     · simp only [hl, ↓reduceIte]
       obtain ⟨U, hU, hUe⟩ := mapProps_forward (s := c.dropLast)
-        (φ := fun k ps => ps.set q (aggregate c contributes w T k))
+        (φ := fun k ps => ps.set q (aggregate c contributes g T k))
         hwf he (by simp [Event.propsLevel, hl])
       let K := if l = c then p.toList else []
       have hK : (if l = c then p.toList.flatMap fun j =>
-          if aggregate c contributes w T j = aggregate c contributes w (((l, k), ⟨p, ps⟩) :: T) j
-          then [] else [.modified c.dropLast j q (aggregate c contributes w T j)
-            (aggregate c contributes w (((l, k), ⟨p, ps⟩) :: T) j)] else []) =
-          touches c.dropLast q (aggregate c contributes w T)
-            (aggregate c contributes w (((l, k), ⟨p, ps⟩) :: T)) K := by
+          if aggregate c contributes g T j = aggregate c contributes g (((l, k), ⟨p, ps⟩) :: T) j
+          then [] else [.modified c.dropLast j q (aggregate c contributes g T j)
+            (aggregate c contributes g (((l, k), ⟨p, ps⟩) :: T) j)] else []) =
+          touches c.dropLast q (aggregate c contributes g T)
+            (aggregate c contributes g (((l, k), ⟨p, ps⟩) :: T)) K := by
         by_cases hlc : l = c
         · simp only [K, hlc, ↓reduceIte, touches]
         · simp only [K, hlc, ↓reduceIte, touches, List.flatMap_nil]
@@ -264,14 +327,14 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
     obtain ⟨hs, hch, rfl⟩ := apply_removed.mp he
     obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hs
     obtain ⟨U, hU, hUe⟩ := mapProps_forward (s := c.dropLast)
-      (φ := fun k ps => ps.set q (aggregate c contributes w T k)) hwf he (by simp [Event.propsLevel])
+      (φ := fun k ps => ps.set q (aggregate c contributes g T k)) hwf he (by simp [Event.propsLevel])
     let K := if l = c then n.parent.toList else []
     have hK : (if l = c then ((T.get (c, k)).bind (·.parent)).toList.flatMap fun j =>
-        if aggregate c contributes w T j = aggregate c contributes w (T.filter (·.1 != (l, k))) j
-        then [] else [.modified c.dropLast j q (aggregate c contributes w T j)
-          (aggregate c contributes w (T.filter (·.1 != (l, k))) j)] else []) =
-        touches c.dropLast q (aggregate c contributes w T)
-          (aggregate c contributes w (T.filter (·.1 != (l, k)))) K := by
+        if aggregate c contributes g T j = aggregate c contributes g (T.filter (·.1 != (l, k))) j
+        then [] else [.modified c.dropLast j q (aggregate c contributes g T j)
+          (aggregate c contributes g (T.filter (·.1 != (l, k))) j)] else []) =
+        touches c.dropLast q (aggregate c contributes g T)
+          (aggregate c contributes g (T.filter (·.1 != (l, k)))) K := by
       by_cases hlc : l = c
       · subst hlc; simp [K, hn, touches]
       · simp [K, hlc, touches]
@@ -280,7 +343,7 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
     refine aggregate_finish _ K hU hUe ?_ ?_ ?_
     · by_cases hlc : l = c <;> cases hp : n.parent <;> simp [K, hlc, hp]
     · intro j hj
-      apply aggregate_eq_of_perm (List.Perm.of_eq _)
+      apply aggregate_eq_of_eq
       refine (contributors_filter hwf _ j fun m hm => ?_).symm
       rw [hn] at hm; cases hm
       rintro ⟨hlc, hpar, -⟩
@@ -299,25 +362,25 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
     obtain ⟨n, hn, h1, h2, rfl⟩ := apply_modified.mp he
     let f : Node → Node := fun n => { n with props := n.props.set p new }
     have hsame : ∀ j, (l ≠ c ∨ n.parent ≠ some j) →
-        aggregate c contributes w (T.update (l, k) f) j = aggregate c contributes w T j := by
+        aggregate c contributes g (T.update (l, k) f) j = aggregate c contributes g T j := by
       intro j hj
-      apply aggregate_eq_of_perm (List.Perm.of_eq _)
+      apply aggregate_eq_of_eq
       refine contributors_update hwf _ f j fun m hm => ?_
       rw [hn] at hm; cases hm
       rcases hj with hj | hj <;> simp [f, hj]
     by_cases hq : l = c.dropLast ∧ p = q
     · obtain ⟨rfl, rfl⟩ := hq
-      have hagg : aggregate c contributes w (T.update (c.dropLast, k) f) =
-          aggregate c contributes w T := funext fun j => hsame j (Or.inl hP)
+      have hagg : aggregate c contributes g (T.update (c.dropLast, k) f) =
+          aggregate c contributes g T := funext fun j => hsame j (Or.inl hP)
       simp only [and_self, ↓reduceIte, aggregate.F]
       refine ⟨_, rfl, ?_⟩
       rw [hagg]
-      exact mapProps_hidden (φ := fun k ps => ps.set p (aggregate c contributes w T k)) he
+      exact mapProps_hidden (φ := fun k ps => ps.set p (aggregate c contributes g T k)) he
         fun ps => Props.set_set_self _ _ _ _
     · simp only [hq, ↓reduceIte]
-      have hfwd : ∃ U, (aggregate.F c q contributes w T).apply (.modified l k p old new) = some U ∧
+      have hfwd : ∃ U, (aggregate.F c q contributes g T).apply (.modified l k p old new) = some U ∧
           U.Equiv ((T.update (l, k) f).mapProps c.dropLast
-            fun k ps => ps.set q (aggregate c contributes w T k)) := by
+            fun k ps => ps.set q (aggregate c contributes g T k)) := by
         by_cases hl : l = c.dropLast
         · subst hl
           have hpq : p ≠ q := fun h => hq ⟨rfl, h⟩
@@ -327,11 +390,11 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
       obtain ⟨U, hU, hUe⟩ := hfwd
       let K := if l = c then n.parent.toList else []
       have hK : (if l = c then ((T.get (c, k)).bind (·.parent)).toList.flatMap fun j =>
-          if aggregate c contributes w T j = aggregate c contributes w (T.update (l, k) f) j
-          then [] else [.modified c.dropLast j q (aggregate c contributes w T j)
-            (aggregate c contributes w (T.update (l, k) f) j)] else []) =
-          touches c.dropLast q (aggregate c contributes w T)
-            (aggregate c contributes w (T.update (l, k) f)) K := by
+          if aggregate c contributes g T j = aggregate c contributes g (T.update (l, k) f) j
+          then [] else [.modified c.dropLast j q (aggregate c contributes g T j)
+            (aggregate c contributes g (T.update (l, k) f) j)] else []) =
+          touches c.dropLast q (aggregate c contributes g T)
+            (aggregate c contributes g (T.update (l, k) f)) K := by
         by_cases hlc : l = c
         · subst hlc; simp [K, hn, touches]
         · simp [K, hlc, touches]
@@ -353,17 +416,17 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
     obtain ⟨n, hn, h1, h2, h3, rfl⟩ := apply_placed.mp he
     let f : Node → Node := fun n => { n with parent := some b }
     obtain ⟨U, hU, hUe⟩ := mapProps_forward (s := c.dropLast)
-      (φ := fun k ps => ps.set q (aggregate c contributes w T k)) hwf he (by simp [Event.propsLevel])
+      (φ := fun k ps => ps.set q (aggregate c contributes g T k)) hwf he (by simp [Event.propsLevel])
     let K := if l = c then [a, b] else []
     have hK : (if l = c then
-        (if aggregate c contributes w T a = aggregate c contributes w (T.update (l, k) f) a then []
-          else [.modified c.dropLast a q (aggregate c contributes w T a)
-            (aggregate c contributes w (T.update (l, k) f) a)]) ++
-        (if aggregate c contributes w T b = aggregate c contributes w (T.update (l, k) f) b then []
-          else [.modified c.dropLast b q (aggregate c contributes w T b)
-            (aggregate c contributes w (T.update (l, k) f) b)]) else []) =
-        touches c.dropLast q (aggregate c contributes w T)
-          (aggregate c contributes w (T.update (l, k) f)) K := by
+        (if aggregate c contributes g T a = aggregate c contributes g (T.update (l, k) f) a then []
+          else [.modified c.dropLast a q (aggregate c contributes g T a)
+            (aggregate c contributes g (T.update (l, k) f) a)]) ++
+        (if aggregate c contributes g T b = aggregate c contributes g (T.update (l, k) f) b then []
+          else [.modified c.dropLast b q (aggregate c contributes g T b)
+            (aggregate c contributes g (T.update (l, k) f) b)]) else []) =
+        touches c.dropLast q (aggregate c contributes g T)
+          (aggregate c contributes g (T.update (l, k) f)) K := by
       by_cases hlc : l = c
       · simp [K, hlc, touches]
       · simp [K, hlc, touches]
@@ -372,7 +435,7 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
     refine aggregate_finish _ K hU hUe ?_ ?_ ?_
     · by_cases hlc : l = c <;> simp [K, hlc, h2]
     · intro j hj
-      apply aggregate_eq_of_perm (List.Perm.of_eq _)
+      apply aggregate_eq_of_eq
       refine (contributors_update hwf _ f j fun m hm => ?_).symm
       rw [hn] at hm; cases hm
       by_cases hlc : l = c
@@ -389,5 +452,34 @@ theorem aggregate_correct (c : Level) (hc : c ≠ []) (q : String) (contributes 
         · exact parent_exists hwf hn h1
         · simp only [Tree.parentOk, Bool.and_eq_true] at h3; exact h3.2
       · simp [K, hlc] at hj
+
+/-! ## `min`, `max` and `average` -/
+
+/-- **`min_correct`.** `min(p)` over the children at `c`: the least defined `p`. -/
+theorem min_correct (c : Level) (hc : c ≠ []) (q p : String) :
+    Correct (aggregateStep c q (fun _ => true) (minOf p)) (aggregate.F c q (fun _ => true) (minOf p)) :=
+  aggregate_correct c hc q _ _
+
+theorem min_denotation (c : Level) (q p : String) :
+    Denotation (aggregate.F c q (fun _ => true) (minOf p)) :=
+  aggregate_denotation c q _ _ (minOf_perm p)
+
+/-- **`max_correct`.** -/
+theorem max_correct (c : Level) (hc : c ≠ []) (q p : String) :
+    Correct (aggregateStep c q (fun _ => true) (maxOf p)) (aggregate.F c q (fun _ => true) (maxOf p)) :=
+  aggregate_correct c hc q _ _
+
+theorem max_denotation (c : Level) (q p : String) :
+    Denotation (aggregate.F c q (fun _ => true) (maxOf p)) :=
+  aggregate_denotation c q _ _ (maxOf_perm p)
+
+/-- **`average_correct`.** -/
+theorem average_correct (c : Level) (hc : c ≠ []) (q p : String) :
+    Correct (aggregateStep c q (fun _ => true) (averageOf p)) (aggregate.F c q (fun _ => true) (averageOf p)) :=
+  aggregate_correct c hc q _ _
+
+theorem average_denotation (c : Level) (q p : String) :
+    Denotation (aggregate.F c q (fun _ => true) (averageOf p)) :=
+  aggregate_denotation c q _ _ (averageOf_perm p)
 
 end JinagaSpec.Cascade

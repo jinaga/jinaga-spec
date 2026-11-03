@@ -29,28 +29,28 @@ def tierOf (ps : Props) : Option Val :=
 def sumOf (p : String) : Props → Int := fun ps => (ps p).getD 0
 
 def tiersF : Tree → Tree :=
-  aggregate.F ["groups"] "tierTotal" (fun _ => true) (sumOf "total") ∘
+  aggregate.F ["groups"] "tierTotal" (fun _ => true) (sumBy (sumOf "total")) ∘
   groupBy.F ["tier"] "groups" ∘
   defineProperty.F [] "tier" tierOf ∘
-  aggregate.F ["items"] "total" (fun _ => true) (sumOf "v") ∘
+  aggregate.F ["items"] "total" (fun _ => true) (sumBy (sumOf "v")) ∘
   groupBy.F ["item"] "items"
 
 def tiers : Step :=
   ((((groupBy ["item"] "items").andThen
-    (aggregateStep ["items"] "total" (fun _ => true) (sumOf "v")) (groupBy.F ["item"] "items")).andThen
+    (aggregateStep ["items"] "total" (fun _ => true) (sumBy (sumOf "v"))) (groupBy.F ["item"] "items")).andThen
     (defineProperty [] "tier" tierOf ["total"])
-      (aggregate.F ["items"] "total" (fun _ => true) (sumOf "v") ∘ groupBy.F ["item"] "items")).andThen
+      (aggregate.F ["items"] "total" (fun _ => true) (sumBy (sumOf "v")) ∘ groupBy.F ["item"] "items")).andThen
     (groupBy ["tier"] "groups")
-      (defineProperty.F [] "tier" tierOf ∘ aggregate.F ["items"] "total" (fun _ => true) (sumOf "v") ∘
+      (defineProperty.F [] "tier" tierOf ∘ aggregate.F ["items"] "total" (fun _ => true) (sumBy (sumOf "v")) ∘
         groupBy.F ["item"] "items")).andThen
-    (aggregateStep ["groups"] "tierTotal" (fun _ => true) (sumOf "total"))
+    (aggregateStep ["groups"] "tierTotal" (fun _ => true) (sumBy (sumOf "total")))
       (groupBy.F ["tier"] "groups" ∘ defineProperty.F [] "tier" tierOf ∘
-        aggregate.F ["items"] "total" (fun _ => true) (sumOf "v") ∘ groupBy.F ["item"] "items")
+        aggregate.F ["items"] "total" (fun _ => true) (sumBy (sumOf "v")) ∘ groupBy.F ["item"] "items")
 
 theorem tiers_denotation : Denotation tiersF :=
-  (((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _)).comp
+  (((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _ (sumBy_perm _))).comp
     (defineProperty_denotation _ _ _)).comp (groupBy_denotation _ _) |>.comp
-    (aggregate_denotation _ _ _ _)
+    (aggregate_denotation _ _ _ _ (sumBy_perm _))
 
 /-- **`tiers_correct`.** The whole pipeline is correct. -/
 theorem tiers_correct : Correct tiers tiersF := by
@@ -62,15 +62,15 @@ theorem tiers_correct : Correct tiers tiersF := by
     (andThen_correct
       (andThen_correct
         (andThen_correct (groupBy_correct _ _) (groupBy_denotation _ _)
-          (aggregate_correct _ (by simp) _ _ _) (aggregate_denotation _ _ _ _))
-        ((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _))
+          (aggregate_correct _ (by simp) _ _ _) (aggregate_denotation _ _ _ _ (sumBy_perm _)))
+        ((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _ (sumBy_perm _)))
         (defineProperty_correct _ _ _ _ (by decide) hdef) (defineProperty_denotation _ _ _))
-      (((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _)).comp
+      (((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _ (sumBy_perm _))).comp
         (defineProperty_denotation _ _ _))
       (groupBy_correct _ _) (groupBy_denotation _ _))
-    ((((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _)).comp
+    ((((groupBy_denotation _ _).comp (aggregate_denotation _ _ _ _ (sumBy_perm _))).comp
       (defineProperty_denotation _ _ _)).comp (groupBy_denotation _ _))
-    (aggregate_correct _ (by simp) _ _ _) (aggregate_denotation _ _ _ _)
+    (aggregate_correct _ (by simp) _ _ _) (aggregate_denotation _ _ _ _ (sumBy_perm _))
 
 /-- **`tiers_order_independent`.** Rows that arrive in any order produce the same
 tiers and totals. -/

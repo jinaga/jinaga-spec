@@ -468,10 +468,11 @@ theorem deposit_items (contributes : Props → Bool) (w : Props → Int) (a : Ag
 
 /-- The cached aggregate is the tree's. -/
 theorem value_eq {c : Level} {contributes : Props → Bool} {w : Props → Int} {tracked : List String}
-    {a : AggCache} {T : Tree} (h : a.Describes c contributes w tracked T) (r : Key) : a.value r = aggregate c contributes w T r := by
+    {a : AggCache} {T : Tree} (h : a.Describes c contributes w tracked T) (r : Key) :
+    a.value r = aggregate c contributes (sumBy w) T r := by
   unfold AggCache.value aggregate
   rw [h.count r, h.total r]
-  split <;> simp_all
+  split <;> simp_all [sumBy, List.map_map, Function.comp_def]
 
 theorem contributesTo_at (c : Level) (contributes : Props → Bool) (r : Key) (k : Key) (n : Node) :
     contributesTo c contributes r ((c, k), n) = decide (n.parent = some r ∧ contributes n.props = true) := by
@@ -735,7 +736,7 @@ theorem aggregate_implements (c : Level) (q : String) (contributes : Props → B
     (tracked : List String)
     (hcon : ∀ ps p v, p ∉ tracked → contributes (ps.set p v) = contributes ps)
     (hw : ∀ ps p v, p ∉ tracked → w (ps.set p v) = w ps) :
-    Implements (aggregate.cached c q contributes w tracked) (aggregateStep c q contributes w)
+    Implements (aggregate.cached c q contributes w tracked) (aggregateStep c q contributes (sumBy w))
       (AggCache.Describes c contributes w tracked) := by
   refine ⟨⟨fun _ _ => rfl, fun _ _ _ h => by simp at h, fun _ => rfl, fun _ => rfl⟩, ?_⟩
   intro a T e T' hR hwf ha
@@ -1028,12 +1029,12 @@ theorem aggregate_cached_correct (c : Level) (hc : c ≠ []) (q : String) (contr
     (hcon : ∀ ps p v, p ∉ tracked → contributes (ps.set p v) = contributes ps)
     (hw : ∀ ps p v, p ∉ tracked → w (ps.set p v) = w ps)
     {es : List Event} {T' : Tree} (h : Tree.applyAll [] es = some T') :
-    ∃ U, (aggregate.F c q contributes w []).applyAll
+    ∃ U, (aggregate.F c q contributes (sumBy w) []).applyAll
         ((aggregate.cached c q contributes w tracked).run (aggregate.cached c q contributes w tracked).init es) =
           some U ∧
-      U.Equiv (aggregate.F c q contributes w T') :=
+      U.Equiv (aggregate.F c q contributes (sumBy w) T') :=
   implements_correct (aggregate_implements c q contributes w tracked hcon hw)
-    (aggregate_correct c hc q contributes w) (aggregate_denotation c q contributes w) h
+    (aggregate_correct c hc q contributes (sumBy w)) (aggregate_denotation c q contributes (sumBy w) (sumBy_perm w)) h
 
 /-- **`defineProperty_cached_correct`.** -/
 theorem defineProperty_cached_correct (s : Level) (q : String) (f : Props → Option Val)
