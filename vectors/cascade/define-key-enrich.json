@@ -1,0 +1,63 @@
+{"pipeline":
+ {"steps":
+  [{"step": "sum", "property": "amount", "as": "total", "array": "lines"},
+   {"step": "defineProperty",
+    "expr":
+    {"then": {"value": "high", "op": "lit"},
+     "predicate": {"value": 50, "property": "total", "op": "gt"},
+     "op": "cond",
+     "else": {"value": "low", "op": "lit"}},
+    "deps": ["total"],
+    "as": "band"},
+   {"step": "enrich",
+    "source": "bands",
+    "primaryKey": ["band"],
+    "pipeline":
+    {"steps": [{"step": "groupBy", "by": ["band"], "as": "bands"}],
+     "source":
+     {"scalars":
+      [{"type": "string", "name": "band"}, {"type": "string", "name": "label"}],
+      "arrays": []},
+     "root": "bandRows"},
+    "as": "bandInfo"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "id"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "amount"}], "arrays": []},
+     "name": "lines"}]},
+  "root": "orders"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [1, 2, 4, 5, 6, 3, 0], [5, 3, 1, 6, 0, 2, 4]],
+ "ops":
+ [{"source": "bands",
+   "props": {"label": "High", "band": "high"},
+   "path": [],
+   "op": "add",
+   "keys": ["1"]},
+  {"props": {"id": "o1"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"amount": 30}, "path": ["lines"], "op": "add", "keys": ["1", "1"]},
+  {"source": "bands",
+   "props": {"label": "Low", "band": "low"},
+   "path": [],
+   "op": "add",
+   "keys": ["2"]},
+  {"props": {"amount": 40}, "path": ["lines"], "op": "add", "keys": ["1", "2"]},
+  {"props": {"id": "o2"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"amount": 10},
+   "path": ["lines"],
+   "op": "add",
+   "keys": ["2", "1"]}],
+ "name": "define-key-enrich",
+ "expected":
+ [{"total": 70,
+   "lines": [{"amount": 30}, {"amount": 40}],
+   "id": "o1",
+   "bandInfo": {"bandRows": [{"label": "High"}], "band": "high"},
+   "band": "high"},
+  {"total": 10,
+   "lines": [{"amount": 10}],
+   "id": "o2",
+   "bandInfo": {"bandRows": [{"label": "Low"}], "band": "low"},
+   "band": "low"}],
+ "description":
+ "Each order's band, defined from its total, as the key that enriches it: an order changes bands, and its enrichment, as lines arrive."}

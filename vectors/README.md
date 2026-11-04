@@ -214,7 +214,11 @@ each group in an array named for the scope they came from), `sum`, `min`, `max`
 (`property`), `flatten` (`parent`, `child`, `as`), and `filter` (`predicate`:
 `{ "op": "gt" | "lt" | "eq", "property", "value" }`, a comparison of a root
 row's property with a constant; the property is the filter's mutable
-property). `cumulativeSum` (`array`, `orderBy`, `properties`) and
+property). `defineProperty` (`as`, `expr`, `deps`) is
+`.defineProperty(as, row => expr, deps)`, where `expr` is `{ "op": "prop",
+"property" }`, `{ "op": "lit", "value" }`, `{ "op": "add", "left", "right" }`
+(the sum of two numbers, undefined otherwise), or `{ "op": "cond", "predicate",
+"then", "else" }` (a predicate as `filter`'s). `cumulativeSum` (`array`, `orderBy`, `properties`) and
 `replaceToDelta` (`entity`, `event`, `orderBy`, `properties`, `outputs`) order
 siblings by their `orderBy` values in turn, then by key. `pickByMin` and `pickByMax`
 (`array`, `property`, `as`) give each parent a copy of the child with the least
@@ -250,7 +254,10 @@ with `Number()`, and no two children of a parent may tie. A secondary
 pipeline is checked as the vector's own pipeline is, and its root rows must
 differ in their collection key: where several match, the model gives
 `whenMissing` and the TypeScript the last it saw. A secondary pipeline may not enrich in turn:
-an op names one source, and a source's own sources are not modelled.
+an op names one source, and a source's own sources are not modelled. A
+defined property's expression may read a property its `deps` leave out only if
+that property keeps one value on each row: the TypeScript recomputes only when
+a dependency changes.
 
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
 `CASCADE_CORE` pointing at a checkout) runs them.
