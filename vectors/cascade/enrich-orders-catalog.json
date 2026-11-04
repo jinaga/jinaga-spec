@@ -1,0 +1,51 @@
+{"pipeline":
+ {"steps":
+  [{"step": "enrich",
+    "source": "catalog",
+    "primaryKey": ["sku"],
+    "pipeline":
+    {"steps": [{"step": "groupBy", "by": ["sku"], "as": "skus"}],
+     "source":
+     {"scalars":
+      [{"type": "number", "name": "price"}, {"type": "string", "name": "sku"}],
+      "arrays": []},
+     "root": "prices"},
+    "as": "product"}],
+  "source":
+  {"scalars":
+   [{"type": "number", "name": "qty"}, {"type": "string", "name": "sku"}],
+   "arrays": []},
+  "root": "orders"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [1, 5, 6, 2, 0, 3, 4], [4, 3, 2, 0, 5, 1, 6]],
+ "ops":
+ [{"props": {"sku": "a", "qty": 2}, "path": [], "op": "add", "keys": ["1"]},
+  {"source": "catalog",
+   "props": {"sku": "a", "price": 5},
+   "path": [],
+   "op": "add",
+   "keys": ["1"]},
+  {"source": "catalog",
+   "props": {"sku": "b", "price": 7},
+   "path": [],
+   "op": "add",
+   "keys": ["2"]},
+  {"props": {"sku": "b", "qty": 1}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"sku": "c", "qty": 4}, "path": [], "op": "add", "keys": ["3"]},
+  {"source": "catalog",
+   "props": {"sku": "a", "price": 6},
+   "path": [],
+   "op": "add",
+   "keys": ["3"]},
+  {"source": "catalog",
+   "props": {"sku": "a", "price": 5},
+   "path": [],
+   "op": "remove",
+   "keys": ["1"]}],
+ "name": "enrich-orders-catalog",
+ "expected":
+ [{"sku": "a", "qty": 2, "product": {"sku": "a", "prices": [{"price": 6}]}},
+  {"sku": "b", "qty": 1, "product": {"sku": "b", "prices": [{"price": 7}]}},
+  {"sku": "c", "qty": 4}],
+ "description":
+ "Orders enriched with their SKU's catalog entry, a group of prices; entries arrive before and after the orders, one leaves, and one order's SKU is never listed."}

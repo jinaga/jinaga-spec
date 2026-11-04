@@ -24,9 +24,10 @@ const sortedJson = (value: unknown): string => JSON.stringify(value, (_k, v) =>
         : v);
 
 /** The rows of a tree array, in a canonical order. Only the arrays the
-descriptor declares are the tree's: their order is arrival order, which the
-model does not have, and an empty one is absent, as the model has none. A
-property's value, even a list, is compared as it is. */
+descriptor declares are the tree's, in a row or in an object it declares, such
+as an enriched copy of a row: their order is arrival order, which the model
+does not have, and an empty one is absent, as the model has none. A property's
+value, even a list, is compared as it is. */
 const rows = (items: unknown[], node: any): unknown[] =>
     items.map(item => row(item, node)).sort((a, b) => {
         const x = sortedJson(a), y = sortedJson(b);
@@ -35,10 +36,14 @@ const rows = (items: unknown[], node: any): unknown[] =>
 
 const row = (item: any, node: any): unknown => {
     const arrays = new Map<string, any>(node.arrays.map((a: any) => [a.name, a.type]));
+    const objects = new Map<string, any>(node.objects.map((o: any) => [o.name, o.type]));
     return Object.fromEntries(Object.keys(item)
         .filter(k => item[k] !== undefined)
         .filter(k => !(arrays.has(k) && Array.isArray(item[k]) && item[k].length === 0))
-        .map(k => [k, arrays.has(k) ? rows(item[k], arrays.get(k)) : item[k]]));
+        .map(k => [k,
+            arrays.has(k) ? rows(item[k], arrays.get(k)) :
+            objects.has(k) && item[k] !== null && typeof item[k] === "object" ? row(item[k], objects.get(k)) :
+            item[k]]));
 };
 
 const sourceArray = (a: any): any => ({
@@ -73,6 +78,7 @@ function builderOf(pipeline: any): any {
             case "replaceToDelta": b = b.replaceToDelta(s.entity, s.event, s.orderBy, s.properties, s.outputs); break;
             case "pickByMin": b = b.pickByMin(s.array, s.property, s.as); break;
             case "pickByMax": b = b.pickByMax(s.array, s.property, s.as); break;
+            case "enrich": b = b.enrich(s.source, builderOf(s.pipeline), s.primaryKey, s.as, s.whenMissing); break;
             default: throw new Error(`unknown step ${s.step}`);
         }
     }
@@ -87,7 +93,10 @@ function run(v: any, order: number[]): unknown {
     for (const i of order) {
         const op = v.ops[i];
         const [first, ...rest] = op.keys;
-        if (op.path.length === 0) {
+        if (op.source !== undefined) {
+            const input = pipeline.sources[op.source];
+            if (op.op === "add") input.add(first, op.props); else input.remove(first, op.props);
+        } else if (op.path.length === 0) {
             if (op.op === "add") pipeline.add(first, op.props); else pipeline.remove(first, op.props);
         } else {
             const input = pipeline.collection(...op.path);

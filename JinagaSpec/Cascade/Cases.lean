@@ -1,6 +1,7 @@
 import JinagaSpec.Cascade.Input
 import JinagaSpec.Cascade.Flatten
 import JinagaSpec.Cascade.Ordered
+import JinagaSpec.Cascade.Enrich
 
 /-!
 # Cascade: conformance cases
@@ -11,12 +12,15 @@ model's output is the pipeline's denotation of what the input holds after the
 operations (`Case.output`); `run_correct` and `ops_correct` say the steps' events
 reach it. `lake exe vectors` writes one vector per case (`vectors/cascade/`).
 
-Every step here is at the root scope, as the model's steps are. Where the model
+Every step here is at the root scope, as the model's steps are. An operation
+is on the primary input or on a named source, which an `enrich` step reads
+through its own pipeline. Where the model
 and the TypeScript are known to differ, a case stays inside what they agree on,
 and the generator checks it (`Case.check`): summed children define the summed
 property, a flattened child carries no name of its parent's, and the siblings an
-ordered step sorts have order-by values of one type with no ties, and the
-children a pick compares have numbers with no ties.
+ordered step sorts have order-by values of one type with no ties, the
+children a pick compares have numbers with no ties, and an enriching source's
+rows differ in their collection key.
 -/
 namespace JinagaSpec.Cascade
 
@@ -78,15 +82,30 @@ inductive PStep where
   | replaceToDelta (entity event : String) (orderBy : List String) (deltas : Deltas)
   | pickByMin (array p as : String)
   | pickByMax (array p as : String)
+  /-- `enrich(source, secondary, key, as, whenMissing)`, the secondary pipeline
+  given by its root scope name and steps. -/
+  | enrich (source : Source) (root : String) (steps : List PStep) (key : List String) (as : String)
+      (whenMissing : Option Props)
 
 /-- The names the nodes at level `l` carry. -/
 def Tree.namesAt (T : Tree) (l : Level) : List String :=
   dedup ((T.filter (·.1.1 = l)).flatMap (·.2.props.keys))
 
-/-- A step's denotation, from the root scope's name. A flattened row inherits
-every name its parents carry, which is the parents' descriptor when it is
-complete. -/
-def PStep.denote (root : String) : PStep → Tree → Tree
+/-- The root scope's name after a step. -/
+def PStep.root (root : String) : PStep → String
+  | .groupBy _ r => r
+  | _ => root
+
+/-- A pipeline's root collection key: the names of its last root `groupBy`. -/
+def collectionKey (S : List PStep) : List String :=
+  S.foldl (fun ck s => match s with | .groupBy G _ => G | _ => ck) []
+
+mutual
+/-- A step's denotation, from the root scope's name and each source's input `I`.
+A flattened row inherits every name its parents carry, which is the parents'
+descriptor when it is complete. `enrich` joins the primary tree, as source `""`,
+with its secondary pipeline's output. -/
+def PStep.denote (root : String) (I : Source → Tree) : PStep → Tree → Tree
   | .groupBy G _ => groupBy.F G root
   | .sum a p q => aggregate.F [a] q (fun _ => true) (sumBy fun ps => ((ps p).map Val.num).getD 0)
   | .count a q => aggregate.F [a] q (fun _ => true) (sumBy fun _ => 1)
@@ -99,6 +118,15 @@ def PStep.denote (root : String) : PStep → Tree → Tree
   | .replaceToDelta e v O D => replaceToDelta.F [e, v] (byOrder O) D
   | .pickByMin a p q => pickBy.F [a] (fun x y => byOrder [p] y x) (fun ps => (ps p).isSome) q
   | .pickByMax a p q => pickBy.F [a] (byOrder [p]) (fun ps => (ps p).isSome) q
+  | .enrich src r S K q w => fun T =>
+    enrich.F "" src [] q K (collectionKey S) (w.map Props.toJson)
+      fun s => if s = src then PStep.run r I S (I src) else T
+
+/-- A pipeline's denotation: its steps in turn. -/
+def PStep.run (root : String) (I : Source → Tree) : List PStep → Tree → Tree
+  | [], T => T
+  | s :: S, T => PStep.run (s.root root) I S (s.denote root I T)
+end
 
 /-- A conformance case. -/
 structure Case where
@@ -107,26 +135,31 @@ structure Case where
   /-- The pipeline's root scope name (`createPipeline`'s first argument). -/
   root : String
   steps : List PStep
-  ops : List Op
+  /-- The operations, each on the primary input (`none`) or on a source. -/
+  ops : List (Option Source × Op)
   /-- Orders to perform `ops` in, as lists of indices into it. -/
   orders : List (List Nat)
 
-/-- What the input holds after the operations, in an order. -/
-def Case.input (c : Case) (order : List Nat) : Tree :=
-  (order.filterMap (c.ops[·]?)).foldl Tree.receive []
+/-- What an input, the primary or a source, holds after the operations, in an order. -/
+def Case.input (c : Case) (src : Option Source) (order : List Nat) : Tree :=
+  ((order.filterMap (c.ops[·]?)).filterMap fun (s, op) => if s = src then some op else none).foldl
+    Tree.receive []
 
-/-- The root scope's name after a step. -/
-def PStep.root (root : String) : PStep → String
-  | .groupBy _ r => r
-  | _ => root
+/-- The input to each of a pipeline's steps and its output, each with the root
+scope's name. -/
+def PStep.stages (root : String) (I : Source → Tree) (S : List PStep) (T : Tree) : List (String × Tree) :=
+  S.scanl (fun (r, T) s => (s.root r, s.denote r I T)) (root, T)
+
+/-- Each source's input after the operations, in an order. -/
+def Case.sources (c : Case) (order : List Nat) : Source → Tree := fun q => c.input (some q) order
 
 /-- The input to each step and the output, each with the root scope's name. -/
-def Case.stages (c : Case) (T : Tree) : List (String × Tree) :=
-  c.steps.scanl (fun (r, T) s => (s.root r, s.denote r T)) (c.root, T)
+def Case.stages (c : Case) (order : List Nat) : List (String × Tree) :=
+  PStep.stages c.root (c.sources order) c.steps (c.input none order)
 
-/-- The pipeline's output for what the input holds. -/
-def Case.denote (c : Case) (T : Tree) : Tree :=
-  ((c.stages T).getLast?.map (·.2)).getD T
+/-- The pipeline's output after the operations, in an order. -/
+def Case.denote (c : Case) (order : List Nat) : Tree :=
+  ((c.stages order).getLast?.map (·.2)).getD []
 
 /-! ## The cases -/
 
@@ -137,26 +170,32 @@ def addRow (r : Nat) (l : List (String × Val)) : Op := .add [] r [] (mkProps l)
 def addChild (a : String) (r k : Nat) (l : List (String × Val)) : Op := .add [a] r [k] (mkProps l)
 def addGrandchild (a b : String) (r k j : Nat) (l : List (String × Val)) : Op := .add [a, b] r [k, j] (mkProps l)
 
+/-- Operations on the primary input. -/
+def primary (l : List Op) : List (Option Source × Op) := l.map (none, ·)
+
+/-- An operation on source `q`. -/
+def on (q : Source) (op : Op) : Option Source × Op := (some q, op)
+
 def cases : List Case := [
   { name := "group-sum-count"
     description := "Rows grouped by a value, with each group's total and count; one row leaves."
     root := "rows"
     steps := [.groupBy ["cat"] "groups", .sum "rows" "v" "total", .count "rows" "n"]
-    ops := [addRow 1 [("cat", .str "a"), ("v", 5)], addRow 2 [("cat", .str "a"), ("v", 3)],
+    ops := primary [addRow 1 [("cat", .str "a"), ("v", 5)], addRow 2 [("cat", .str "a"), ("v", 3)],
       addRow 3 [("cat", .str "b"), ("v", 7)], .remove [] 1 [], addRow 4 [("cat", .str "b"), ("v", 1)]]
     orders := [[0, 1, 2, 3, 4], [2, 4, 0, 1, 3], [4, 0, 3, 2, 1]] },
   { name := "group-min-max"
     description := "Each group's least and greatest value, after its least row leaves."
     root := "rows"
     steps := [.groupBy ["cat"] "groups", .min "rows" "v" "lo", .max "rows" "v" "hi"]
-    ops := [addRow 1 [("cat", .str "a"), ("v", 5)], addRow 2 [("cat", .str "a"), ("v", 3)],
+    ops := primary [addRow 1 [("cat", .str "a"), ("v", 5)], addRow 2 [("cat", .str "a"), ("v", 3)],
       addRow 3 [("cat", .str "a"), ("v", 9)], .remove [] 2 [], addRow 4 [("cat", .str "b"), ("v", 2)]]
     orders := [[0, 1, 2, 3, 4], [1, 3, 4, 2, 0], [4, 2, 1, 0, 3]] },
   { name := "source-array-aggregates"
     description := "A count and a total over a declared source array, fed through collection()."
     root := "folders"
     steps := [.count "bookmarks" "n", .sum "bookmarks" "size" "total"]
-    ops := [addRow 1 [("name", .str "home")], addRow 2 [("name", .str "work")],
+    ops := primary [addRow 1 [("name", .str "home")], addRow 2 [("name", .str "work")],
       addChild "bookmarks" 1 1 [("size", 10)], addChild "bookmarks" 1 2 [("size", 32)],
       addChild "bookmarks" 2 1 [("size", 5)], .remove ["bookmarks"] 1 [2]]
     orders := [[0, 1, 2, 3, 4, 5], [1, 4, 0, 3, 5, 2], [0, 3, 2, 1, 5, 4]] },
@@ -164,33 +203,33 @@ def cases : List Case := [
     description := "A child that arrives before its parent is refused, and stays out after the parent arrives (jinaga/jinaga-cascade-core#31)."
     root := "folders"
     steps := [.count "bookmarks" "n"]
-    ops := [addChild "bookmarks" 1 1 [("size", 10)], addRow 1 [("name", .str "home")],
+    ops := primary [addChild "bookmarks" 1 1 [("size", 10)], addRow 1 [("name", .str "home")],
       addChild "bookmarks" 1 2 [("size", 4)]]
     orders := [[0, 1, 2]] },
   { name := "remove-row-removes-children"
     description := "Removing a row removes the children fed under it."
     root := "folders"
     steps := [.count "bookmarks" "n"]
-    ops := [addRow 1 [("name", .str "home")], addChild "bookmarks" 1 1 [("size", 10)],
+    ops := primary [addRow 1 [("name", .str "home")], addChild "bookmarks" 1 1 [("size", 10)],
       addChild "bookmarks" 1 2 [("size", 4)], addRow 2 [("name", .str "work")], .remove [] 1 []]
     orders := [[0, 1, 2, 3, 4], [3, 0, 2, 1, 4]] },
   { name := "filter-by-value"
     description := "Root rows whose value is greater than a constant."
     root := "rows"
     steps := [.filter (.gt "v" 4)]
-    ops := [addRow 1 [("v", 5)], addRow 2 [("v", 3)], addRow 3 [("v", 9)], .remove [] 3 []]
+    ops := primary [addRow 1 [("v", 5)], addRow 2 [("v", 3)], addRow 3 [("v", 9)], .remove [] 3 []]
     orders := [[0, 1, 2, 3], [2, 3, 1, 0]] },
   { name := "drop-property"
     description := "A property dropped from every root row."
     root := "rows"
     steps := [.dropProperty "secret"]
-    ops := [addRow 1 [("v", 5), ("secret", .str "x")], addRow 2 [("v", 3), ("secret", .str "y")]]
+    ops := primary [addRow 1 [("v", 5), ("secret", .str "x")], addRow 2 [("v", 3), ("secret", .str "y")]]
     orders := [[0, 1], [1, 0]] },
   { name := "flatten-projects-tasks"
     description := "Each team's projects and their tasks, flattened into one array of tasks that carry their project's values."
     root := "teams"
     steps := [.flatten "projects" "tasks" "work"]
-    ops := [addRow 1 [("team", .str "core")],
+    ops := primary [addRow 1 [("team", .str "core")],
       addChild "projects" 1 1 [("title", .str "spec")], addChild "projects" 1 2 [("title", .str "port")],
       addGrandchild "projects" "tasks" 1 1 1 [("hours", 3)], addGrandchild "projects" "tasks" 1 1 2 [("hours", 5)],
       addGrandchild "projects" "tasks" 1 2 1 [("hours", 2)], .remove ["projects", "tasks"] 1 [1, 2]]
@@ -199,7 +238,7 @@ def cases : List Case := [
     description := "Folders grouped by their total, which a new bookmark changes: the folder moves to another group (jinaga/jinaga-cascade-core#29)."
     root := "folders"
     steps := [.sum "bookmarks" "size" "total", .groupBy ["total"] "totals"]
-    ops := [addRow 1 [("name", .str "home")], addRow 2 [("name", .str "work")],
+    ops := primary [addRow 1 [("name", .str "home")], addRow 2 [("name", .str "work")],
       addChild "bookmarks" 1 1 [("size", 10)], addChild "bookmarks" 2 1 [("size", 4)],
       addChild "bookmarks" 2 2 [("size", 6)]]
     orders := [[0, 1, 2, 3, 4], [1, 4, 3, 0, 2], [0, 2, 1, 3, 4]] },
@@ -207,7 +246,7 @@ def cases : List Case := [
     description := "Each folder's total, then a running total of the folders in each category by name; a folder loses its only bookmark."
     root := "folders"
     steps := [.sum "bookmarks" "size" "total", .groupBy ["cat"] "groups", .cumulativeSum "folders" ["name"] ["total"]]
-    ops := [addRow 1 [("cat", .str "a"), ("name", .str "b")], addRow 2 [("cat", .str "a"), ("name", .str "a")],
+    ops := primary [addRow 1 [("cat", .str "a"), ("name", .str "b")], addRow 2 [("cat", .str "a"), ("name", .str "a")],
       addRow 3 [("cat", .str "a"), ("name", .str "c")], addRow 4 [("cat", .str "b"), ("name", .str "a")],
       addChild "bookmarks" 1 1 [("size", 10)], addChild "bookmarks" 2 1 [("size", 4)],
       addChild "bookmarks" 3 1 [("size", 1)], addChild "bookmarks" 4 1 [("size", 7)],
@@ -217,7 +256,7 @@ def cases : List Case := [
     description := "Each meter's readings, in time order, as the change since the reading before; a middle reading leaves."
     root := "sites"
     steps := [.replaceToDelta "meters" "readings" ["at"] [("value", "delta")]]
-    ops := [addRow 1 [("name", .str "north")],
+    ops := primary [addRow 1 [("name", .str "north")],
       addChild "meters" 1 1 [("label", .str "m1")], addChild "meters" 1 2 [("label", .str "m2")],
       addGrandchild "meters" "readings" 1 1 1 [("at", 10), ("value", 100)],
       addGrandchild "meters" "readings" 1 1 2 [("at", 20), ("value", 130)],
@@ -230,7 +269,7 @@ def cases : List Case := [
     description := "Each category's cheapest and priciest item, after its cheapest leaves; an item with no price is never picked."
     root := "categories"
     steps := [.pickByMin "items" "price" "cheapest", .pickByMax "items" "price" "priciest"]
-    ops := [addRow 1 [("name", .str "tools")], addRow 2 [("name", .str "toys")],
+    ops := primary [addRow 1 [("name", .str "tools")], addRow 2 [("name", .str "toys")],
       addChild "items" 1 1 [("name", .str "saw"), ("price", 5)], addChild "items" 1 2 [("name", .str "awl"), ("price", 3)],
       addChild "items" 1 3 [("name", .str "rag")], addChild "items" 1 4 [("name", .str "vise"), ("price", 9)],
       addChild "items" 2 1 [("name", .str "ball")], .remove ["items"] 1 [2]]
@@ -239,11 +278,36 @@ def cases : List Case := [
     description := "Folders grouped by category, each group picking its folder with the largest total, which changes as bookmarks arrive and leave."
     root := "folders"
     steps := [.sum "bookmarks" "size" "total", .groupBy ["cat"] "groups", .pickByMax "folders" "total" "largest"]
-    ops := [addRow 1 [("cat", .str "a"), ("name", .str "home")], addRow 2 [("cat", .str "a"), ("name", .str "work")],
+    ops := primary [addRow 1 [("cat", .str "a"), ("name", .str "home")], addRow 2 [("cat", .str "a"), ("name", .str "work")],
       addRow 3 [("cat", .str "a"), ("name", .str "misc")], addRow 4 [("cat", .str "b"), ("name", .str "play")],
       addChild "bookmarks" 1 1 [("size", 10)], addChild "bookmarks" 2 1 [("size", 4)],
       addChild "bookmarks" 2 2 [("size", 3)], addChild "bookmarks" 2 3 [("size", 5)],
       addChild "bookmarks" 3 1 [("size", 1)], addChild "bookmarks" 4 1 [("size", 2)], .remove ["bookmarks"] 3 [1]]
-    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 9, 1, 7, 2, 8, 10, 0, 4, 5, 6], [2, 8, 0, 4, 10, 1, 6, 5, 3, 7, 9]] }]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 9, 1, 7, 2, 8, 10, 0, 4, 5, 6], [2, 8, 0, 4, 10, 1, 6, 5, 3, 7, 9]] },
+  { name := "enrich-orders-catalog"
+    description := "Orders enriched with their SKU's catalog entry, a group of prices; entries arrive before and after the orders, one leaves, and one order's SKU is never listed."
+    root := "orders"
+    steps := [.enrich "catalog" "prices" [.groupBy ["sku"] "skus"] ["sku"] "product" none]
+    ops := [(none, addRow 1 [("sku", .str "a"), ("qty", 2)]),
+      on "catalog" (addRow 1 [("sku", .str "a"), ("price", 5)]),
+      on "catalog" (addRow 2 [("sku", .str "b"), ("price", 7)]),
+      (none, addRow 2 [("sku", .str "b"), ("qty", 1)]),
+      (none, addRow 3 [("sku", .str "c"), ("qty", 4)]),
+      on "catalog" (addRow 3 [("sku", .str "a"), ("price", 6)]),
+      on "catalog" (.remove [] 1 [])]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [1, 5, 6, 2, 0, 3, 4], [4, 3, 2, 0, 5, 1, 6]] },
+  { name := "enrich-totals-when-missing"
+    description := "Orders enriched with their SKU's stock on hand, a total over its lots; an order with no SKU, and one whose stock leaves, get whenMissing."
+    root := "orders"
+    steps := [.enrich "stock" "lots" [.groupBy ["sku"] "skus", .sum "lots" "qty" "onHand"] ["sku"] "stock"
+      (some (mkProps [("onHand", 0)]))]
+    ops := [(none, addRow 1 [("sku", .str "a")]),
+      (none, addRow 2 [("note", .str "no sku")]),
+      on "stock" (addRow 1 [("sku", .str "a"), ("qty", 3)]),
+      on "stock" (addRow 2 [("sku", .str "a"), ("qty", 4)]),
+      (none, addRow 3 [("sku", .str "b")]),
+      on "stock" (addRow 3 [("sku", .str "b"), ("qty", 1)]),
+      on "stock" (.remove [] 3 [])]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [2, 3, 5, 6, 0, 1, 4], [4, 5, 1, 2, 6, 0, 3]] }]
 
 end JinagaSpec.Cascade
