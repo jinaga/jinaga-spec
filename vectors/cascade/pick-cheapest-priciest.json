@@ -1,0 +1,58 @@
+{"pipeline":
+ {"steps":
+  [{"step": "pickByMin",
+    "property": "price",
+    "as": "cheapest",
+    "array": "items"},
+   {"step": "pickByMax",
+    "property": "price",
+    "as": "priciest",
+    "array": "items"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "name"}],
+   "arrays":
+   [{"type":
+     {"scalars":
+      [{"type": "number", "name": "price"}, {"type": "string", "name": "name"}],
+      "arrays": []},
+     "name": "items"}]},
+  "root": "categories"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6, 7], [1, 6, 0, 5, 3, 4, 7, 2], [0, 3, 7, 4, 1, 2, 6, 5]],
+ "ops":
+ [{"props": {"name": "tools"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"name": "toys"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"price": 5, "name": "saw"},
+   "path": ["items"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"price": 3, "name": "awl"},
+   "path": ["items"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"name": "rag"},
+   "path": ["items"],
+   "op": "add",
+   "keys": ["1", "3"]},
+  {"props": {"price": 9, "name": "vise"},
+   "path": ["items"],
+   "op": "add",
+   "keys": ["1", "4"]},
+  {"props": {"name": "ball"},
+   "path": ["items"],
+   "op": "add",
+   "keys": ["2", "1"]},
+  {"props": {"price": 3, "name": "awl"},
+   "path": ["items"],
+   "op": "remove",
+   "keys": ["1", "2"]}],
+ "name": "pick-cheapest-priciest",
+ "expected":
+ [{"priciest": {"price": 9, "name": "vise"},
+   "name": "tools",
+   "items":
+   [{"name": "rag"}, {"price": 5, "name": "saw"}, {"price": 9, "name": "vise"}],
+   "cheapest": {"price": 5, "name": "saw"}},
+  {"name": "toys", "items": [{"name": "ball"}]}],
+ "description":
+ "Each category's cheapest and priciest item, after its cheapest leaves; an item with no price is never picked."}

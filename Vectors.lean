@@ -247,6 +247,8 @@ def stepJson : PStep → Lean.Json
       ("orderBy", strs O), ("properties", strs P)]
   | .replaceToDelta e v O D => Lean.Json.mkObj [("step", "replaceToDelta"), ("entity", e), ("event", v),
       ("orderBy", strs O), ("properties", strs (D.map (·.1))), ("outputs", strs (D.map (·.2)))]
+  | .pickByMin a p q => Lean.Json.mkObj [("step", "pickByMin"), ("array", a), ("property", p), ("as", q)]
+  | .pickByMax a p q => Lean.Json.mkObj [("step", "pickByMax"), ("array", a), ("property", p), ("as", q)]
 
 /-- The level an ordered step sorts, the names it sorts by, and the names whose
 values it adds or subtracts. -/
@@ -272,10 +274,6 @@ def kind : Option JinagaSpec.Cascade.Json → Nat
 orders disagree. -/
 def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
   let n := c.ops.length
-  -- The TypeScript reads values as JavaScript numbers, exact only up to 2^53 - 1.
-  let safe : Int := 2 ^ 53 - 1
-  unless c.ops.all fun | .add _ _ _ ps => ps.entries.all fun (_, v) => (ints v).all (fun i => -safe ≤ i ∧ i ≤ safe) | _ => true do
-    throw <| IO.userError s!"cascade case {c.name}: an integer is outside JavaScript's safe range"
   for o in c.orders do
     unless o.length = n ∧ o.Nodup ∧ o.all (· < n) do
       throw <| IO.userError s!"cascade case {c.name}: an order is not a permutation of its operations"
@@ -287,6 +285,12 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
     -- descriptor declares every name a row ever carried, and a value that
     -- passes through can leave its mark on an ordered step's list.
     let prefixes := (List.range (o.length + 1)).map fun i => c.stages (c.input (o.take i))
+    -- The TypeScript holds values as JavaScript numbers, exact only up to
+    -- 2^53 - 1: every value a step reads or computes must be within it.
+    let safe : Int := 2 ^ 53 - 1
+    unless prefixes.all fun st => st.all fun (_, T) => T.all fun e =>
+        e.2.props.entries.all fun (_, v) => (ints v).all fun i => -safe ≤ i ∧ i ≤ safe do
+      throw <| IO.userError s!"cascade case {c.name}: an integer is outside JavaScript's safe range"
     for (s, j) in c.steps.zipIdx do
       let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
       -- The siblings an ordered step sorts must compare by their values alone:
@@ -309,6 +313,17 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
       | .sum a p _ =>
         unless inputs.all fun T => (T.filter (·.1.1 = [a])).all fun e => e.2.props p matches some (.int _) do
           throw <| IO.userError s!"cascade case {c.name}: a child of {a} has no number {p} to sum"
+      -- A pick compares the values it finds as numbers, converting a string
+      -- with `Number()`: they must be numbers, and no two siblings tied.
+      | .pickByMin a p _ | .pickByMax a p _ =>
+        for T in inputs do
+          let nodes := (T.filter (·.1.1 = [a])).filter fun e => (e.2.props p).isSome
+          unless nodes.all fun e => e.2.props p matches some (.int _) do
+            throw <| IO.userError s!"cascade case {c.name}: a value of {p} in {a} is not a number"
+          for x in nodes do
+            for y in nodes do
+              if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ x.2.props p = y.2.props p then
+                throw <| IO.userError s!"cascade case {c.name}: two children in {a} tie on {p}"
       -- A flattened child's names, and its arrays' names, must avoid every
       -- name its parents ever carried.
       | .flatten P C _ =>

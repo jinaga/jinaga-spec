@@ -71,6 +71,8 @@ function builderOf(pipeline: any): any {
             case "filter": b = b.filter(predicate(s.predicate), [s.predicate.property]); break;
             case "cumulativeSum": b = b.cumulativeSum(s.array, s.orderBy, s.properties); break;
             case "replaceToDelta": b = b.replaceToDelta(s.entity, s.event, s.orderBy, s.properties, s.outputs); break;
+            case "pickByMin": b = b.pickByMin(s.array, s.property, s.as); break;
+            case "pickByMax": b = b.pickByMax(s.array, s.property, s.as); break;
             default: throw new Error(`unknown step ${s.step}`);
         }
     }

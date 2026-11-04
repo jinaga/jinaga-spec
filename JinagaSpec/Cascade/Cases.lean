@@ -15,7 +15,8 @@ Every step here is at the root scope, as the model's steps are. Where the model
 and the TypeScript are known to differ, a case stays inside what they agree on,
 and the generator checks it (`Case.check`): summed children define the summed
 property, a flattened child carries no name of its parent's, and the siblings an
-ordered step sorts have order-by values of one type with no ties.
+ordered step sorts have order-by values of one type with no ties, and the
+children a pick compares have numbers with no ties.
 -/
 namespace JinagaSpec.Cascade
 
@@ -75,6 +76,8 @@ inductive PStep where
   | filter (pred : Pred)
   | cumulativeSum (array : String) (orderBy props : List String)
   | replaceToDelta (entity event : String) (orderBy : List String) (deltas : Deltas)
+  | pickByMin (array p as : String)
+  | pickByMax (array p as : String)
 
 /-- The names the nodes at level `l` carry. -/
 def Tree.namesAt (T : Tree) (l : Level) : List String :=
@@ -94,6 +97,8 @@ def PStep.denote (root : String) : PStep → Tree → Tree
   | .filter P => filter.F P.eval
   | .cumulativeSum a O P => cumulativeSum.F [a] (byOrder O) P
   | .replaceToDelta e v O D => replaceToDelta.F [e, v] (byOrder O) D
+  | .pickByMin a p q => pickBy.F [a] (fun x y => byOrder [p] y x) (fun ps => (ps p).isSome) q
+  | .pickByMax a p q => pickBy.F [a] (byOrder [p]) (fun ps => (ps p).isSome) q
 
 /-- A conformance case. -/
 structure Case where
@@ -220,6 +225,25 @@ def cases : List Case := [
       addGrandchild "meters" "readings" 1 2 1 [("at", 15), ("value", 50)],
       addGrandchild "meters" "readings" 1 2 2 [("at", 5), ("value", 20)],
       .remove ["meters", "readings"] 1 [1, 2]]
-    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8], [0, 2, 6, 1, 5, 7, 3, 4, 8], [0, 1, 2, 4, 3, 8, 5, 7, 6]] }]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8], [0, 2, 6, 1, 5, 7, 3, 4, 8], [0, 1, 2, 4, 3, 8, 5, 7, 6]] },
+  { name := "pick-cheapest-priciest"
+    description := "Each category's cheapest and priciest item, after its cheapest leaves; an item with no price is never picked."
+    root := "categories"
+    steps := [.pickByMin "items" "price" "cheapest", .pickByMax "items" "price" "priciest"]
+    ops := [addRow 1 [("name", .str "tools")], addRow 2 [("name", .str "toys")],
+      addChild "items" 1 1 [("name", .str "saw"), ("price", 5)], addChild "items" 1 2 [("name", .str "awl"), ("price", 3)],
+      addChild "items" 1 3 [("name", .str "rag")], addChild "items" 1 4 [("name", .str "vise"), ("price", 9)],
+      addChild "items" 2 1 [("name", .str "ball")], .remove ["items"] 1 [2]]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7], [1, 6, 0, 5, 3, 4, 7, 2], [0, 3, 7, 4, 1, 2, 6, 5]] },
+  { name := "pick-largest-total"
+    description := "Folders grouped by category, each group picking its folder with the largest total, which changes as bookmarks arrive and leave."
+    root := "folders"
+    steps := [.sum "bookmarks" "size" "total", .groupBy ["cat"] "groups", .pickByMax "folders" "total" "largest"]
+    ops := [addRow 1 [("cat", .str "a"), ("name", .str "home")], addRow 2 [("cat", .str "a"), ("name", .str "work")],
+      addRow 3 [("cat", .str "a"), ("name", .str "misc")], addRow 4 [("cat", .str "b"), ("name", .str "play")],
+      addChild "bookmarks" 1 1 [("size", 10)], addChild "bookmarks" 2 1 [("size", 4)],
+      addChild "bookmarks" 2 2 [("size", 3)], addChild "bookmarks" 2 3 [("size", 5)],
+      addChild "bookmarks" 3 1 [("size", 1)], addChild "bookmarks" 4 1 [("size", 2)], .remove ["bookmarks"] 3 [1]]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 9, 1, 7, 2, 8, 10, 0, 4, 5, 6], [2, 8, 0, 4, 10, 1, 6, 5, 3, 7, 9]] }]
 
 end JinagaSpec.Cascade
