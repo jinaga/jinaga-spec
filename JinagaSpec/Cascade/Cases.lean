@@ -1,5 +1,6 @@
 import JinagaSpec.Cascade.Input
 import JinagaSpec.Cascade.Flatten
+import JinagaSpec.Cascade.Ordered
 
 /-!
 # Cascade: conformance cases
@@ -13,7 +14,8 @@ reach it. `lake exe vectors` writes one vector per case (`vectors/cascade/`).
 Every step here is at the root scope, as the model's steps are. Where the model
 and the TypeScript are known to differ, a case stays inside what they agree on,
 and the generator checks it (`Case.check`): summed children define the summed
-property, and a flattened child carries no name of its parent's.
+property, a flattened child carries no name of its parent's, and the siblings an
+ordered step sorts have order-by values of one type with no ties.
 -/
 namespace JinagaSpec.Cascade
 
@@ -28,6 +30,37 @@ def Pred.eval : Pred → Props → Bool
   | .lt p n, ps => match ps p with | some (.int m) => decide (m < n) | _ => false
   | .eq p v, ps => ps p == some v
 
+/-! ## The order of ordered steps -/
+
+/-- An order-by value's place in the order: numbers by value, strings by their
+characters, as the TypeScript compares two numbers or two strings. The generator
+keeps each compared property to one of the two (`check`). -/
+def orderValue : Option Val → List Int
+  | some (.int n) => [n]
+  | some (.str s) => s.toList.map fun c => (c.toNat : Int)
+  | _ => []
+
+/-- A node's place in an order by the names `O`: its values, then its key. -/
+def sortKey (O : List String) (y : Key × Props) : List (List Int) :=
+  O.map (fun p => orderValue (y.2 p)) ++ [Encode.enc y.1]
+
+/-- The order of the ordered steps: by the values of `O` in turn, then by key. -/
+def byOrder (O : List String) (a b : Key × Props) : Bool := decide (sortKey O a < sortKey O b)
+
+theorem byOrder_strictTotal (O : List String) : StrictTotal (byOrder O) where
+  irrefl a := by simp [byOrder, List.lt_irrefl]
+  trans _ _ _ h h' := by simp only [byOrder, decide_eq_true_eq] at *; exact List.lt_trans h h'
+  total a b h := by
+    simp only [byOrder, decide_eq_true_eq]
+    have hne : sortKey O a ≠ sortKey O b := fun e =>
+      h (Encode.enc_inj (List.cons.inj (List.append_inj' e rfl).2).1)
+    rcases List.le_total (sortKey O a) (sortKey O b) with h' | h' <;>
+      rcases List.le_iff_lt_or_eq.mp h' with h' | h'
+    · exact Or.inl h'
+    · exact absurd h' hne
+    · exact Or.inr h'
+    · exact absurd h'.symm hne
+
 /-- A pipeline step, as the builder method that adds it. `groupBy(G, name)`
 names the new collection of groups, the new root scope; the rows go below each
 group in an array named for the scope they came from. -/
@@ -40,6 +73,8 @@ inductive PStep where
   | dropProperty (p : String)
   | flatten (parent child as : String)
   | filter (pred : Pred)
+  | cumulativeSum (array : String) (orderBy props : List String)
+  | replaceToDelta (entity event : String) (orderBy : List String) (deltas : Deltas)
 
 /-- The names the nodes at level `l` carry. -/
 def Tree.namesAt (T : Tree) (l : Level) : List String :=
@@ -57,6 +92,8 @@ def PStep.denote (root : String) : PStep → Tree → Tree
   | .dropProperty p => dropProperty.F [] p
   | .flatten P C O => fun T => flatten.F P C O (T.namesAt [P]) T
   | .filter P => filter.F P.eval
+  | .cumulativeSum a O P => cumulativeSum.F [a] (byOrder O) P
+  | .replaceToDelta e v O D => replaceToDelta.F [e, v] (byOrder O) D
 
 /-- A conformance case. -/
 structure Case where
@@ -160,6 +197,29 @@ def cases : List Case := [
     ops := [addRow 1 [("name", .str "home")], addRow 2 [("name", .str "work")],
       addChild "bookmarks" 1 1 [("size", 10)], addChild "bookmarks" 2 1 [("size", 4)],
       addChild "bookmarks" 2 2 [("size", 6)]]
-    orders := [[0, 1, 2, 3, 4], [1, 4, 3, 0, 2], [0, 2, 1, 3, 4]] }]
+    orders := [[0, 1, 2, 3, 4], [1, 4, 3, 0, 2], [0, 2, 1, 3, 4]] },
+  { name := "cumulative-sum-by-name"
+    description := "Each folder's total, then a running total of the folders in each category by name; a folder loses its only bookmark."
+    root := "folders"
+    steps := [.sum "bookmarks" "size" "total", .groupBy ["cat"] "groups", .cumulativeSum "folders" ["name"] ["total"]]
+    ops := [addRow 1 [("cat", .str "a"), ("name", .str "b")], addRow 2 [("cat", .str "a"), ("name", .str "a")],
+      addRow 3 [("cat", .str "a"), ("name", .str "c")], addRow 4 [("cat", .str "b"), ("name", .str "a")],
+      addChild "bookmarks" 1 1 [("size", 10)], addChild "bookmarks" 2 1 [("size", 4)],
+      addChild "bookmarks" 3 1 [("size", 1)], addChild "bookmarks" 4 1 [("size", 7)],
+      addChild "bookmarks" 2 2 [("size", 3)], .remove ["bookmarks"] 1 [1]]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [3, 2, 7, 1, 0, 6, 5, 8, 4, 9], [1, 5, 8, 0, 4, 9, 2, 6, 3, 7]] },
+  { name := "replace-to-delta-readings"
+    description := "Each meter's readings, in time order, as the change since the reading before; a middle reading leaves."
+    root := "sites"
+    steps := [.replaceToDelta "meters" "readings" ["at"] [("value", "delta")]]
+    ops := [addRow 1 [("name", .str "north")],
+      addChild "meters" 1 1 [("label", .str "m1")], addChild "meters" 1 2 [("label", .str "m2")],
+      addGrandchild "meters" "readings" 1 1 1 [("at", 10), ("value", 100)],
+      addGrandchild "meters" "readings" 1 1 2 [("at", 20), ("value", 130)],
+      addGrandchild "meters" "readings" 1 1 3 [("at", 30), ("value", 175)],
+      addGrandchild "meters" "readings" 1 2 1 [("at", 15), ("value", 50)],
+      addGrandchild "meters" "readings" 1 2 2 [("at", 5), ("value", 20)],
+      .remove ["meters", "readings"] 1 [1, 2]]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8], [0, 2, 6, 1, 5, 7, 3, 4, 8], [0, 1, 2, 4, 3, 8, 5, 7, 6]] }]
 
 end JinagaSpec.Cascade

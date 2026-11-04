@@ -69,6 +69,8 @@ function builderOf(pipeline: any): any {
             case "dropProperty": b = b.dropProperty(s.property); break;
             case "flatten": b = b.flatten(s.parent, s.child, s.as); break;
             case "filter": b = b.filter(predicate(s.predicate), [s.predicate.property]); break;
+            case "cumulativeSum": b = b.cumulativeSum(s.array, s.orderBy, s.properties); break;
+            case "replaceToDelta": b = b.replaceToDelta(s.entity, s.event, s.orderBy, s.properties, s.outputs); break;
             default: throw new Error(`unknown step ${s.step}`);
         }
     }
