@@ -26,7 +26,7 @@ if grep -q sorryAx "$tmp/out.txt"; then echo "one of the checked theorems depend
 
 echo "== Vectors are up to date"
 lake build vectors
-tmp="$(mktemp -d)"; lake exe vectors "$tmp" > /dev/null
+tmp="$(mktemp -d)"; lake exe vectors "$tmp" | grep "mutant"
 for kind in split well-formed inverse cascade; do
   diff -r "$tmp/$kind" "vectors/$kind" || { echo "vectors/$kind is out of date: run lake exe vectors"; exit 1; }
 done

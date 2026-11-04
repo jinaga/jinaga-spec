@@ -259,6 +259,14 @@ defined property's expression may read a property its `deps` leave out only if
 that property keeps one value on each row: the TypeScript recomputes only when
 a dependency changes.
 
+`lake exe vectors` also refuses to write the cascade vectors unless each of
+its mutants is caught. A mutant is a deliberately broken step, such as a `sum`
+that counts, a `filter` that keeps what it should drop, or a `cumulativeSum` in
+the reverse order. It is caught when, in some case that uses the step, it
+changes the expected output or the case is refused. A port with the same bug
+then fails a vector. Steps inside an `enrich`'s secondary pipeline are not
+mutated.
+
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
 `CASCADE_CORE` pointing at a checkout) runs them.
 

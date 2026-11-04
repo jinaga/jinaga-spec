@@ -391,18 +391,88 @@ partial def checkSteps (name : String) (steps : List PStep) (prefixes : List (Li
     | _ => pure ()
 
 /-- Refuse a case outside what the model and the TypeScript agree on, or whose
-orders disagree. -/
-def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
+orders disagree, given the stages its pipeline passes through after the
+operations in an order. -/
+def checkWith (c : JinagaSpec.Cascade.Case) (stages : List Nat → List (String × Tree)) : IO Unit := do
   let n := c.ops.length
   for o in c.orders do
     unless o.length = n ∧ o.Nodup ∧ o.all (· < n) do
       throw <| IO.userError s!"cascade case {c.name}: an order is not a permutation of its operations"
-  let outs := c.orders.map fun o => (outputJson (c.denote o)).compress
+  let outs := c.orders.map fun o => (outputJson (((stages o).getLast?.map (·.2)).getD [])).compress
   unless outs.all (· = outs.headD "") do
     throw <| IO.userError s!"cascade case {c.name}: its orders give different outputs"
   for o in c.orders do
     let takes := (List.range (o.length + 1)).map o.take
-    checkSteps c.name c.steps (takes.map c.stages) (takes.map c.sources)
+    checkSteps c.name c.steps (takes.map stages) (takes.map c.sources)
+
+def check (c : JinagaSpec.Cascade.Case) : IO Unit := checkWith c c.stages
+
+/-! ### Mutants
+
+Deliberately broken steps: each replaces the denotation of some steps with a
+wrong one, built from the model's own steps. A mutant is caught when some case
+it applies to changes its expected output, or is refused by the checks. The
+cases' own definitions stay unparameterized; steps inside an `enrich`'s
+secondary pipeline keep their own denotation. -/
+
+/-- A broken denotation for some steps, from the root scope's name and each
+source's input. -/
+abbrev Mutant := String → (Source → Tree) → PStep → Option (Tree → Tree)
+
+/-- The reverse of an order. -/
+def rev (lt : Key × Props → Key × Props → Bool) : Key × Props → Key × Props → Bool := fun x y => lt y x
+
+def mutants : List (String × Mutant) := [
+  ("sum counts instead of summing", fun _ _ => fun
+    | .sum a _ q => some (aggregate.F [a] q (fun _ => true) (sumBy fun _ => 1)) | _ => none),
+  ("min takes the maximum", fun _ _ => fun
+    | .min a p q => some (aggregate.F [a] q (fun _ => true) (maxOf p)) | _ => none),
+  ("max takes the minimum", fun _ _ => fun
+    | .max a p q => some (aggregate.F [a] q (fun _ => true) (minOf p)) | _ => none),
+  ("groupBy ignores its last grouping property", fun r _ => fun
+    | .groupBy G _ => some (groupBy.F G.dropLast r) | _ => none),
+  ("filter keeps what it should drop", fun _ _ => fun
+    | .filter P => some (filter.F (!P.eval ·)) | _ => none),
+  ("dropProperty drops nothing", fun _ _ => fun
+    | .dropProperty _ => some id | _ => none),
+  ("flatten forgets its parents' names", fun _ _ => fun
+    | .flatten P C O => some (flatten.F P C O []) | _ => none),
+  ("cumulativeSum takes the reverse order", fun _ _ => fun
+    | .cumulativeSum a O P => some (cumulativeSum.F [a] (rev (byOrder O)) P) | _ => none),
+  ("replaceToDelta takes the reverse order", fun _ _ => fun
+    | .replaceToDelta e v O D => some (replaceToDelta.F [e, v] (rev (byOrder O)) D) | _ => none),
+  ("pickByMin picks the maximum", fun _ _ => fun
+    | .pickByMin a p q => some (pickBy.F [a] (byOrder [p]) (fun ps => (ps p).isSome) q) | _ => none),
+  ("enrich ignores whenMissing", fun _ I => fun
+    | .enrich src r S K q _ => some fun T => enrich.F "" src [] q K (collectionKey S) none
+        fun s => if s = src then PStep.run r I S (I src) else T
+    | _ => none),
+  ("defineProperty computes no value", fun _ _ => fun
+    | .defineProperty q _ _ => some (defineProperty.F [] q fun _ => none) | _ => none)]
+
+/-- The stages of a case's pipeline with a mutant's denotations. -/
+def mutantStages (m : Mutant) (c : JinagaSpec.Cascade.Case) (o : List Nat) : List (String × Tree) :=
+  c.steps.scanl (fun (r, T) s => (s.root r, ((m r (c.sources o) s).getD (s.denote r (c.sources o))) T))
+    (c.root, c.input none o)
+
+/-- For each mutant, in how many of the cases it applies to it changes the
+expected output, and in how many more the checks refuse it. Refuse to go on if
+a mutant is caught by none. -/
+def checkMutants : IO Unit := do
+  for (label, m) in mutants do
+    let mut changed := 0
+    let mut refused := 0
+    let mut applicable := 0
+    for c in JinagaSpec.Cascade.cases do
+      unless c.steps.any fun s => (m c.root (fun _ => []) s).isSome do continue
+      applicable := applicable + 1
+      if c.orders.any fun o => outputJson (((mutantStages m c o).getLast?.map (·.2)).getD []) != outputJson (c.denote o) then
+        changed := changed + 1
+      else if (← (checkWith c (mutantStages m c) *> pure false).tryCatch fun _ => pure true) then
+        refused := refused + 1
+    IO.println s!"  mutant \"{label}\": output changed in {changed} of {applicable} cases, refused in {refused} more"
+    if changed + refused = 0 then
+      throw <| IO.userError s!"cascade mutant \"{label}\" is caught by no case"
 
 def vector (c : JinagaSpec.Cascade.Case) : Lean.Json :=
   Lean.Json.mkObj [
@@ -450,6 +520,7 @@ def main (args : List String) : IO Unit := do
   for c in wellFormedCases do
     checkIntent c
     IO.FS.writeFile (wfDir / s!"{c.name}.json") ((wellFormedCaseToJson c).pretty ++ "\n")
+  CascadeVectors.checkMutants
   for c in JinagaSpec.Cascade.cases do
     CascadeVectors.check c
     IO.FS.writeFile (cascadeDir / s!"{c.name}.json") ((CascadeVectors.vector c).pretty ++ "\n")
