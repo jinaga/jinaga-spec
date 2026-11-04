@@ -870,7 +870,11 @@ pick is the same step as the running total, one level up: correct for any values
 (`pickBy_denotation`), and the top of the TypeScript's heap (`picked_sorted`).
 The TypeScript updates the copy only on the picked child's declared mutable
 properties, so the copy is current when the child's descriptor is complete; the
-model, which hears every change, does not see that gap.
+model, which hears every change, does not see that gap. And objects are equal in
+the model when their props are, where the TypeScript groups by `JSON.stringify`,
+which keeps an object's insertion order: grouping by a copy separates
+`{a: 1, b: 2}` from `{b: 2, a: 1}`. The order is how the object was built, not a
+value, so the model does not represent it.
 
 `cumulativeSum`'s descriptor transform is the identity: the TypeScript requires
 each summed property to be mutable already, and under that requirement the

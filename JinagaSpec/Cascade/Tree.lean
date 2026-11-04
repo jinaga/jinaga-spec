@@ -34,7 +34,14 @@ inductive Val where
   | int (n : Int)
   | obj (props : String → Option Val)
 
-/-- Values compare by extension: two objects are equal when their props are. -/
+/-- Values compare by extension: two objects are equal when their props are.
+
+The TypeScript groups by `JSON.stringify` of the grouping values, which keeps an
+object's properties in insertion order, so `groupBy` on a copied object puts
+`{a: 1, b: 2}` and `{b: 2, a: 1}` in different groups. Insertion order is how an
+object was built, not something that varies in the domain, so the model does not
+represent it; the TypeScript agrees with the model when a grouping value is a
+number or an object built in one order. -/
 noncomputable instance : DecidableEq Val := fun a b => Classical.propDecidable (a = b)
 
 instance (n : Nat) : OfNat Val n := ⟨.int n⟩
