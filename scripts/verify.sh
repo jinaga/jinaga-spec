@@ -3,9 +3,12 @@
 #
 #   scripts/verify.sh                      # Lean, vectors, randomized check, TypeScript port
 #   JINAGA_JS=/path/to/jinaga.js scripts/verify.sh
+#   CASCADE_CORE=/path/to/jinaga-cascade-core scripts/verify.sh
 #
 # The TypeScript step runs only if a jinaga.js checkout is found (JINAGA_JS, or a
-# sibling directory named jinaga.js).
+# sibling directory named jinaga.js); the cascade vectors run against
+# @jinaga/cascade-core only if a checkout is found (CASCADE_CORE, or a sibling
+# directory named jinaga-cascade-core).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.elan/bin:$PATH"
@@ -24,7 +27,7 @@ if grep -q sorryAx "$tmp/out.txt"; then echo "one of the checked theorems depend
 echo "== Vectors are up to date"
 lake build vectors
 tmp="$(mktemp -d)"; lake exe vectors "$tmp" > /dev/null
-for kind in split well-formed inverse; do
+for kind in split well-formed inverse cascade; do
   diff -r "$tmp/$kind" "vectors/$kind" || { echo "vectors/$kind is out of date: run lake exe vectors"; exit 1; }
 done
 echo "vectors match the oracle"
@@ -62,5 +65,18 @@ if [ -d "$jinaga/src/specification" ]; then
   )
 else
   echo "== TypeScript port skipped (no jinaga.js checkout at $jinaga)"
+fi
+
+cascade="${CASCADE_CORE:-../jinaga-cascade-core}"
+if [ -d "$cascade/src/steps" ]; then
+  cascade="$(cd "$cascade" && pwd)"
+  echo "== Cascade vectors against $cascade"
+  (
+    cd ports/typescript
+    npm ci --silent
+    CASCADE_CORE="$cascade" npm run --silent cascade 2>/dev/null | grep -E "cascade vector runs|FAIL"
+  )
+else
+  echo "== Cascade vectors skipped (no jinaga-cascade-core checkout at $cascade)"
 fi
 echo "OK"

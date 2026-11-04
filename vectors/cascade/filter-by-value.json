@@ -1,0 +1,14 @@
+{"pipeline":
+ {"steps":
+  [{"step": "filter", "predicate": {"value": 4, "property": "v", "op": "gt"}}],
+  "source": {"scalars": [{"type": "number", "name": "v"}], "arrays": []},
+  "root": "rows"},
+ "orders": [[0, 1, 2, 3], [2, 3, 1, 0]],
+ "ops":
+ [{"props": {"v": 5}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"v": 3}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"v": 9}, "path": [], "op": "add", "keys": ["3"]},
+  {"props": {"v": 9}, "path": [], "op": "remove", "keys": ["3"]}],
+ "name": "filter-by-value",
+ "expected": [{"v": 5}],
+ "description": "Root rows whose value is greater than a constant."}

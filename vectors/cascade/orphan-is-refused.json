@@ -1,0 +1,23 @@
+{"pipeline":
+ {"steps": [{"step": "count", "as": "n", "array": "bookmarks"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "name"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "size"}], "arrays": []},
+     "name": "bookmarks"}]},
+  "root": "folders"},
+ "orders": [[0, 1, 2]],
+ "ops":
+ [{"props": {"size": 10},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"name": "home"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"size": 4},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "2"]}],
+ "name": "orphan-is-refused",
+ "expected": [{"name": "home", "n": 1, "bookmarks": [{"size": 4}]}],
+ "description":
+ "A child that arrives before its parent is refused, and stays out after the parent arrives (jinaga/jinaga-cascade-core#31)."}

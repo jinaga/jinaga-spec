@@ -1,0 +1,48 @@
+{"pipeline":
+ {"steps":
+  [{"step": "flatten", "parent": "projects", "child": "tasks", "as": "work"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "team"}],
+   "arrays":
+   [{"type":
+     {"scalars": [{"type": "string", "name": "title"}],
+      "arrays":
+      [{"type":
+        {"scalars": [{"type": "number", "name": "hours"}], "arrays": []},
+        "name": "tasks"}]},
+     "name": "projects"}]},
+  "root": "teams"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [0, 2, 5, 1, 4, 3, 6], [0, 1, 4, 6, 2, 3, 5]],
+ "ops":
+ [{"props": {"team": "core"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"title": "spec"},
+   "path": ["projects"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"title": "port"},
+   "path": ["projects"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"hours": 3},
+   "path": ["projects", "tasks"],
+   "op": "add",
+   "keys": ["1", "1", "1"]},
+  {"props": {"hours": 5},
+   "path": ["projects", "tasks"],
+   "op": "add",
+   "keys": ["1", "1", "2"]},
+  {"props": {"hours": 2},
+   "path": ["projects", "tasks"],
+   "op": "add",
+   "keys": ["1", "2", "1"]},
+  {"props": {"hours": 5},
+   "path": ["projects", "tasks"],
+   "op": "remove",
+   "keys": ["1", "1", "2"]}],
+ "name": "flatten-projects-tasks",
+ "expected":
+ [{"work": [{"title": "port", "hours": 2}, {"title": "spec", "hours": 3}],
+   "team": "core"}],
+ "description":
+ "Each team's projects and their tasks, flattened into one array of tasks that carry their project's values."}

@@ -372,7 +372,7 @@ TypeScript, with these exceptions:
 
 ## Conformance vectors
 
-There are three kinds, all generated from the definitions (`vectors/README.md`):
+There are four kinds, all generated from the definitions (`vectors/README.md`):
 
 - `split/`: a specification, the split the oracle computes, and both in
   Jinaga's text form.
@@ -381,6 +381,9 @@ There are three kinds, all generated from the definitions (`vectors/README.md`):
   fact or batch. Each vector gives the rows gained and lost, the inverses and
   their reorderings, the candidates they find, and, where the projection names
   every top-level unknown, the exact inverses' adds and removes.
+- `cascade/`: a `@jinaga/cascade-core` pipeline, the operations a caller
+  performs, several orders to perform them in, and the output the model gives
+  for all of them.
 
 The inverse vectors are named cases plus fixed random seeds. `lake exe vectors`
 refuses to write a set that leaves out any shape in its coverage list, which
@@ -391,7 +394,8 @@ arriving, and a condition on a given.
 inverse vectors except the two with a condition on a given, which wait on the
 new label rule (jinaga/jinaga.js#371). `jinaga.net` runs a copy of the vectors
 pinned at `07d5788`, from before the vectors for a given arriving and for
-conditions on a given.
+conditions on a given. `@jinaga/cascade-core` passes every cascade vector, in
+every order.
 
 ## What is modelled, and what is not
 
@@ -427,8 +431,9 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: nested scopes, and conformance vectors and mutants that bind the
-   model to `@jinaga/cascade-core`.
+5. Cascade: nested scopes; conformance vectors for the steps that take an order,
+   a pick, or a second source; and mutants that check the vectors catch what
+   they should.
 
 ## License
 

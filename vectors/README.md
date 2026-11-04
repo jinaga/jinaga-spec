@@ -166,3 +166,66 @@ vector:
    calls.
 3. Today's `invertSpecification`, for information: on which vectors its "add"
    inverses miss a gained row, or its "remove" inverses a lost one.
+
+## `cascade/<name>.json`
+
+A pipeline of `@jinaga/cascade-core`, the operations a caller performs, orders
+to perform them in, and the output. Generated from
+`JinagaSpec/Cascade/Cases.lean`. The output is the model's denotation of what
+the input holds after the operations; the steps' events reach it
+(`run_correct`, `ops_correct`), whatever the order.
+
+```jsonc
+{
+  "name": "group-sum-count",
+  "description": "...",
+  "pipeline": {
+    "root": "rows",                       // createPipeline's root scope name
+    "source": {                           // createPipeline's source scalars and arrays
+      "scalars": [ { "name": "cat", "type": "string" }, { "name": "v", "type": "number" } ],
+      "arrays": [ { "name": "bookmarks", "type": { "scalars": [ ... ], "arrays": [ ... ] } } ]
+    },
+    "steps": [                            // builder calls, in order
+      { "step": "groupBy", "by": ["cat"], "as": "groups" },
+      { "step": "sum", "array": "rows", "property": "v", "as": "total" }
+    ]
+  },
+  "ops": [                                // what the caller does
+    { "op": "add", "path": [], "keys": ["1"], "props": { "cat": "a", "v": 5 } },
+    { "op": "add", "path": ["bookmarks"], "keys": ["1", "2"], "props": { ... } },
+    { "op": "remove", "path": [], "keys": ["1"], "props": { ... } }
+  ],
+  "orders": [ [0, 1, 2], [2, 0, 1] ],     // each a permutation of the ops' indices
+  "expected": [ ... ]                     // the output's root rows, as toPipelinePlainOutput gives them
+}
+```
+
+An op at the root (`path: []`) is `pipeline.add(keys[0], props)` or
+`pipeline.remove(keys[0], props)`. An op on a source array is
+`pipeline.collection(...path).add(parentKeyPath, key, props)`, where `key` is the
+last of `keys` and `parentKeyPath` the rest. A remove carries the props its row
+was added with, which `remove` takes.
+
+The steps: `groupBy` (`by`, `as`: the new root scope's name; the rows go below
+each group in an array named for the scope they came from), `sum`, `min`, `max`
+(`array`, `property`, `as`), `count` (`array`, `as`), `dropProperty`
+(`property`), `flatten` (`parent`, `child`, `as`), and `filter` (`predicate`:
+`{ "op": "gt" | "lt" | "eq", "property", "value" }`, a comparison of a root
+row's property with a constant; the property is the filter's mutable
+property).
+
+A port passes a vector when, for every order, its output equals `expected` up to
+the order of each of the tree's arrays, those its descriptor declares, with an
+empty one taken as absent: the model's arrays have no order, and none without
+items. A property's value is compared as it is, a list in its order. The source descriptor names
+every property the ops carry, so the pipeline's descriptors are complete.
+
+`lake exe vectors` refuses a case whose orders disagree, or that leaves what the
+model and `@jinaga/cascade-core` are meant to agree on: a summed child that
+lacks the summed property, or a flattened child whose names or arrays' names
+include a name its parents carry in any input the operations pass through,
+since a descriptor declares every name a row ever carried.
+
+`ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
+`CASCADE_CORE` pointing at a checkout) runs them.
+
