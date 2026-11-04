@@ -293,6 +293,12 @@ def kind : Option JinagaSpec.Cascade.Json → Nat
   | some (.str _) => 1
   | _ => 2
 
+/-- An expression and every expression inside it. -/
+def subexprs : Expr → List Expr
+  | .add a b => .add a b :: (subexprs a ++ subexprs b)
+  | .cond P a b => .cond P a b :: (subexprs a ++ subexprs b)
+  | e => [e]
+
 /-- Refuse a pipeline's steps outside what the model and the TypeScript agree
 on, given the stages of what its input holds after each prefix of the
 operations, and each source's input after it. Each check holds in every input
@@ -353,6 +359,10 @@ partial def checkSteps (name : String) (steps : List PStep) (prefixes : List (Li
     -- dependencies kept current: every other property the expression reads
     -- must keep one value on each row.
     | .defineProperty _ e D =>
+      -- A sum inside the expression must be exact too, though no property holds it.
+      unless inputs.all fun T => (T.filter (·.1.1 = [])).all fun r => (subexprs e).all fun x =>
+          ((x.eval r.2.props).map ints).all (·.all fun i => -safe ≤ i ∧ i ≤ safe) do
+        throw <| IO.userError s!"cascade case {name}: a defined property's expression leaves JavaScript's safe range"
       for p in e.reads.filter (· ∉ D) do
         let vals := inputs.flatMap fun T => (T.filter (·.1.1 = [])).map fun e => (e.1.2, e.2.props p)
         for x in vals do
