@@ -203,8 +203,10 @@ the input holds after the operations; the steps' events reach it
 An op at the root (`path: []`) is `pipeline.add(keys[0], props)` or
 `pipeline.remove(keys[0], props)`. An op on a source array is
 `pipeline.collection(...path).add(parentKeyPath, key, props)`, where `key` is the
-last of `keys` and `parentKeyPath` the rest. A remove carries the props its row
-was added with, which `remove` takes.
+last of `keys` and `parentKeyPath` the rest. An op with a `source` is on a
+secondary pipeline's input, `pipeline.sources[source].add(keys[0], props)`, at
+its root. A remove carries the props its row was added with, which `remove`
+takes.
 
 The steps: `groupBy` (`by`, `as`: the new root scope's name; the rows go below
 each group in an array named for the scope they came from), `sum`, `min`, `max`
@@ -216,10 +218,18 @@ property). `cumulativeSum` (`array`, `orderBy`, `properties`) and
 `replaceToDelta` (`entity`, `event`, `orderBy`, `properties`, `outputs`) order
 siblings by their `orderBy` values in turn, then by key. `pickByMin` and `pickByMax`
 (`array`, `property`, `as`) give each parent a copy of the child with the least
-or greatest `property`, ignoring children without one.
+or greatest `property`, ignoring children without one. `enrich` (`source`,
+`pipeline`, `primaryKey`, `as`, and `whenMissing` when there is one) is
+`.enrich(source, secondary, primaryKey, as, whenMissing)`, where `secondary` is
+built from `pipeline` (`root`, `source`, `steps`) as the vector's own pipeline is.
+Each root row holds as `as` a copy of the secondary's root row whose collection
+key, from its root `groupBy`, matches its `primaryKey` values, or `whenMissing`.
+A copied row's arrays are plain arrays, as `toPipelinePlainOutput` gives them
+(jinaga/jinaga-cascade-core#43).
 
 A port passes a vector when, for every order, its output equals `expected` up to
-the order of each of the tree's arrays, those its descriptor declares, with an
+the order of each of the tree's arrays, those its descriptor declares in a row
+or in an object, with an
 empty one taken as absent: the model's arrays have no order, and none without
 items. A property's value is compared as it is, a list in its order. The source descriptor names
 every property the ops carry, so the pipeline's descriptors are complete.
@@ -236,7 +246,11 @@ ordered step whose siblings would compare by anything but their values: an
 level (jinaga/jinaga-cascade-core#39), a summed or subtracted value that is not a number, or two siblings with the same values,
 since the model and the TypeScript break ties by different orders of keys. A
 pick's compared values must be numbers, since the TypeScript converts a string
-with `Number()`, and no two children of a parent may tie.
+with `Number()`, and no two children of a parent may tie. A secondary
+pipeline is checked as the vector's own pipeline is, and its root rows must
+differ in their collection key: where several match, the model gives
+`whenMissing` and the TypeScript the last it saw. A secondary pipeline may not enrich in turn:
+an op names one source, and a source's own sources are not modelled.
 
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
 `CASCADE_CORE` pointing at a checkout) runs them.

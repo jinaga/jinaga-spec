@@ -172,7 +172,13 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
 namespace CascadeVectors
 open JinagaSpec.Cascade
 
-/-- A model value as JSON. A map whose keys are all strings is an object. -/
+/-- An array's items in a canonical order, so the file does not depend on the
+order of the tree's list. -/
+def sortJson (xs : List Lean.Json) : Lean.Json := Lean.Json.arr (xs.mergeSort fun a b => a.compress ≤ b.compress).toArray
+
+/-- A model value as JSON. A map whose keys are all strings is an object. A map
+keyed by node keys is an array of a copied row (`Tree.copy`): its children, as
+the plain output gives them. -/
 partial def valueJson : JinagaSpec.Cascade.Json → Lean.Json
   | .int n => Lean.Json.num n
   | .str s => Lean.Json.str s
@@ -180,13 +186,9 @@ partial def valueJson : JinagaSpec.Cascade.Json → Lean.Json
   | .map es =>
     if es.all (fun e => match e.1 with | .str _ => true | _ => false) then
       Lean.Json.mkObj (es.map fun e => (match e.1 with | .str k => k | _ => "", valueJson e.2))
-    else Lean.Json.arr (es.map fun e => Lean.Json.arr #[valueJson e.1, valueJson e.2]).toArray
+    else sortJson (es.map fun e => valueJson e.2)
 
 def propsJson (ps : Props) : List (String × Lean.Json) := ps.entries.map fun (k, v) => (k, valueJson v)
-
-/-- An array's items in a canonical order, so the file does not depend on the
-order of the tree's list. -/
-def sortJson (xs : List Lean.Json) : Lean.Json := Lean.Json.arr (xs.mergeSort fun a b => a.compress ≤ b.compress).toArray
 
 /-- A node as the output shows it: its props, and each of its arrays. -/
 def nodeJson (T : Tree) : Nat → Level → Key → Props → Lean.Json
@@ -218,14 +220,22 @@ partial def nodeDescriptor (ops : List Op) (l : Level) : Lean.Json :=
     ("scalars", Lean.Json.arr (names.map fun (k, t) => Lean.Json.mkObj [("name", k), ("type", t)]).toArray),
     ("arrays", Lean.Json.arr (arrays.map fun a => Lean.Json.mkObj [("name", Lean.Json.str a), ("type", nodeDescriptor ops (l ++ [a]))]).toArray)]
 
-def opJson (ops : List Op) : Op → Lean.Json
-  | .add l r rest ps => Lean.Json.mkObj [("op", "add"), ("path", Lean.Json.arr (l.map Lean.Json.str).toArray),
-      ("keys", Lean.Json.arr ((r :: rest).map fun n => Lean.Json.str (toString n)).toArray), ("props", Lean.Json.mkObj (propsJson ps))]
-  | .remove l r rest =>
-    -- The TypeScript's remove takes the row's props: those it was added with.
-    let ps := (ops.findSome? fun | .add l' r' rest' ps => if l' = l ∧ r' = r ∧ rest' = rest then some ps else none | _ => none).getD CMap.empty
-    Lean.Json.mkObj [("op", "remove"), ("path", Lean.Json.arr (l.map Lean.Json.str).toArray),
-      ("keys", Lean.Json.arr ((r :: rest).map fun n => Lean.Json.str (toString n)).toArray), ("props", Lean.Json.mkObj (propsJson ps))]
+/-- The operations on one input, the primary (`none`) or a source. -/
+def opsOf (ops : List (Option Source × Op)) (src : Option Source) : List Op :=
+  ops.filterMap fun (s, op) => if s = src then some op else none
+
+def opJson (ops : List (Option Source × Op)) : Option Source × Op → Lean.Json
+  | (src, op) =>
+    let (name, l, keys, ps) : String × Level × List Nat × Props := match op with
+      | .add l r rest ps => ("add", l, r :: rest, ps)
+      -- The TypeScript's remove takes the row's props: those it was added with.
+      | .remove l r rest => ("remove", l, r :: rest, ((opsOf ops src).findSome? fun
+          | .add l' r' rest' ps => if l' = l ∧ r' = r ∧ rest' = rest then some ps else none
+          | _ => none).getD CMap.empty)
+    Lean.Json.mkObj ((src.toList.map fun q => ("source", Lean.Json.str q)) ++ [("op", Lean.Json.str name),
+      ("path", Lean.Json.arr (l.map Lean.Json.str).toArray),
+      ("keys", Lean.Json.arr (keys.map fun n => Lean.Json.str (toString n)).toArray),
+      ("props", Lean.Json.mkObj (propsJson ps))])
 
 def predJson : Pred → Lean.Json
   | .gt p n => Lean.Json.mkObj [("op", "gt"), ("property", p), ("value", Lean.Json.num n)]
@@ -234,7 +244,8 @@ def predJson : Pred → Lean.Json
 
 def strs (l : List String) : Lean.Json := Lean.Json.arr (l.map Lean.Json.str).toArray
 
-def stepJson : PStep → Lean.Json
+/-- A step as a builder call; `ops` give a secondary pipeline's source descriptor. -/
+partial def stepJson (ops : List (Option Source × Op)) : PStep → Lean.Json
   | .groupBy G C => Lean.Json.mkObj [("step", "groupBy"), ("by", Lean.Json.arr (G.map Lean.Json.str).toArray), ("as", C)]
   | .sum a p q => Lean.Json.mkObj [("step", "sum"), ("array", a), ("property", p), ("as", q)]
   | .count a q => Lean.Json.mkObj [("step", "count"), ("array", a), ("as", q)]
@@ -249,6 +260,10 @@ def stepJson : PStep → Lean.Json
       ("orderBy", strs O), ("properties", strs (D.map (·.1))), ("outputs", strs (D.map (·.2)))]
   | .pickByMin a p q => Lean.Json.mkObj [("step", "pickByMin"), ("array", a), ("property", p), ("as", q)]
   | .pickByMax a p q => Lean.Json.mkObj [("step", "pickByMax"), ("array", a), ("property", p), ("as", q)]
+  | .enrich src r S K q w => Lean.Json.mkObj (([("step", "enrich"), ("source", Lean.Json.str src),
+      ("pipeline", Lean.Json.mkObj [("root", r), ("source", nodeDescriptor (opsOf ops (some src)) []),
+        ("steps", Lean.Json.arr (S.map (stepJson ops)).toArray)]),
+      ("primaryKey", strs K), ("as", Lean.Json.str q)] : List (String × Lean.Json)) ++ w.toList.map fun ps => ("whenMissing", Lean.Json.mkObj (propsJson ps)))
 
 /-- The level an ordered step sorts, the names it sorts by, and the names whose
 values it adds or subtracts. -/
@@ -270,6 +285,83 @@ def kind : Option JinagaSpec.Cascade.Json → Nat
   | some (.str _) => 1
   | _ => 2
 
+/-- Refuse a pipeline's steps outside what the model and the TypeScript agree
+on, given the stages of what its input holds after each prefix of the
+operations, and each source's input after it. Each check holds in every input
+the operations pass through: a descriptor declares every name a row ever
+carried, and a value that passes through can leave its mark on an ordered
+step's list. -/
+partial def checkSteps (name : String) (steps : List PStep) (prefixes : List (List (String × Tree)))
+    (sources : List (Source → Tree)) : IO Unit := do
+  -- The TypeScript holds values as JavaScript numbers, exact only up to
+  -- 2^53 - 1: every value a step reads or computes must be within it.
+  let safe : Int := 2 ^ 53 - 1
+  unless prefixes.all fun st => st.all fun (_, T) => T.all fun e =>
+      e.2.props.entries.all fun (_, v) => (ints v).all fun i => -safe ≤ i ∧ i ≤ safe do
+    throw <| IO.userError s!"cascade case {name}: an integer is outside JavaScript's safe range"
+  for (s, j) in steps.zipIdx do
+    let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
+    -- The siblings an ordered step sorts must compare by their values alone:
+    -- each order-by value present and of one type, and no two siblings tied.
+    for (l, O, P) in (ordered s).toList do
+      for T in inputs do
+        let nodes := T.filter (·.1.1 = l)
+        for p in O do
+          let kinds := nodes.map fun e => kind (e.2.props p)
+          unless kinds.all (· = kinds.headD 0) ∧ kinds.all (· < 2) do
+            throw <| IO.userError s!"cascade case {name}: the values of {p} at {l} are not all numbers or all strings"
+        for p in P do
+          unless nodes.all fun e => (e.2.props p).all (· matches .int _) do
+            throw <| IO.userError s!"cascade case {name}: a value of {p} at {l} is not a number"
+        for x in nodes do
+          for y in nodes do
+            if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ O.map x.2.props = O.map y.2.props then
+              throw <| IO.userError s!"cascade case {name}: two siblings at {l} tie on {O}"
+    match s with
+    | .sum a p _ =>
+      unless inputs.all fun T => (T.filter (·.1.1 = [a])).all fun e => e.2.props p matches some (.int _) do
+        throw <| IO.userError s!"cascade case {name}: a child of {a} has no number {p} to sum"
+    -- A pick compares the values it finds as numbers, converting a string
+    -- with `Number()`: they must be numbers, and no two siblings tied.
+    | .pickByMin a p _ | .pickByMax a p _ =>
+      for T in inputs do
+        let nodes := (T.filter (·.1.1 = [a])).filter fun e => (e.2.props p).isSome
+        unless nodes.all fun e => e.2.props p matches some (.int _) do
+          throw <| IO.userError s!"cascade case {name}: a value of {p} in {a} is not a number"
+        for x in nodes do
+          for y in nodes do
+            if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ x.2.props p = y.2.props p then
+              throw <| IO.userError s!"cascade case {name}: two children in {a} tie on {p}"
+    -- A flattened child's names, and its arrays' names, must avoid every
+    -- name its parents ever carried.
+    | .flatten P C _ =>
+      let parents := inputs.flatMap fun T => T.namesAt [P]
+      let children := inputs.flatMap fun T =>
+        (T.filter (·.1.1 = [P, C])).flatMap (·.2.props.keys) ++
+          (T.filterMap fun e => if e.1.1.length = 3 ∧ e.1.1.take 2 = [P, C] then e.1.1.getLast? else none)
+      unless children.all (· ∉ parents) do
+        throw <| IO.userError s!"cascade case {name}: a child of {P} shares a name with its parent"
+    -- The secondary pipeline is checked as the primary is. A primary row with
+    -- more than one match gets `whenMissing` in the model and the last match
+    -- in the TypeScript: the secondary's rows must differ in their collection
+    -- key. Source `""` is the model's primary.
+    | .enrich src r S _ _ _ =>
+      if src = "" then throw <| IO.userError s!"cascade case {name}: a source has an empty name"
+      -- An operation names one source: a source's own sources, which
+      -- cascade-core nests below it, are not modelled.
+      if S.any (· matches .enrich ..) then
+        throw <| IO.userError s!"cascade case {name}: the secondary pipeline of {src} enriches in turn"
+      let stages := sources.map fun I => PStep.stages r I S (I src)
+      checkSteps name S stages sources
+      let CK := collectionKey S
+      for st in stages do
+        let rows := ((st.getLast?.map (·.2)).getD []).filter (·.1.1 = [])
+        for x in rows do
+          for y in rows do
+            if x.1 ≠ y.1 ∧ CK.map x.2.props = CK.map y.2.props then
+              throw <| IO.userError s!"cascade case {name}: two rows of {src} share their collection key {CK}"
+    | _ => pure ()
+
 /-- Refuse a case outside what the model and the TypeScript agree on, or whose
 orders disagree. -/
 def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
@@ -277,63 +369,12 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
   for o in c.orders do
     unless o.length = n ∧ o.Nodup ∧ o.all (· < n) do
       throw <| IO.userError s!"cascade case {c.name}: an order is not a permutation of its operations"
-  let outs := c.orders.map fun o => (outputJson (c.denote (c.input o))).compress
+  let outs := c.orders.map fun o => (outputJson (c.denote o)).compress
   unless outs.all (· = outs.headD "") do
     throw <| IO.userError s!"cascade case {c.name}: its orders give different outputs"
   for o in c.orders do
-    -- Each check holds in every input the operations pass through: a
-    -- descriptor declares every name a row ever carried, and a value that
-    -- passes through can leave its mark on an ordered step's list.
-    let prefixes := (List.range (o.length + 1)).map fun i => c.stages (c.input (o.take i))
-    -- The TypeScript holds values as JavaScript numbers, exact only up to
-    -- 2^53 - 1: every value a step reads or computes must be within it.
-    let safe : Int := 2 ^ 53 - 1
-    unless prefixes.all fun st => st.all fun (_, T) => T.all fun e =>
-        e.2.props.entries.all fun (_, v) => (ints v).all fun i => -safe ≤ i ∧ i ≤ safe do
-      throw <| IO.userError s!"cascade case {c.name}: an integer is outside JavaScript's safe range"
-    for (s, j) in c.steps.zipIdx do
-      let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
-      -- The siblings an ordered step sorts must compare by their values alone:
-      -- each order-by value present and of one type, and no two siblings tied.
-      for (l, O, P) in (ordered s).toList do
-        for T in inputs do
-          let nodes := T.filter (·.1.1 = l)
-          for p in O do
-            let kinds := nodes.map fun e => kind (e.2.props p)
-            unless kinds.all (· = kinds.headD 0) ∧ kinds.all (· < 2) do
-              throw <| IO.userError s!"cascade case {c.name}: the values of {p} at {l} are not all numbers or all strings"
-          for p in P do
-            unless nodes.all fun e => (e.2.props p).all (· matches .int _) do
-              throw <| IO.userError s!"cascade case {c.name}: a value of {p} at {l} is not a number"
-          for x in nodes do
-            for y in nodes do
-              if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ O.map x.2.props = O.map y.2.props then
-                throw <| IO.userError s!"cascade case {c.name}: two siblings at {l} tie on {O}"
-      match s with
-      | .sum a p _ =>
-        unless inputs.all fun T => (T.filter (·.1.1 = [a])).all fun e => e.2.props p matches some (.int _) do
-          throw <| IO.userError s!"cascade case {c.name}: a child of {a} has no number {p} to sum"
-      -- A pick compares the values it finds as numbers, converting a string
-      -- with `Number()`: they must be numbers, and no two siblings tied.
-      | .pickByMin a p _ | .pickByMax a p _ =>
-        for T in inputs do
-          let nodes := (T.filter (·.1.1 = [a])).filter fun e => (e.2.props p).isSome
-          unless nodes.all fun e => e.2.props p matches some (.int _) do
-            throw <| IO.userError s!"cascade case {c.name}: a value of {p} in {a} is not a number"
-          for x in nodes do
-            for y in nodes do
-              if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ x.2.props p = y.2.props p then
-                throw <| IO.userError s!"cascade case {c.name}: two children in {a} tie on {p}"
-      -- A flattened child's names, and its arrays' names, must avoid every
-      -- name its parents ever carried.
-      | .flatten P C _ =>
-        let parents := inputs.flatMap fun T => T.namesAt [P]
-        let children := inputs.flatMap fun T =>
-          (T.filter (·.1.1 = [P, C])).flatMap (·.2.props.keys) ++
-            (T.filterMap fun e => if e.1.1.length = 3 ∧ e.1.1.take 2 = [P, C] then e.1.1.getLast? else none)
-        unless children.all (· ∉ parents) do
-          throw <| IO.userError s!"cascade case {c.name}: a child of {P} shares a name with its parent"
-      | _ => pure ()
+    let takes := (List.range (o.length + 1)).map o.take
+    checkSteps c.name c.steps (takes.map c.stages) (takes.map c.sources)
 
 def vector (c : JinagaSpec.Cascade.Case) : Lean.Json :=
   Lean.Json.mkObj [
@@ -341,11 +382,11 @@ def vector (c : JinagaSpec.Cascade.Case) : Lean.Json :=
     ("description", c.description),
     ("pipeline", Lean.Json.mkObj [
       ("root", c.root),
-      ("source", nodeDescriptor c.ops []),
-      ("steps", Lean.Json.arr (c.steps.map stepJson).toArray)]),
+      ("source", nodeDescriptor (opsOf c.ops none) []),
+      ("steps", Lean.Json.arr (c.steps.map (stepJson c.ops)).toArray)]),
     ("ops", Lean.Json.arr (c.ops.map (opJson c.ops)).toArray),
     ("orders", Lean.Json.arr (c.orders.map fun o => Lean.Json.arr (o.map fun (i : Nat) => Lean.Json.num i).toArray).toArray),
-    ("expected", outputJson (c.denote (c.input (c.orders.headD []))))]
+    ("expected", outputJson (c.denote (c.orders.headD [])))]
 
 end CascadeVectors
 

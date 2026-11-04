@@ -1,0 +1,55 @@
+{"pipeline":
+ {"steps":
+  [{"whenMissing": {"onHand": 0},
+    "step": "enrich",
+    "source": "stock",
+    "primaryKey": ["sku"],
+    "pipeline":
+    {"steps":
+     [{"step": "groupBy", "by": ["sku"], "as": "skus"},
+      {"step": "sum", "property": "qty", "as": "onHand", "array": "lots"}],
+     "source":
+     {"scalars":
+      [{"type": "number", "name": "qty"}, {"type": "string", "name": "sku"}],
+      "arrays": []},
+     "root": "lots"},
+    "as": "stock"}],
+  "source":
+  {"scalars":
+   [{"type": "string", "name": "note"}, {"type": "string", "name": "sku"}],
+   "arrays": []},
+  "root": "orders"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [2, 3, 5, 6, 0, 1, 4], [4, 5, 1, 2, 6, 0, 3]],
+ "ops":
+ [{"props": {"sku": "a"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"note": "no sku"}, "path": [], "op": "add", "keys": ["2"]},
+  {"source": "stock",
+   "props": {"sku": "a", "qty": 3},
+   "path": [],
+   "op": "add",
+   "keys": ["1"]},
+  {"source": "stock",
+   "props": {"sku": "a", "qty": 4},
+   "path": [],
+   "op": "add",
+   "keys": ["2"]},
+  {"props": {"sku": "b"}, "path": [], "op": "add", "keys": ["3"]},
+  {"source": "stock",
+   "props": {"sku": "b", "qty": 1},
+   "path": [],
+   "op": "add",
+   "keys": ["3"]},
+  {"source": "stock",
+   "props": {"sku": "b", "qty": 1},
+   "path": [],
+   "op": "remove",
+   "keys": ["3"]}],
+ "name": "enrich-totals-when-missing",
+ "expected":
+ [{"stock": {"onHand": 0}, "note": "no sku"},
+  {"stock": {"sku": "a", "onHand": 7, "lots": [{"qty": 3}, {"qty": 4}]},
+   "sku": "a"},
+  {"stock": {"onHand": 0}, "sku": "b"}],
+ "description":
+ "Orders enriched with their SKU's stock on hand, a total over its lots; an order with no SKU, and one whose stock leaves, get whenMissing."}
