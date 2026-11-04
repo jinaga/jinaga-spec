@@ -22,8 +22,6 @@ the issue's tests check by permutation.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-- An item's tier, from its total. -/
 def tierOf (ps : Props) : Option Val :=
   if ((ps "total").map Val.num).getD 0 > 50 then some 1 else some 0
@@ -81,7 +79,5 @@ theorem tiers_order_independent {T T₁ T₂ : Tree} {es₁ es₂ : List Event} 
     ∃ U₁ U₂, (tiersF T).applyAll (run tiers T es₁) = some U₁ ∧
       (tiersF T).applyAll (run tiers T es₂) = some U₂ ∧ U₁.Equiv U₂ :=
   order_independent tiers_correct tiers_denotation hT h₁ h₂ h
-
-end
 
 end JinagaSpec.Cascade

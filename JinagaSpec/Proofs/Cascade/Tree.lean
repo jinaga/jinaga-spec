@@ -10,8 +10,6 @@ formed (`apply_wf`) and takes equivalent trees to equivalent trees
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-! ## `get` under each list operation -/
 
 @[simp] theorem get_nil (id : Id) : Tree.get [] id = none := rfl
@@ -288,7 +286,5 @@ theorem applyAll_equiv {T U T' : Tree} {es : List Event} (hT : T.WF) (hU : U.WF)
     obtain ⟨U1, hu1, he1⟩ := apply_equiv hT hU h h1
     obtain ⟨U', hu', he'⟩ := ih (apply_wf hT h1) (apply_wf hU hu1) he1 h2
     exact ⟨U', ⟨U1, hu1, hu'⟩, he'⟩
-
-end
 
 end JinagaSpec.Cascade

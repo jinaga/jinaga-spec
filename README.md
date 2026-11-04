@@ -42,7 +42,7 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
-| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), and the steps over ordered siblings (`Ordered.lean`). |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: finite maps and JSON values (`CMap.lean`, `Json.lean`), the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), and the steps over ordered siblings (`Ordered.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
@@ -273,10 +273,17 @@ TypeScript computes from its sorted list: the sum over a node's prefix
 
 `pickByMin` and `pickByMax` are the same step one level up: each parent holds a
 copy of the greatest of its children in the order, the top of the TypeScript's
-heap (`pickBy_correct`, `pickBy_denotation`, `picked_sorted`). A value is a
-number or an object, a copy of a node's props: a later step sees the copy as one
-value, and it survives a step, such as `flatten`, that removes the node it was
-copied from.
+heap (`pickBy_correct`, `pickBy_denotation`, `picked_sorted`). A later step sees
+the copy as one value, and it survives a step, such as `flatten`, that removes
+the node it was copied from.
+
+Everything in the model is finite, as in the TypeScript. A value is JSON
+(`Json.lean`): an integer, a string, a list, or a map; props are a map from
+names to values; and a key is a value. A map is kept sorted by key with no key
+repeated (`CMap.lean`), so maps with the same entries are equal whatever order
+they were built in (`CMap.ext`). The model builds its maps that way, and a
+caller's values are assumed canonical (`Json.Canonical`). Equality is structural
+and decidable, so the model runs.
 
 `tiers_correct` composes five steps into
 the pipeline that reproduced #29 without `enrich`.

@@ -1,3 +1,5 @@
+import JinagaSpec.Cascade.Json
+
 /-!
 # Cascade: the output tree and its events
 
@@ -23,53 +25,109 @@ change from a value to itself forbids no-op events.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 abbrev Level := List String
 
-/-- A property's value: a number, or an object. An object is a copy of a node's
-props, which `pickBy*` and `enrich` write onto another node; a later step sees
-it as one value and cannot reach inside it. -/
-inductive Val where
-  | int (n : Int)
-  | obj (props : String → Option Val)
+/-- A property's value: JSON (`Json.lean`). An object, such as the copy of a
+node's props that `pickBy*` and `enrich` write onto another node, is a map from
+names to values; a later step sees it as one value and cannot reach inside it.
+The model builds every map through `CMap`, so the values it builds are canonical
+(`Json.Canonical`): two of them are equal when they hold the same JSON, whatever
+order they were built in. A caller's values are assumed canonical, as they are
+when the input reads them as JSON. Under that contract, objects that differ only
+in the order of their properties are the same value, and so group together;
+the TypeScript groups by `JSON.stringify`, which keeps insertion order
+(jinaga/jinaga-cascade-core#41). -/
+abbrev Val := Json
 
-/-- Values compare by extension: two objects are equal when their props are.
+instance (n : Nat) : OfNat Json n := ⟨.int n⟩
 
-The TypeScript groups by `JSON.stringify` of the grouping values, which keeps an
-object's properties in insertion order, so `groupBy` on a copied object puts
-`{a: 1, b: 2}` and `{b: 2, a: 1}` in different groups. Insertion order is how an
-object was built, not something that varies in the domain, so the model does not
-represent it; the TypeScript agrees with the model when a grouping value is a
-number or an object built in one order. -/
-noncomputable instance : DecidableEq Val := fun a b => Classical.propDecidable (a = b)
-
-instance (n : Nat) : OfNat Val n := ⟨.int n⟩
-
-/-- A value as a number. An object counts 0, as the TypeScript's
+/-- A value as a number. Anything else counts 0, as the TypeScript's
 `toFiniteNumber` counts anything that is not a finite number. -/
 def Val.num : Val → Int
-  | int n => n
-  | obj _ => 0
+  | .int n => n
+  | _ => 0
 
 /-- A value's number, if it is one. -/
 def Val.toInt? : Val → Option Int
-  | int n => some n
-  | obj _ => none
+  | .int n => some n
+  | _ => none
 
-abbrev Props := String → Option Val
+/-- A node's props: a finite map from names to values, read as a function. -/
+abbrev Props := CMap String Val
 
-/-- A key. A root row has a `row` key. A child fed through `collection()` has a
-`child` key: its parent's key and its own natural key, so it is unique within
-its level even when its natural key is not. A root-level `groupBy` derives a
-group's key from its grouping values, so two groups share a key exactly when
-they share their values. -/
-inductive Key where
-  | row (n : Nat)
-  | child (parent : Key) (k : Nat)
-  | group (values : List (Option Val))
+instance : CoeFun Props (fun _ => String → Option Val) := ⟨CMap.get⟩
 
-noncomputable instance : DecidableEq Key := fun a b => Classical.propDecidable (a = b)
+theorem Props.ext {ps qs : Props} (h : ∀ p, ps p = qs p) : ps = qs := CMap.ext h
+
+/-- A key is a value, as in the TypeScript, where keys are strings. A root row
+has a `row` key. A child fed through `collection()` has a `child` key: its
+parent's key and its own natural key, so it is unique within its level even
+when its natural key is not. A root-level `groupBy` derives a group's key from
+its grouping values, so two groups share a key exactly when they share their
+values. Each form is tagged, so no two forms share a key. -/
+abbrev Key := Json
+
+/-- An optional value as a value: `[]` or `[v]`. -/
+def Json.ofOption : Option Val → Json
+  | none => .list []
+  | some v => .list [v]
+
+def Key.row (n : Nat) : Key := .list [.str "row", .int n]
+def Key.child (parent : Key) (k : Nat) : Key := .list [.str "child", parent, .int k]
+def Key.group (values : List (Option Val)) : Key := .list (.str "group" :: values.map Json.ofOption)
+
+theorem Json.ofOption_inj {a b : Option Val} (h : Json.ofOption a = Json.ofOption b) : a = b := by
+  cases a <;> cases b <;> simp_all [Json.ofOption]
+
+theorem Key.row_inj {n m : Nat} : Key.row n = Key.row m ↔ n = m := by
+  simp [Key.row, Int.ofNat_inj]
+
+theorem Key.child_inj {p q : Key} {n m : Nat} : Key.child p n = Key.child q m ↔ p = q ∧ n = m := by
+  simp [Key.child, Int.ofNat_inj]
+
+theorem map_ofOption_inj : ∀ {vs ws : List (Option Val)},
+    vs.map Json.ofOption = ws.map Json.ofOption → vs = ws
+  | [], [], _ => rfl
+  | v :: vs, w :: ws, h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    rw [Json.ofOption_inj h.1, map_ofOption_inj h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp at h
+
+theorem Key.group_inj {vs ws : List (Option Val)} : Key.group vs = Key.group ws ↔ vs = ws := by
+  simp only [Key.group, Json.list.injEq, List.cons.injEq, true_and]
+  constructor
+  · exact map_ofOption_inj
+  · intro h; rw [h]
+
+@[simp] theorem Key.row_ne_child (n : Nat) (p : Key) (k : Nat) : Key.row n ≠ Key.child p k := by
+  simp [Key.row, Key.child]
+@[simp] theorem Key.row_ne_group (n : Nat) (vs : List (Option Val)) : Key.row n ≠ Key.group vs := by
+  simp [Key.row, Key.group]
+@[simp] theorem Key.child_ne_group (p : Key) (k : Nat) (vs : List (Option Val)) :
+    Key.child p k ≠ Key.group vs := by
+  simp [Key.child, Key.group]
+@[simp] theorem Key.child_ne_row (p : Key) (k n : Nat) : Key.child p k ≠ Key.row n :=
+  fun h => Key.row_ne_child n p k h.symm
+@[simp] theorem Key.group_ne_row (vs : List (Option Val)) (n : Nat) : Key.group vs ≠ Key.row n :=
+  fun h => Key.row_ne_group n vs h.symm
+@[simp] theorem Key.group_ne_child (vs : List (Option Val)) (p : Key) (k : Nat) :
+    Key.group vs ≠ Key.child p k :=
+  fun h => Key.child_ne_group p k vs h.symm
+
+/-- A group key's values. -/
+def Key.groupValues? : Key → Option (List (Option Val))
+  | .list (.str "group" :: xs) => xs.mapM fun
+    | .list [] => some none
+    | .list [v] => some (some v)
+    | _ => none
+  | _ => none
+
+theorem Key.groupValues?_group (vs : List (Option Val)) : (Key.group vs).groupValues? = some vs := by
+  simp only [Key.group, Key.groupValues?]
+  induction vs with
+  | nil => rfl
+  | cons v vs ih =>
+    cases v <;> simp_all [Json.ofOption, List.mapM_cons]
 
 abbrev Id := Level × Key
 
@@ -92,8 +150,37 @@ def Tree.parentOk (T : Tree) (l : Level) : Option Key → Bool
 def Tree.hasChild (T : Tree) (l : Level) (k : Key) : Bool :=
   T.any fun (id, n) => !id.1.isEmpty && id.1.dropLast == l && n.parent == some k
 
-def Props.set (ps : Props) (p : String) (v : Option Val) : Props :=
-  fun q => if q = p then v else ps q
+def Props.set (ps : Props) (p : String) (v : Option Val) : Props := CMap.set ps p v
+
+@[simp] theorem Props.set_apply (ps : Props) (p q : String) (v : Option Val) :
+    (ps.set p v) q = if q = p then v else ps q := CMap.get_set ps p q v
+
+/-- `ps` with the names in `Q` taken from `v`. -/
+def Props.override (Q : List String) (v : String → Option Val) (ps : Props) : Props :=
+  Q.foldr (fun x m => m.set x (v x)) ps
+
+@[simp] theorem Props.override_apply (Q : List String) (v : String → Option Val) (ps : Props)
+    (x : String) : (Props.override Q v ps) x = if x ∈ Q then v x else ps x := by
+  induction Q with
+  | nil => simp [Props.override]
+  | cons q Q ih =>
+    simp only [Props.override, List.foldr_cons] at ih ⊢
+    rw [Props.set_apply, ih]
+    by_cases h : x = q
+    · subst h; simp
+    · simp [h]
+
+/-- The props `G` takes from `f`, and no others. -/
+def Props.ofFn (G : List String) (f : String → Option Val) : Props := CMap.ofFn G f
+
+@[simp] theorem Props.ofFn_apply (G : List String) (f : String → Option Val) (x : String) :
+    (Props.ofFn G f) x = if x ∈ G then f x else none := CMap.get_ofFn G f x
+
+/-- A node's props as a value: an object, the map from each name to its value. -/
+def Props.toJson (ps : Props) : Val :=
+  Json.ofMap (CMap.ofFn (ps.keys.map .str) fun
+    | .str p => ps p
+    | _ => none)
 
 inductive Event where
   | added (l : Level) (k : Key) (parent : Option Key) (props : Props)
@@ -133,7 +220,5 @@ structure Tree.WF (T : Tree) : Prop where
 
 /-- Two trees hold the same nodes. The order of a tree's list means nothing. -/
 def Tree.Equiv (T U : Tree) : Prop := ∀ id, T.get id = U.get id
-
-end
 
 end JinagaSpec.Cascade

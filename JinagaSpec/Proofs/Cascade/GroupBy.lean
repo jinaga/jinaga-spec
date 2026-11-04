@@ -14,8 +14,6 @@ when it first arrived.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 variable {G : List String} {C : String}
 
 /-! ## `dedup` -/
@@ -372,27 +370,27 @@ theorem groupBy_placed_cons {T T' : Tree} {x : String} {l : Level} {k a b : Key}
 
 theorem groupKey_set_not_mem {p : String} (hp : p ∉ G) (ps : Props) (v : Option Val) :
     groupKey G (ps.set p v) = groupKey G ps := by
-  simp only [groupKey, Key.group.injEq]
+  simp only [groupKey, Key.group_inj]
   refine List.map_inj_left.mpr fun x hx => ?_
   have : x ≠ p := fun h => hp (h ▸ hx)
-  simp [Props.set, this]
+  simp [this]
 
 theorem groupKey_set_ne {p : String} (hp : p ∈ G) {ps : Props} {v : Option Val} (hv : ps p ≠ v) :
     groupKey G (ps.set p v) ≠ groupKey G ps := by
   intro h
-  simp only [groupKey, Key.group.injEq] at h
+  simp only [groupKey, Key.group_inj] at h
   have := List.map_inj_left.mp h p hp
-  simp [Props.set] at this
+  simp at this
   exact hv this.symm
 
 theorem omitProps_set_mem {p : String} (hp : p ∈ G) (ps : Props) (v : Option Val) :
     omitProps G (ps.set p v) = omitProps G ps := by
-  funext r; by_cases hr : r ∈ G <;> simp [omitProps, Props.set, hr]
+  apply Props.ext; intro r; by_cases hr : r ∈ G <;> simp [omitProps, hr]
   intro h; subst h; exact absurd hp hr
 
 theorem omitProps_set_not_mem {p : String} (hp : p ∉ G) (ps : Props) (v : Option Val) :
     omitProps G (ps.set p v) = (omitProps G ps).set p v := by
-  funext r; by_cases hr : r ∈ G <;> by_cases h : r = p <;> simp_all [omitProps, Props.set]
+  apply Props.ext; intro r; by_cases hr : r ∈ G <;> by_cases h : r = p <;> simp_all [omitProps]
 
 theorem relevel_root (n : Node) : relevel G [] n = ⟨some (groupKey G n.props), omitProps G n.props⟩ :=
   rfl
@@ -747,7 +745,5 @@ theorem groupBy_correct (G : List String) (C : String) :
       obtain ⟨n, hn, h1, -⟩ := apply_placed.mp he
       exact absurd (root_parent hwf hn) (by simp [h1])
     | cons x l => simpa [groupBy, applyAll_single] using groupBy_placed_cons hwf he
-
-end
 
 end JinagaSpec.Cascade

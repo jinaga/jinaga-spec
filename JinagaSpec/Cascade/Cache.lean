@@ -37,8 +37,6 @@ defines a property of the same name.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-- A step that reads only its own cache. -/
 structure Cached (C : Type) where
   init : C
@@ -64,7 +62,7 @@ def Map.set {α : Type} (m : Key → α) (k : Key) (v : α) : Key → α :=
 /-! ## `groupBy` at the root -/
 
 /-- A row's grouping values, as `pickGroupingValues` keeps them. -/
-def pick (G : List String) (ps : Props) : Props := fun q => if q ∈ G then ps q else none
+def pick (G : List String) (ps : Props) : Props := Props.ofFn G ps
 
 /-- `trackedItems` (the grouping values of each root row) and `groupSizes`. -/
 structure GroupCache where
@@ -262,7 +260,5 @@ structure DefineCache.Describes (s : Level) (f : Props → Option Val) (deps : L
   present : ∀ k n, T.get (s, k) = some n → ∃ known changes,
     d.items k = some (known, f n.props) ∧ (∀ x ∈ changes, x.1 ∉ deps) ∧
       n.props = known.setAll changes
-
-end
 
 end JinagaSpec.Cascade

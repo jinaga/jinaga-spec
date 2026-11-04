@@ -17,30 +17,28 @@ list (`prefix_of_sorted`, `latest_of_sorted`).
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 variable {c : Level} {Q : List String} {val : Tree → Key → String → Option Val}
 
 /-! ## `overlay` -/
 
 theorem overlay_set_mem {x : String} (hx : x ∈ Q) (v : String → Option Val) (ps : Props)
     (w : Option Val) : overlay Q v (ps.set x w) = overlay Q v ps := by
-  funext y
+  apply Props.ext; intro y
   by_cases hy : y ∈ Q
   · simp [overlay, hy]
   · have : y ≠ x := fun h => hy (h ▸ hx)
-    simp [overlay, hy, Props.set, this]
+    simp [overlay, hy, this]
 
 theorem overlay_set_not_mem {x : String} (hx : x ∉ Q) (v : String → Option Val) (ps : Props)
     (w : Option Val) : overlay Q v (ps.set x w) = (overlay Q v ps).set x w := by
-  funext y
+  apply Props.ext; intro y
   by_cases hy : y = x
-  · subst hy; simp [overlay, Props.set, hx]
-  · simp [overlay, Props.set, hy]
+  · subst hy; simp [overlay, hx]
+  · simp [overlay, hy]
 
 theorem overlay_overlay (v w : String → Option Val) (ps : Props) :
     overlay Q v (overlay Q w ps) = overlay Q v ps := by
-  funext y
+  apply Props.ext; intro y
   by_cases hy : y ∈ Q <;> simp [overlay, hy]
 
 theorem overlay_denotation (hval : ∀ T U, T.WF → U.WF → T.Equiv U → val T = val U) :
@@ -126,10 +124,10 @@ theorem applyAll_node {k : Key} {a b : String → Option Val} :
       ∃ V', V.applyAll (L.filterMap fun x =>
           if a x = b x then none else some (.modified c k x (a x) (b x))) = some V' ∧
         ∀ id, V'.get id = if id = (c, k)
-          then some { m with props := fun x => if x ∈ L then b x else m.props x } else V.get id := by
+          then some { m with props := Props.override L b m.props } else V.get id := by
   intro L
   induction L with
-  | nil => intro V m _ hm _; exact ⟨V, rfl, fun id => by split <;> simp_all⟩
+  | nil => intro V m _ hm _; exact ⟨V, rfl, fun id => by split <;> simp_all [Props.override]⟩
   | cons x L ih =>
     intro V m hnd hm hx
     simp only [List.nodup_cons] at hnd
@@ -138,7 +136,7 @@ theorem applyAll_node {k : Key} {a b : String → Option Val} :
       refine ⟨V', by simpa [List.filterMap_cons, hxe] using hV', fun id => ?_⟩
       rw [hget]
       split
-      · congr 2; funext y
+      · congr 2; apply Props.ext; intro y
         by_cases hy : y = x
         · subst hy; simp [hnd.1, hx y (List.mem_cons_self ..), hxe]
         · simp [hy]
@@ -151,16 +149,16 @@ theorem applyAll_node {k : Key} {a b : String → Option Val} :
           some m1 := by rw [get_update]; simp [hm, m1]
       obtain ⟨V', hV', hget⟩ := ih _ m1 hnd.2 hm1 fun y hy => by
         have : y ≠ x := fun h => hnd.1 (h ▸ hy)
-        simp [m1, Props.set, this, hx y (List.mem_cons_of_mem _ hy)]
+        simp [m1, this, hx y (List.mem_cons_of_mem _ hy)]
       refine ⟨V', by simp [hxe, Tree.applyAll, h1, hV'], fun id => ?_⟩
       rw [hget, get_update]
       by_cases hid : id = (c, k)
       · subst hid
         simp only [↓reduceIte, Option.some.injEq]
-        congr 1; funext y
+        congr 1; apply Props.ext; intro y
         by_cases hy : y = x
-        · subst hy; simp [m1, Props.set, hnd.1]
-        · simp [m1, Props.set, hy]
+        · subst hy; simp [m1, hnd.1]
+        · simp [m1, hy]
       · simp [hid]
 
 /-- The changes to each node in `ks`. -/
@@ -194,7 +192,7 @@ theorem applyAll_nodes {a b : Key → String → Option Val} :
       · subst hk
         simp only [hnd.1, and_false, ↓reduceIte, List.mem_cons, true_or, and_self, hm,
           Option.map_some, Option.some.injEq]
-        congr 1; funext y; simp [overlay, mem_dedup]
+        congr 1; apply Props.ext; intro y; simp [overlay, mem_dedup]
       · have hne : (l, k0) ≠ (l, k) := fun h => hk (by cases h; rfl)
         simp [hne, hk]
     · simp [hl]
@@ -582,7 +580,5 @@ theorem picked_sorted (hlt : StrictTotal lt) {T : Tree} (hwf : T.WF) {has : Prop
 theorem pickBy_keeps (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool)
     (q : String) (σ : Sig) : Keeps (pickByStep c lt has q) σ (overlay.sig c.dropLast [q] σ) :=
   overlay_keeps _ _ _ σ
-
-end
 
 end JinagaSpec.Cascade

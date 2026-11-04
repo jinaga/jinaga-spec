@@ -48,8 +48,6 @@ where the model compares a step to its cache; these caches are not modelled.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-- `lt` is a strict total order on nodes with distinct keys. -/
 structure StrictTotal (lt : Key × Props → Key × Props → Bool) : Prop where
   irrefl : ∀ a, lt a a = false
@@ -60,7 +58,7 @@ structure StrictTotal (lt : Key × Props → Key × Props → Bool) : Prop where
 
 /-- `ps` with the names in `Q` taken from `v`. -/
 def overlay (Q : List String) (v : String → Option Val) (ps : Props) : Props :=
-  fun x => if x ∈ Q then v x else ps x
+  Props.override Q v ps
 
 /-- The nodes at level `c` take the values `val T k` for the names in `Q`. -/
 def overlay.F (c : Level) (Q : List String) (val : Tree → Key → String → Option Val) (T : Tree) :
@@ -174,7 +172,7 @@ def picked (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Prop
 has a comparison value. -/
 def pickBy.val (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool) (T : Tree)
     (k : Key) (_ : String) : Option Val :=
-  (picked c lt has T k).map fun y => .obj y.2
+  (picked c lt has T k).map fun y => y.2.toJson
 
 /-- `pickByMin(c, …, q)` and `pickByMax(c, …, q)`: each parent of the children
 at `c` holds the picked child as `q`. -/
@@ -185,7 +183,5 @@ def pickBy.F (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Pr
 def pickByStep (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool) (q : String) :
     Step :=
   overlayStep c.dropLast [q] (pickBy.val c lt has)
-
-end
 
 end JinagaSpec.Cascade

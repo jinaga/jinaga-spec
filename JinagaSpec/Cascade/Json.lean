@@ -118,6 +118,28 @@ def Json.ofMap (m : CMap Json Json) : Json := .map m.entries
 theorem Json.ofMap_inj {m₁ m₂ : CMap Json Json} (h : Json.ofMap m₁ = Json.ofMap m₂) : m₁ = m₂ :=
   CMap.entries_inj (Json.map.inj h)
 
+/-! ## Canonical values -/
+
+mutual
+/-- Every map in a value, at every depth, is sorted by key with no key repeated.
+`Json.map` can hold any list, so this is a condition, not a guarantee: the
+model's own values are built through `CMap`, and a caller's values are assumed
+canonical. Two canonical values that hold the same JSON are the same value. -/
+def Json.Canonical : Json → Prop
+  | .int _ => True
+  | .str _ => True
+  | .list vs => Json.CanonicalList vs
+  | .map es => (es.map (·.1)).Pairwise Encode.lt ∧ Json.CanonicalEntries es
+
+def Json.CanonicalList : List Json → Prop
+  | [] => True
+  | v :: vs => v.Canonical ∧ Json.CanonicalList vs
+
+def Json.CanonicalEntries : List (Json × Json) → Prop
+  | [] => True
+  | (k, v) :: es => k.Canonical ∧ v.Canonical ∧ Json.CanonicalEntries es
+end
+
 /-! ## Examples, checked by evaluation -/
 
 /-- A map does not remember the order its entries were set in. -/

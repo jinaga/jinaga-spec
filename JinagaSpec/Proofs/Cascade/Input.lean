@@ -13,8 +13,6 @@ does.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-! ## Composed keys are unique -/
 
 theorem nodeKey_concat (r : Nat) (xs : List Nat) (x : Nat) :
@@ -32,7 +30,7 @@ theorem nodeKey_inj : ∀ (n : Nat) (r r' : Nat) (xs ys : List Nat), xs.length =
     have : xs = [] := List.eq_nil_of_length_eq_zero hn
     subst this
     rcases List.eq_nil_or_concat ys with rfl | ⟨ys', y, rfl⟩
-    · simp only [nodeKey, List.foldl_nil, Key.row.injEq] at h; exact ⟨h, rfl⟩
+    · simp only [nodeKey, List.foldl_nil, Key.row_inj] at h; exact ⟨h, rfl⟩
     · rw [List.concat_eq_append, nodeKey_concat] at h; simp [nodeKey] at h
   | succ n ih =>
     intro r r' xs ys hn h
@@ -42,7 +40,7 @@ theorem nodeKey_inj : ∀ (n : Nat) (r r' : Nat) (xs ys : List Nat), xs.length =
     rcases List.eq_nil_or_concat ys with rfl | ⟨ys', y, rfl⟩
     · rw [nodeKey_concat] at h; simp [nodeKey] at h
     rw [List.concat_eq_append] at h ⊢
-    rw [nodeKey_concat, nodeKey_concat, Key.child.injEq] at h
+    rw [nodeKey_concat, nodeKey_concat, Key.child_inj] at h
     obtain ⟨hr, hxs⟩ := ih r r' xs' ys' (by simp at hn; omega) h.1
     exact ⟨hr, by rw [hxs, h.2]⟩
 
@@ -239,7 +237,5 @@ theorem ops_order_independent {S : Step} {F : Tree → Tree} (hS : Correct S F)
   obtain ⟨U₂, hU₂, hU₂e⟩ := ops_correct hS hF ops₂ T hT h₂
   exact ⟨U₁, U₂, hU₁, hU₂, hU₁e.trans ((hF.equiv _ _ (receiveAll_wf ops₁ T hT h₁)
     (receiveAll_wf ops₂ T hT h₂) h).trans hU₂e.symm)⟩
-
-end
 
 end JinagaSpec.Cascade
