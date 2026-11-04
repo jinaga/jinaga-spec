@@ -42,7 +42,7 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
-| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: finite maps and JSON values (`CMap.lean`, `Json.lean`), the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), the steps over ordered siblings (`Ordered.lean`), named sources and joins (`Sources.lean`), and `enrich` (`Enrich.lean`). |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: finite maps and JSON values (`CMap.lean`, `Json.lean`), the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), the steps over ordered siblings (`Ordered.lean`), named sources and joins (`Sources.lean`), `enrich` (`Enrich.lean`), and a step below the root (`Within.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
@@ -294,6 +294,18 @@ how they interleave. `enrich` is a join (`enrich_correct`, `enrich_denotation`):
 each primary row holds a copy of its matching secondary root row, with
 everything below it, as one value (`Tree.copy`).
 
+A step below the root, `.in(a)`, is a root step run on each root row's array `a`
+as a tree of its own (`Within.lean`): the row is the view's *anchor*, and the
+step's output goes back under it, its keys tagged with the anchor's so that two
+rows' groups never share a key. `within_correct` holds for any root step that is
+correct for a denotation taking the empty tree to itself, so `groupBy`, `filter`
+and `flatten` below the root (`groupBy_within_correct`, `filter_within_correct`,
+`flatten_within_correct`) follow from their root proofs, and a deeper scope is
+one `within` inside another (`within_denotation`). A node that moves to a parent
+under another anchor leaves one view and joins the other: the step removes its
+subtree from the first, children first, and adds it to the second, parents
+first.
+
 `tiers_correct` composes five steps into
 the pipeline that reproduced #29 without `enrich`.
 
@@ -431,7 +443,6 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: nested scopes.
 
 ## License
 

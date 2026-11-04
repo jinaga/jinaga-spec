@@ -1,0 +1,69 @@
+{"pipeline":
+ {"steps":
+  [{"step": "sum", "property": "size", "as": "total", "array": "bookmarks"},
+   {"step": "defineProperty",
+    "expr":
+    {"then": {"value": "big", "op": "lit"},
+     "predicate": {"value": 10, "property": "total", "op": "gt"},
+     "op": "cond",
+     "else": {"value": "small", "op": "lit"}},
+    "deps": ["total"],
+    "as": "band"},
+   {"step": "groupBy", "scope": [], "by": ["band"], "as": "bands"},
+   {"step": "groupBy", "scope": ["folders"], "by": ["cat"], "as": "cats"}],
+  "source":
+  {"scalars":
+   [{"type": "string", "name": "cat"}, {"type": "string", "name": "name"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "size"}], "arrays": []},
+     "name": "bookmarks"}]},
+  "root": "folders"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6, 7], [2, 7, 1, 5, 0, 4, 6, 3], [0, 3, 1, 5, 2, 6, 4, 7]],
+ "ops":
+ [{"props": {"name": "home", "cat": "a"},
+   "path": [],
+   "op": "add",
+   "keys": ["1"]},
+  {"props": {"name": "work", "cat": "a"},
+   "path": [],
+   "op": "add",
+   "keys": ["2"]},
+  {"props": {"name": "misc", "cat": "b"},
+   "path": [],
+   "op": "add",
+   "keys": ["3"]},
+  {"props": {"size": 8},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"size": 5},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"size": 20},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["2", "1"]},
+  {"props": {"size": 20},
+   "path": ["bookmarks"],
+   "op": "remove",
+   "keys": ["2", "1"]},
+  {"props": {"size": 2},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["3", "1"]}],
+ "name": "nested-group-moves",
+ "expected":
+ [{"cats":
+   [{"folders":
+     [{"total": 13, "name": "home", "bookmarks": [{"size": 5}, {"size": 8}]}],
+     "cat": "a"}],
+   "band": "big"},
+  {"cats":
+   [{"folders": [{"name": "work"}], "cat": "a"},
+    {"folders": [{"total": 2, "name": "misc", "bookmarks": [{"size": 2}]}],
+     "cat": "b"}],
+   "band": "small"}],
+ "description":
+ "Folders banded by their total, then each band's folders grouped by category: a folder and its bookmarks move to the other band, and back, as bookmarks arrive and leave."}

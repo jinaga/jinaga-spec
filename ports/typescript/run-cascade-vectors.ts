@@ -79,6 +79,8 @@ const evaluate = (e: any, row: any): unknown => {
 function builderOf(pipeline: any): any {
     let b: any = createPipeline(pipeline.root, pipeline.source.scalars, pipeline.source.arrays.map(sourceArray));
     for (const s of pipeline.steps) {
+        // A step below the root runs in its scope: `.in(...scope)`.
+        if (s.scope?.length) b = b.in(...s.scope);
         switch (s.step) {
             case "groupBy": b = b.groupBy(s.by, s.as); break;
             case "sum": b = b.sum(s.array, s.property, s.as); break;

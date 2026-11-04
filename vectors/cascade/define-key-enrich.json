@@ -13,7 +13,7 @@
     "source": "bands",
     "primaryKey": ["band"],
     "pipeline":
-    {"steps": [{"step": "groupBy", "by": ["band"], "as": "bands"}],
+    {"steps": [{"step": "groupBy", "scope": [], "by": ["band"], "as": "bands"}],
      "source":
      {"scalars":
       [{"type": "string", "name": "band"}, {"type": "string", "name": "label"}],

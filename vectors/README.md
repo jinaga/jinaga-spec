@@ -209,12 +209,15 @@ its root. A remove carries the props its row was added with, which `remove`
 takes.
 
 The steps: `groupBy` (`by`, `as`: the new root scope's name; the rows go below
-each group in an array named for the scope they came from), `sum`, `min`, `max`
+each group in an array named for the scope they came from; below the root, `as`
+replaces the scope's array in each of its parents), `sum`, `min`, `max`
 (`array`, `property`, `as`), `count` (`array`, `as`), `dropProperty`
 (`property`), `flatten` (`parent`, `child`, `as`), and `filter` (`predicate`:
 `{ "op": "gt" | "lt" | "eq", "property", "value" }`, a comparison of a root
 row's property with a constant; the property is the filter's mutable
-property). `defineProperty` (`as`, `expr`, `deps`) is
+property). `groupBy`, `flatten` and `filter` carry a `scope`, the array path
+they run below: a port calls `.in(...scope)` before the step when it is not
+empty. `defineProperty` (`as`, `expr`, `deps`) is
 `.defineProperty(as, row => expr, deps)`, where `expr` is `{ "op": "prop",
 "property" }`, `{ "op": "lit", "value" }`, `{ "op": "add", "left", "right" }`
 (the sum of two numbers, undefined otherwise), or `{ "op": "cond", "predicate",
@@ -257,7 +260,8 @@ differ in their collection key: where several match, the model gives
 an op names one source, and a source's own sources are not modelled. A
 defined property's expression may read a property its `deps` leave out only if
 that property keeps one value on each row: the TypeScript recomputes only when
-a dependency changes.
+a dependency changes. A scoped `filter` must be the last step, since the
+builder stays in the scope after it.
 
 `lake exe vectors` also refuses to write the cascade vectors unless each of
 its mutants is caught. A mutant is a deliberately broken step, such as a `sum`

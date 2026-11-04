@@ -1,0 +1,62 @@
+{"pipeline":
+ {"steps":
+  [{"step": "groupBy",
+    "scope": ["depts", "projects"],
+    "by": ["status"],
+    "as": "byStatus"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "org"}],
+   "arrays":
+   [{"type":
+     {"scalars": [{"type": "string", "name": "dept"}],
+      "arrays":
+      [{"type":
+        {"scalars":
+         [{"type": "string", "name": "status"},
+          {"type": "string", "name": "title"}],
+         "arrays": []},
+        "name": "projects"}]},
+     "name": "depts"}]},
+  "root": "orgs"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [0, 2, 6, 5, 1, 4, 3], [0, 1, 3, 2, 4, 5, 6]],
+ "ops":
+ [{"props": {"org": "acme"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"dept": "eng"},
+   "path": ["depts"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"dept": "ops"},
+   "path": ["depts"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"title": "spec", "status": "live"},
+   "path": ["depts", "projects"],
+   "op": "add",
+   "keys": ["1", "1", "1"]},
+  {"props": {"title": "port", "status": "live"},
+   "path": ["depts", "projects"],
+   "op": "add",
+   "keys": ["1", "1", "2"]},
+  {"props": {"title": "infra", "status": "live"},
+   "path": ["depts", "projects"],
+   "op": "add",
+   "keys": ["1", "2", "1"]},
+  {"props": {"title": "audit", "status": "paused"},
+   "path": ["depts", "projects"],
+   "op": "add",
+   "keys": ["1", "2", "2"]}],
+ "name": "nested-group-two-levels",
+ "expected":
+ [{"org": "acme",
+   "depts":
+   [{"dept": "ops",
+     "byStatus":
+     [{"status": "paused", "projects": [{"title": "audit"}]},
+      {"status": "live", "projects": [{"title": "infra"}]}]},
+    {"dept": "eng",
+     "byStatus":
+     [{"status": "live",
+       "projects": [{"title": "port"}, {"title": "spec"}]}]}]}],
+ "description":
+ "In each department of each org, the projects grouped by status: a scope two arrays deep."}

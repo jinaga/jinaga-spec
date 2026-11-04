@@ -4,7 +4,7 @@
     "source": "catalog",
     "primaryKey": ["sku"],
     "pipeline":
-    {"steps": [{"step": "groupBy", "by": ["sku"], "as": "skus"}],
+    {"steps": [{"step": "groupBy", "scope": [], "by": ["sku"], "as": "skus"}],
      "source":
      {"scalars":
       [{"type": "number", "name": "price"}, {"type": "string", "name": "sku"}],

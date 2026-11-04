@@ -1,6 +1,10 @@
 {"pipeline":
  {"steps":
-  [{"step": "flatten", "parent": "projects", "child": "tasks", "as": "work"}],
+  [{"step": "flatten",
+    "scope": [],
+    "parent": "projects",
+    "child": "tasks",
+    "as": "work"}],
   "source":
   {"scalars": [{"type": "string", "name": "team"}],
    "arrays":

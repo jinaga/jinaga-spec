@@ -1,6 +1,6 @@
 {"pipeline":
  {"steps":
-  [{"step": "groupBy", "by": ["cat"], "as": "groups"},
+  [{"step": "groupBy", "scope": [], "by": ["cat"], "as": "groups"},
    {"step": "min", "property": "v", "as": "lo", "array": "rows"},
    {"step": "max", "property": "v", "as": "hi", "array": "rows"}],
   "source":

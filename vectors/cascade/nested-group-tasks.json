@@ -1,0 +1,47 @@
+{"pipeline":
+ {"steps":
+  [{"step": "groupBy", "scope": ["tasks"], "by": ["status"], "as": "byStatus"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "team"}],
+   "arrays":
+   [{"type":
+     {"scalars":
+      [{"type": "number", "name": "hours"},
+       {"type": "string", "name": "status"}],
+      "arrays": []},
+     "name": "tasks"}]},
+  "root": "teams"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [1, 5, 0, 4, 3, 2, 6], [0, 3, 1, 2, 6, 5, 4]],
+ "ops":
+ [{"props": {"team": "core"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"team": "port"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"status": "open", "hours": 3},
+   "path": ["tasks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"status": "open", "hours": 5},
+   "path": ["tasks"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"status": "done", "hours": 1},
+   "path": ["tasks"],
+   "op": "add",
+   "keys": ["1", "3"]},
+  {"props": {"status": "open", "hours": 2},
+   "path": ["tasks"],
+   "op": "add",
+   "keys": ["2", "1"]},
+  {"props": {"status": "open", "hours": 5},
+   "path": ["tasks"],
+   "op": "remove",
+   "keys": ["1", "2"]}],
+ "name": "nested-group-tasks",
+ "expected":
+ [{"team": "core",
+   "byStatus":
+   [{"tasks": [{"hours": 1}], "status": "done"},
+    {"tasks": [{"hours": 3}], "status": "open"}]},
+  {"team": "port", "byStatus": [{"tasks": [{"hours": 2}], "status": "open"}]}],
+ "description":
+ "Each team's tasks grouped by status, apart from every other team's: two teams have an open group each."}

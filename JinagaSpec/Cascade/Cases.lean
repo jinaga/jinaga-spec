@@ -2,6 +2,7 @@ import JinagaSpec.Cascade.Input
 import JinagaSpec.Cascade.Flatten
 import JinagaSpec.Cascade.Ordered
 import JinagaSpec.Cascade.Enrich
+import JinagaSpec.Cascade.Within
 
 /-!
 # Cascade: conformance cases
@@ -98,14 +99,17 @@ theorem byOrder_strictTotal (O : List String) : StrictTotal (byOrder O) where
 names the new collection of groups, the new root scope; the rows go below each
 group in an array named for the scope they came from. -/
 inductive PStep where
-  | groupBy (by_ : List String) (as : String)
+  /-- `.in(...scope).groupBy(by, as)`. -/
+  | groupBy (by_ : List String) (as : String) (scope : List String := [])
   | sum (array p as : String)
   | count (array as : String)
   | min (array p as : String)
   | max (array p as : String)
   | dropProperty (p : String)
-  | flatten (parent child as : String)
-  | filter (pred : Pred)
+  /-- `.in(...scope).flatten(parent, child, as)`. -/
+  | flatten (parent child as : String) (scope : List String := [])
+  /-- `.in(...scope).filter(pred, [pred's property])`. -/
+  | filter (pred : Pred) (scope : List String := [])
   /-- `defineProperty(as, row => e, deps)`. -/
   | defineProperty (as : String) (e : Expr) (deps : List String)
   | cumulativeSum (array : String) (orderBy props : List String)
@@ -121,16 +125,24 @@ inductive PStep where
 def Tree.namesAt (T : Tree) (l : Level) : List String :=
   dedup ((T.filter (·.1.1 = l)).flatMap (·.2.props.keys))
 
-/-- The root scope's name after a step. -/
+/-- The root scope's name after a step: a `groupBy` at the root renames it. -/
 def PStep.root (root : String) : PStep → String
-  | .groupBy _ r => r
+  | .groupBy _ r [] => r
   | _ => root
+
+/-- `F` below scope `sc`, as `.in(...sc)` runs it: within each array of the
+scope in turn, the innermost output in array `o`. `F` takes the root scope's
+name, which below a scope is the scope's last array. -/
+def scopedF (F : String → Tree → Tree) (o root : String) : List String → Tree → Tree
+  | [] => F root
+  | [a] => within.F a o (F a)
+  | a :: b :: rest => within.F a a (scopedF F o a (b :: rest))
 
 /-- A pipeline's root collection key: the names of its last root `groupBy`, or
 none once a step drops one of them, as cascade-core clears it. -/
 def collectionKey (S : List PStep) : List String :=
   S.foldl (fun ck s => match s with
-    | .groupBy G _ => G
+    | .groupBy G _ [] => G
     | .dropProperty p => if p ∈ ck then [] else ck
     | _ => ck) []
 
@@ -140,14 +152,14 @@ A flattened row inherits every name its parents carry, which is the parents'
 descriptor when it is complete. `enrich` joins the primary tree, as source `""`,
 with its secondary pipeline's output. -/
 def PStep.denote (root : String) (I : Source → Tree) : PStep → Tree → Tree
-  | .groupBy G _ => groupBy.F G root
+  | .groupBy G C sc => scopedF (groupBy.F G) C root sc
   | .sum a p q => aggregate.F [a] q (fun _ => true) (sumBy fun ps => ((ps p).map Val.num).getD 0)
   | .count a q => aggregate.F [a] q (fun _ => true) (sumBy fun _ => 1)
   | .min a p q => aggregate.F [a] q (fun _ => true) (minOf p)
   | .max a p q => aggregate.F [a] q (fun _ => true) (maxOf p)
   | .dropProperty p => dropProperty.F [] p
-  | .flatten P C O => fun T => flatten.F P C O (T.namesAt [P]) T
-  | .filter P => filter.F P.eval
+  | .flatten P C O sc => scopedF (fun _ T => flatten.F P C O (T.namesAt [P]) T) (sc.getLast?.getD root) root sc
+  | .filter P sc => scopedF (fun _ => filter.F P.eval) (sc.getLast?.getD root) root sc
   | .defineProperty q e _ => defineProperty.F [] q (Expr.eval · e)
   | .cumulativeSum a O P => cumulativeSum.F [a] (byOrder O) P
   | .replaceToDelta e v O D => replaceToDelta.F [e, v] (byOrder O) D
@@ -374,6 +386,62 @@ def cases : List Case := [
       (none, addChild "lines" 1 2 [("amount", 40)]),
       (none, addRow 2 [("id", .str "o2")]),
       (none, addChild "lines" 2 1 [("amount", 10)])]
-    orders := [[0, 1, 2, 3, 4, 5, 6], [1, 2, 4, 5, 6, 3, 0], [5, 3, 1, 6, 0, 2, 4]] }]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [1, 2, 4, 5, 6, 3, 0], [5, 3, 1, 6, 0, 2, 4]] },
+  { name := "nested-group-tasks"
+    description := "Each team's tasks grouped by status, apart from every other team's: two teams have an open group each."
+    root := "teams"
+    steps := [.groupBy ["status"] "byStatus" ["tasks"]]
+    ops := primary [addRow 1 [("team", .str "core")], addRow 2 [("team", .str "port")],
+      addChild "tasks" 1 1 [("status", .str "open"), ("hours", 3)],
+      addChild "tasks" 1 2 [("status", .str "open"), ("hours", 5)],
+      addChild "tasks" 1 3 [("status", .str "done"), ("hours", 1)],
+      addChild "tasks" 2 1 [("status", .str "open"), ("hours", 2)], .remove ["tasks"] 1 [2]]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [1, 5, 0, 4, 3, 2, 6], [0, 3, 1, 2, 6, 5, 4]] },
+  { name := "nested-filter-tasks"
+    description := "Each team's tasks of more than 2 hours; a task that fails hides its steps."
+    root := "teams"
+    steps := [.filter (.gt "hours" 2) ["tasks"]]
+    ops := primary [addRow 1 [("team", .str "core")],
+      addChild "tasks" 1 1 [("hours", 3)], addChild "tasks" 1 2 [("hours", 1)],
+      addGrandchild "tasks" "steps" 1 1 1 [("note", .str "draft")],
+      addGrandchild "tasks" "steps" 1 2 1 [("note", .str "skip")],
+      addChild "tasks" 1 3 [("hours", 4)], .remove ["tasks"] 1 [3]]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [0, 2, 4, 5, 1, 6, 3], [0, 5, 1, 3, 6, 2, 4]] },
+  { name := "nested-flatten-depts"
+    description := "In each department, the projects and their tasks flattened into one array of tasks that carry their project's values."
+    root := "orgs"
+    steps := [.flatten "projects" "tasks" "work" ["depts"]]
+    ops := primary [addRow 1 [("org", .str "acme")],
+      addChild "depts" 1 1 [("dept", .str "eng")], addChild "depts" 1 2 [("dept", .str "ops")],
+      .add ["depts", "projects"] 1 [1, 1] (mkProps [("title", .str "spec")]),
+      .add ["depts", "projects"] 1 [2, 1] (mkProps [("title", .str "infra")]),
+      .add ["depts", "projects", "tasks"] 1 [1, 1, 1] (mkProps [("hours", 3)]),
+      .add ["depts", "projects", "tasks"] 1 [1, 1, 2] (mkProps [("hours", 5)]),
+      .add ["depts", "projects", "tasks"] 1 [2, 1, 1] (mkProps [("hours", 2)]),
+      .remove ["depts", "projects", "tasks"] 1 [1, 1, 2]]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7, 8], [0, 2, 1, 4, 3, 7, 6, 5, 8], [0, 1, 3, 5, 6, 8, 2, 4, 7]] },
+  { name := "nested-group-moves"
+    description := "Folders banded by their total, then each band's folders grouped by category: a folder and its bookmarks move to the other band, and back, as bookmarks arrive and leave."
+    root := "folders"
+    steps := [.sum "bookmarks" "size" "total",
+      .defineProperty "band" (.cond (.gt "total" 10) (.lit (.str "big")) (.lit (.str "small"))) ["total"],
+      .groupBy ["band"] "bands", .groupBy ["cat"] "cats" ["folders"]]
+    ops := primary [addRow 1 [("cat", .str "a"), ("name", .str "home")],
+      addRow 2 [("cat", .str "a"), ("name", .str "work")], addRow 3 [("cat", .str "b"), ("name", .str "misc")],
+      addChild "bookmarks" 1 1 [("size", 8)], addChild "bookmarks" 1 2 [("size", 5)],
+      addChild "bookmarks" 2 1 [("size", 20)], .remove ["bookmarks"] 2 [1],
+      addChild "bookmarks" 3 1 [("size", 2)]]
+    orders := [[0, 1, 2, 3, 4, 5, 6, 7], [2, 7, 1, 5, 0, 4, 6, 3], [0, 3, 1, 5, 2, 6, 4, 7]] },
+  { name := "nested-group-two-levels"
+    description := "In each department of each org, the projects grouped by status: a scope two arrays deep."
+    root := "orgs"
+    steps := [.groupBy ["status"] "byStatus" ["depts", "projects"]]
+    ops := primary [addRow 1 [("org", .str "acme")],
+      addChild "depts" 1 1 [("dept", .str "eng")], addChild "depts" 1 2 [("dept", .str "ops")],
+      .add ["depts", "projects"] 1 [1, 1] (mkProps [("status", .str "live"), ("title", .str "spec")]),
+      .add ["depts", "projects"] 1 [1, 2] (mkProps [("status", .str "live"), ("title", .str "port")]),
+      .add ["depts", "projects"] 1 [2, 1] (mkProps [("status", .str "live"), ("title", .str "infra")]),
+      .add ["depts", "projects"] 1 [2, 2] (mkProps [("status", .str "paused"), ("title", .str "audit")])]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [0, 2, 6, 5, 1, 4, 3], [0, 1, 3, 2, 4, 5, 6]] }]
 
 end JinagaSpec.Cascade

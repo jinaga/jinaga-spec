@@ -6,7 +6,7 @@
     "primaryKey": ["sku"],
     "pipeline":
     {"steps":
-     [{"step": "groupBy", "by": ["sku"], "as": "skus"},
+     [{"step": "groupBy", "scope": [], "by": ["sku"], "as": "skus"},
       {"step": "sum", "property": "qty", "as": "onHand", "array": "lots"}],
      "source":
      {"scalars":

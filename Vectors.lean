@@ -252,14 +252,15 @@ def strs (l : List String) : Lean.Json := Lean.Json.arr (l.map Lean.Json.str).to
 
 /-- A step as a builder call; `ops` give a secondary pipeline's source descriptor. -/
 partial def stepJson (ops : List (Option Source × Op)) : PStep → Lean.Json
-  | .groupBy G C => Lean.Json.mkObj [("step", "groupBy"), ("by", Lean.Json.arr (G.map Lean.Json.str).toArray), ("as", C)]
+  | .groupBy G C sc => Lean.Json.mkObj [("step", "groupBy"), ("scope", strs sc), ("by", strs G), ("as", C)]
   | .sum a p q => Lean.Json.mkObj [("step", "sum"), ("array", a), ("property", p), ("as", q)]
   | .count a q => Lean.Json.mkObj [("step", "count"), ("array", a), ("as", q)]
   | .min a p q => Lean.Json.mkObj [("step", "min"), ("array", a), ("property", p), ("as", q)]
   | .max a p q => Lean.Json.mkObj [("step", "max"), ("array", a), ("property", p), ("as", q)]
   | .dropProperty p => Lean.Json.mkObj [("step", "dropProperty"), ("property", p)]
-  | .flatten P C O => Lean.Json.mkObj [("step", "flatten"), ("parent", P), ("child", C), ("as", O)]
-  | .filter P => Lean.Json.mkObj [("step", "filter"), ("predicate", predJson P)]
+  | .flatten P C O sc => Lean.Json.mkObj [("step", "flatten"), ("scope", strs sc), ("parent", P), ("child", C),
+      ("as", O)]
+  | .filter P sc => Lean.Json.mkObj [("step", "filter"), ("scope", strs sc), ("predicate", predJson P)]
   | .defineProperty q e D => Lean.Json.mkObj [("step", "defineProperty"), ("as", q), ("expr", exprJson e),
       ("deps", strs D)]
   | .cumulativeSum a O P => Lean.Json.mkObj [("step", "cumulativeSum"), ("array", a),
@@ -315,6 +316,11 @@ partial def checkSteps (name : String) (steps : List PStep) (prefixes : List (Li
     throw <| IO.userError s!"cascade case {name}: an integer is outside JavaScript's safe range"
   for (s, j) in steps.zipIdx do
     let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
+    -- After `.in(...).filter(...)` the builder stays in the scope, so the steps
+    -- after it would be scoped too.
+    if s matches .filter _ (_ :: _) then
+      unless j + 1 = steps.length do
+        throw <| IO.userError s!"cascade case {name}: a scoped filter is followed by another step"
     -- The siblings an ordered step sorts must compare by their values alone:
     -- each order-by value present and of one type, and no two siblings tied.
     for (l, O, P) in (ordered s).toList do
@@ -348,11 +354,12 @@ partial def checkSteps (name : String) (steps : List PStep) (prefixes : List (Li
               throw <| IO.userError s!"cascade case {name}: two children in {a} tie on {p}"
     -- A flattened child's names, and its arrays' names, must avoid every
     -- name its parents ever carried.
-    | .flatten P C _ =>
-      let parents := inputs.flatMap fun T => T.namesAt [P]
+    | .flatten P C _ sc =>
+      let parents := inputs.flatMap fun T => T.namesAt (sc ++ [P])
       let children := inputs.flatMap fun T =>
-        (T.filter (·.1.1 = [P, C])).flatMap (·.2.props.keys) ++
-          (T.filterMap fun e => if e.1.1.length = 3 ∧ e.1.1.take 2 = [P, C] then e.1.1.getLast? else none)
+        (T.filter (·.1.1 = sc ++ [P, C])).flatMap (·.2.props.keys) ++
+          (T.filterMap fun e => if e.1.1.length = sc.length + 3 ∧ e.1.1.take (sc.length + 2) = sc ++ [P, C]
+            then e.1.1.getLast? else none)
       unless children.all (· ∉ parents) do
         throw <| IO.userError s!"cascade case {name}: a child of {P} shares a name with its parent"
     -- The TypeScript computes from a row's props as added, with only the
@@ -430,13 +437,13 @@ def mutants : List (String × Mutant) := [
   ("max takes the minimum", fun _ _ => fun
     | .max a p q => some (aggregate.F [a] q (fun _ => true) (minOf p)) | _ => none),
   ("groupBy ignores its last grouping property", fun r _ => fun
-    | .groupBy G _ => some (groupBy.F G.dropLast r) | _ => none),
-  ("filter keeps what it should drop", fun _ _ => fun
-    | .filter P => some (filter.F (!P.eval ·)) | _ => none),
+    | .groupBy G C sc => some (scopedF (groupBy.F G.dropLast) C r sc) | _ => none),
+  ("filter keeps what it should drop", fun r _ => fun
+    | .filter P sc => some (scopedF (fun _ => filter.F (!P.eval ·)) (sc.getLast?.getD r) r sc) | _ => none),
   ("dropProperty drops nothing", fun _ _ => fun
     | .dropProperty _ => some id | _ => none),
-  ("flatten forgets its parents' names", fun _ _ => fun
-    | .flatten P C O => some (flatten.F P C O []) | _ => none),
+  ("flatten forgets its parents' names", fun r _ => fun
+    | .flatten P C O sc => some (scopedF (fun _ => flatten.F P C O []) (sc.getLast?.getD r) r sc) | _ => none),
   ("cumulativeSum takes the reverse order", fun _ _ => fun
     | .cumulativeSum a O P => some (cumulativeSum.F [a] (rev (byOrder O)) P) | _ => none),
   ("replaceToDelta takes the reverse order", fun _ _ => fun

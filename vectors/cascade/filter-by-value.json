@@ -1,6 +1,8 @@
 {"pipeline":
  {"steps":
-  [{"step": "filter", "predicate": {"value": 4, "property": "v", "op": "gt"}}],
+  [{"step": "filter",
+    "scope": [],
+    "predicate": {"value": 4, "property": "v", "op": "gt"}}],
   "source": {"scalars": [{"type": "number", "name": "v"}], "arrays": []},
   "root": "rows"},
  "orders": [[0, 1, 2, 3], [2, 3, 1, 0]],
