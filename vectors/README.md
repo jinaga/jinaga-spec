@@ -215,14 +215,16 @@ row's property with a constant; the property is the filter's mutable
 property).
 
 A port passes a vector when, for every order, its output equals `expected` up to
-the order of each array, with an empty array taken as absent: the model's
-arrays have no order, and no array without items. The source descriptor names
+the order of each of the tree's arrays, those its descriptor declares, with an
+empty one taken as absent: the model's arrays have no order, and none without
+items. A property's value is compared as it is, a list in its order. The source descriptor names
 every property the ops carry, so the pipeline's descriptors are complete.
 
 `lake exe vectors` refuses a case whose orders disagree, or that leaves what the
 model and `@jinaga/cascade-core` are meant to agree on: a summed child that
-lacks the summed property, or a flattened child that carries one of its
-parent's names.
+lacks the summed property, or a flattened child whose names or arrays' names
+include a name its parents carry in any input the operations pass through,
+since a descriptor declares every name a row ever carried.
 
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
 `CASCADE_CORE` pointing at a checkout) runs them.

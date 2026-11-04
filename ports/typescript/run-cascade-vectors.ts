@@ -7,6 +7,7 @@
 // the vector's expected output. Arrays are compared without regard to order:
 // cascade-core's arrays are in arrival order, which the model does not have.
 import { deepStrictEqual } from "node:assert";
+import { isDeepStrictEqual } from "node:util";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,22 +17,28 @@ const cascadeCore = resolve(process.env.CASCADE_CORE ?? join(here, "../../../jin
 const vectorsDir = join(resolve(process.env.VECTORS ?? join(here, "../../vectors")), "cascade");
 const { createPipeline, toPipelinePlainOutput } = await import(pathToFileURL(join(cascadeCore, "src/index.ts")).href);
 
-/** A value with object keys sorted and arrays in a canonical order. An empty
-array is dropped: the model has no empty arrays, only absent ones. */
-const canonical = (value: unknown): unknown => {
-    if (Array.isArray(value)) {
-        return value.map(canonical).sort((a, b) => {
-            const x = JSON.stringify(a), y = JSON.stringify(b);
-            return x < y ? -1 : x > y ? 1 : 0;
-        });
-    }
-    if (value !== null && typeof value === "object") {
-        return Object.fromEntries(Object.keys(value).sort()
-            .filter(k => (value as any)[k] !== undefined)
-            .filter(k => !(Array.isArray((value as any)[k]) && (value as any)[k].length === 0))
-            .map(k => [k, canonical((value as any)[k])]));
-    }
-    return value;
+/** A JSON string of a value with its object keys sorted, for ordering. */
+const sortedJson = (value: unknown): string => JSON.stringify(value, (_k, v) =>
+    v !== null && typeof v === "object" && !Array.isArray(v)
+        ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]]))
+        : v);
+
+/** The rows of a tree array, in a canonical order. Only the arrays the
+descriptor declares are the tree's: their order is arrival order, which the
+model does not have, and an empty one is absent, as the model has none. A
+property's value, even a list, is compared as it is. */
+const rows = (items: unknown[], node: any): unknown[] =>
+    items.map(item => row(item, node)).sort((a, b) => {
+        const x = sortedJson(a), y = sortedJson(b);
+        return x < y ? -1 : x > y ? 1 : 0;
+    });
+
+const row = (item: any, node: any): unknown => {
+    const arrays = new Map<string, any>(node.arrays.map((a: any) => [a.name, a.type]));
+    return Object.fromEntries(Object.keys(item)
+        .filter(k => item[k] !== undefined)
+        .filter(k => !(arrays.has(k) && Array.isArray(item[k]) && item[k].length === 0))
+        .map(k => [k, arrays.has(k) ? rows(item[k], arrays.get(k)) : item[k]]));
 };
 
 const sourceArray = (a: any): any => ({
@@ -44,7 +51,7 @@ const predicate = (p: any) => (row: any) => {
     switch (p.op) {
         case "gt": return typeof v === "number" && v > p.value;
         case "lt": return typeof v === "number" && v < p.value;
-        case "eq": return JSON.stringify(canonical(v)) === JSON.stringify(canonical(p.value));
+        case "eq": return isDeepStrictEqual(v, p.value);
         default: throw new Error(`unknown predicate ${p.op}`);
     }
 };
@@ -86,17 +93,17 @@ function run(v: any, order: number[]): unknown {
         }
     }
     pipeline.flush();
-    return toPipelinePlainOutput(state, builder.getTypeDescriptor());
+    return rows(toPipelinePlainOutput(state, builder.getTypeDescriptor()), builder.getTypeDescriptor());
 }
 
 let passed = 0, failed = 0;
 for (const file of readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort()) {
     const v = JSON.parse(readFileSync(join(vectorsDir, file), "utf8"));
-    const expected = canonical(v.expected);
+    const expected = rows(v.expected, builderOf(v.pipeline).getTypeDescriptor());
     v.orders.forEach((order: number[], n: number) => {
         let actual: unknown;
         try {
-            actual = canonical(run(v, order));
+            actual = run(v, order);
             deepStrictEqual(actual, expected);
             passed++;
         } catch (e: any) {

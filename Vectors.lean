@@ -259,10 +259,21 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
       | .sum a p _ =>
         unless (T.filter (·.1.1 = [a])).all fun e => (e.2.props p).isSome do
           throw <| IO.userError s!"cascade case {c.name}: a child of {a} has no {p} to sum"
+      | _ => pure ()
+    -- A descriptor declares every name a row ever carried, so a flattened
+    -- child's names, and its arrays' names, must avoid every name its parents
+    -- ever carried, in any input the operations pass through.
+    let prefixes := (List.range (o.length + 1)).map fun i => c.stages (c.input (o.take i))
+    for (s, j) in c.steps.zipIdx do
+      match s with
       | .flatten P C _ =>
-        let I := T.namesAt [P]
-        unless (T.filter (·.1.1 = [P, C])).all fun e => e.2.props.keys.all (· ∉ I) do
-          throw <| IO.userError s!"cascade case {c.name}: a child of {P} carries one of its parent's names"
+        let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
+        let parents := inputs.flatMap fun T => T.namesAt [P]
+        let children := inputs.flatMap fun T =>
+          (T.filter (·.1.1 = [P, C])).flatMap (·.2.props.keys) ++
+            (T.filterMap fun e => if e.1.1.length = 3 ∧ e.1.1.take 2 = [P, C] then e.1.1.getLast? else none)
+        unless children.all (· ∉ parents) do
+          throw <| IO.userError s!"cascade case {c.name}: a child of {P} shares a name with its parent"
       | _ => pure ()
 
 def vector (c : JinagaSpec.Cascade.Case) : Lean.Json :=
