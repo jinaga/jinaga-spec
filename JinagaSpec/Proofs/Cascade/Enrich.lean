@@ -49,7 +49,7 @@ theorem copy_congr : ∀ (n : Nat) (l : Level) (k : Key) (ps : Props), T.copy n 
     simp only [Tree.copy]
     congr 1
     apply CMap.ofFn_congr
-    · intro x; simp [List.mem_map, mem_arraysOf hp]
+    · intro x; simp [mem_dedup, List.mem_map, mem_arraysOf hp]
     · intro x _
       cases x with
       | str a =>

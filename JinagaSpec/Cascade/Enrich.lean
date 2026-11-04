@@ -49,7 +49,7 @@ child's copy. `n` bounds the depth; `T.length` is enough for any node of `T`. -/
 def Tree.copy (T : Tree) : Nat → Level → Key → Props → Val
   | 0, _, _, ps => ps.toJson
   | n + 1, l, k, ps =>
-    Json.ofMap (CMap.ofFn ((ps.keys ++ T.arraysOf l k).map .str) fun
+    Json.ofMap (CMap.ofFn (dedup ((ps.keys ++ T.arraysOf l k).map .str)) fun
       | .str a =>
         if a ∈ T.arraysOf l k then
           some (Json.ofMap (CMap.ofFn (T.keysIn l k a) fun ck =>
@@ -59,9 +59,10 @@ def Tree.copy (T : Tree) : Nat → Level → Key → Props → Val
 
 /-! ## The join -/
 
-/-- The secondary root rows that match primary props `ps`. -/
+/-- The secondary root rows that match primary props `ps`. An empty collection
+key matches nothing (`enrich_secondary_collection_key_missing`). -/
 def enrich.matches (K CK : List String) (Tq : Tree) (ps : Props) : Tree :=
-  if K.all fun x => (ps x).isSome then
+  if !CK.isEmpty && K.all fun x => (ps x).isSome then
     Tq.filter fun e => e.1.1 = [] ∧ CK.map (e.2.props ·) = K.map (ps ·)
   else []
 
