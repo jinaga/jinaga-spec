@@ -248,11 +248,19 @@ def stepJson : PStep → Lean.Json
   | .replaceToDelta e v O D => Lean.Json.mkObj [("step", "replaceToDelta"), ("entity", e), ("event", v),
       ("orderBy", strs O), ("properties", strs (D.map (·.1))), ("outputs", strs (D.map (·.2)))]
 
-/-- The level an ordered step sorts, and the names it sorts by. -/
-def ordered : PStep → Option (Level × List String)
-  | .cumulativeSum a O _ => some ([a], O)
-  | .replaceToDelta e v O _ => some ([e, v], O)
+/-- The level an ordered step sorts, the names it sorts by, and the names whose
+values it adds or subtracts. -/
+def ordered : PStep → Option (Level × List String × List String)
+  | .cumulativeSum a O P => some ([a], O, P)
+  | .replaceToDelta e v O D => some ([e, v], O, D.map (·.1))
   | _ => none
+
+/-- The integers in a value. -/
+partial def ints : JinagaSpec.Cascade.Json → List Int
+  | .int n => [n]
+  | .str _ => []
+  | .list vs => vs.flatMap ints
+  | .map es => es.flatMap fun (k, v) => ints k ++ ints v
 
 /-- A value's type, as the ordered steps compare it: 0 a number, 1 a string. -/
 def kind : Option JinagaSpec.Cascade.Json → Nat
@@ -264,6 +272,10 @@ def kind : Option JinagaSpec.Cascade.Json → Nat
 orders disagree. -/
 def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
   let n := c.ops.length
+  -- The TypeScript reads values as JavaScript numbers, exact only up to 2^53 - 1.
+  let safe : Int := 2 ^ 53 - 1
+  unless c.ops.all fun | .add _ _ _ ps => ps.entries.all fun (_, v) => (ints v).all (fun i => -safe ≤ i ∧ i ≤ safe) | _ => true do
+    throw <| IO.userError s!"cascade case {c.name}: an integer is outside JavaScript's safe range"
   for o in c.orders do
     unless o.length = n ∧ o.Nodup ∧ o.all (· < n) do
       throw <| IO.userError s!"cascade case {c.name}: an order is not a permutation of its operations"
@@ -271,34 +283,35 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
   unless outs.all (· = outs.headD "") do
     throw <| IO.userError s!"cascade case {c.name}: its orders give different outputs"
   for o in c.orders do
-    let stages := c.stages (c.input o)
-    for (s, (_, T)) in c.steps.zip stages do
-      match s with
-      | .sum a p _ =>
-        unless (T.filter (·.1.1 = [a])).all fun e => (e.2.props p).isSome do
-          throw <| IO.userError s!"cascade case {c.name}: a child of {a} has no {p} to sum"
-      | _ => pure ()
-    -- A descriptor declares every name a row ever carried, so a flattened
-    -- child's names, and its arrays' names, must avoid every name its parents
-    -- ever carried, in any input the operations pass through.
+    -- Each check holds in every input the operations pass through: a
+    -- descriptor declares every name a row ever carried, and a value that
+    -- passes through can leave its mark on an ordered step's list.
     let prefixes := (List.range (o.length + 1)).map fun i => c.stages (c.input (o.take i))
     for (s, j) in c.steps.zipIdx do
+      let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
       -- The siblings an ordered step sorts must compare by their values alone:
       -- each order-by value present and of one type, and no two siblings tied.
-      for (l, O) in (ordered s).toList do
-        for T in prefixes.filterMap fun st => st[j]?.map (·.2) do
+      for (l, O, P) in (ordered s).toList do
+        for T in inputs do
           let nodes := T.filter (·.1.1 = l)
           for p in O do
             let kinds := nodes.map fun e => kind (e.2.props p)
             unless kinds.all (· = kinds.headD 0) ∧ kinds.all (· < 2) do
               throw <| IO.userError s!"cascade case {c.name}: the values of {p} at {l} are not all numbers or all strings"
+          for p in P do
+            unless nodes.all fun e => (e.2.props p).all (· matches .int _) do
+              throw <| IO.userError s!"cascade case {c.name}: a value of {p} at {l} is not a number"
           for x in nodes do
             for y in nodes do
               if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ O.map x.2.props = O.map y.2.props then
                 throw <| IO.userError s!"cascade case {c.name}: two siblings at {l} tie on {O}"
       match s with
+      | .sum a p _ =>
+        unless inputs.all fun T => (T.filter (·.1.1 = [a])).all fun e => e.2.props p matches some (.int _) do
+          throw <| IO.userError s!"cascade case {c.name}: a child of {a} has no number {p} to sum"
+      -- A flattened child's names, and its arrays' names, must avoid every
+      -- name its parents ever carried.
       | .flatten P C _ =>
-        let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
         let parents := inputs.flatMap fun T => T.namesAt [P]
         let children := inputs.flatMap fun T =>
           (T.filter (·.1.1 = [P, C])).flatMap (·.2.props.keys) ++

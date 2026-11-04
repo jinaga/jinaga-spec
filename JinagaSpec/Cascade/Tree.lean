@@ -41,8 +41,9 @@ abbrev Val := Json
 
 instance (n : Nat) : OfNat Json n := ⟨.int n⟩
 
-/-- A value as a number. Anything else counts 0, as the TypeScript's
-`toFiniteNumber` counts anything that is not a finite number. -/
+/-- A value as a number. Anything else counts 0. The TypeScript converts a
+value with `Number()`, so there a numeric string counts its number; the vectors
+add and subtract only numbers (`check`). -/
 def Val.num : Val → Int
   | .int n => n
   | _ => 0

@@ -224,12 +224,14 @@ every property the ops carry, so the pipeline's descriptors are complete.
 
 `lake exe vectors` refuses a case whose orders disagree, or that leaves what the
 model and `@jinaga/cascade-core` are meant to agree on: a summed child that
-lacks the summed property, or a flattened child whose names or arrays' names
+lacks the summed property or whose value is not a number (the TypeScript
+converts strings with `Number()`, the model counts them 0), an integer outside
+JavaScript's safe range, or a flattened child whose names or arrays' names
 include a name its parents carry in any input the operations pass through,
 since a descriptor declares every name a row ever carried. It also refuses an
 ordered step whose siblings would compare by anything but their values: an
 `orderBy` value absent, or not of one type, numbers or strings, across the
-level (jinaga/jinaga-cascade-core#39), or two siblings with the same values,
+level (jinaga/jinaga-cascade-core#39), a summed or subtracted value that is not a number, or two siblings with the same values,
 since the model and the TypeScript break ties by different orders of keys.
 
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
