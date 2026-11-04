@@ -242,6 +242,12 @@ def predJson : Pred → Lean.Json
   | .lt p n => Lean.Json.mkObj [("op", "lt"), ("property", p), ("value", Lean.Json.num n)]
   | .eq p v => Lean.Json.mkObj [("op", "eq"), ("property", p), ("value", valueJson v)]
 
+def exprJson : Expr → Lean.Json
+  | .prop p => Lean.Json.mkObj [("op", "prop"), ("property", p)]
+  | .lit v => Lean.Json.mkObj [("op", "lit"), ("value", valueJson v)]
+  | .add a b => Lean.Json.mkObj [("op", "add"), ("left", exprJson a), ("right", exprJson b)]
+  | .cond P a b => Lean.Json.mkObj [("op", "cond"), ("predicate", predJson P), ("then", exprJson a), ("else", exprJson b)]
+
 def strs (l : List String) : Lean.Json := Lean.Json.arr (l.map Lean.Json.str).toArray
 
 /-- A step as a builder call; `ops` give a secondary pipeline's source descriptor. -/
@@ -254,6 +260,8 @@ partial def stepJson (ops : List (Option Source × Op)) : PStep → Lean.Json
   | .dropProperty p => Lean.Json.mkObj [("step", "dropProperty"), ("property", p)]
   | .flatten P C O => Lean.Json.mkObj [("step", "flatten"), ("parent", P), ("child", C), ("as", O)]
   | .filter P => Lean.Json.mkObj [("step", "filter"), ("predicate", predJson P)]
+  | .defineProperty q e D => Lean.Json.mkObj [("step", "defineProperty"), ("as", q), ("expr", exprJson e),
+      ("deps", strs D)]
   | .cumulativeSum a O P => Lean.Json.mkObj [("step", "cumulativeSum"), ("array", a),
       ("orderBy", strs O), ("properties", strs P)]
   | .replaceToDelta e v O D => Lean.Json.mkObj [("step", "replaceToDelta"), ("entity", e), ("event", v),
@@ -341,6 +349,16 @@ partial def checkSteps (name : String) (steps : List PStep) (prefixes : List (Li
           (T.filterMap fun e => if e.1.1.length = 3 ∧ e.1.1.take 2 = [P, C] then e.1.1.getLast? else none)
       unless children.all (· ∉ parents) do
         throw <| IO.userError s!"cascade case {name}: a child of {P} shares a name with its parent"
+    -- The TypeScript computes from a row's props as added, with only the
+    -- dependencies kept current: every other property the expression reads
+    -- must keep one value on each row.
+    | .defineProperty _ e D =>
+      for p in e.reads.filter (· ∉ D) do
+        let vals := inputs.flatMap fun T => (T.filter (·.1.1 = [])).map fun e => (e.1.2, e.2.props p)
+        for x in vals do
+          for y in vals do
+            if x.1 = y.1 ∧ x.2 ≠ y.2 then
+              throw <| IO.userError s!"cascade case {name}: a defined property reads {p}, which changes, without depending on it"
     -- The secondary pipeline is checked as the primary is. A primary row with
     -- more than one match gets `whenMissing` in the model and the last match
     -- in the TypeScript: the secondary's rows must differ in their collection

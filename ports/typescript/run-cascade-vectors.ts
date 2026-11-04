@@ -61,6 +61,20 @@ const predicate = (p: any) => (row: any) => {
     }
 };
 
+/** An expression's value on a row: a sum is of two numbers, else undefined. */
+const evaluate = (e: any, row: any): unknown => {
+    switch (e.op) {
+        case "prop": return row[e.property];
+        case "lit": return e.value;
+        case "add": {
+            const a = evaluate(e.left, row), b = evaluate(e.right, row);
+            return typeof a === "number" && typeof b === "number" ? a + b : undefined;
+        }
+        case "cond": return predicate(e.predicate)(row) ? evaluate(e.then, row) : evaluate(e.else, row);
+        default: throw new Error(`unknown expression ${e.op}`);
+    }
+};
+
 /** The vector's pipeline, built through the builder. */
 function builderOf(pipeline: any): any {
     let b: any = createPipeline(pipeline.root, pipeline.source.scalars, pipeline.source.arrays.map(sourceArray));
@@ -74,6 +88,7 @@ function builderOf(pipeline: any): any {
             case "dropProperty": b = b.dropProperty(s.property); break;
             case "flatten": b = b.flatten(s.parent, s.child, s.as); break;
             case "filter": b = b.filter(predicate(s.predicate), [s.predicate.property]); break;
+            case "defineProperty": b = b.defineProperty(s.as, (row: any) => evaluate(s.expr, row), s.deps); break;
             case "cumulativeSum": b = b.cumulativeSum(s.array, s.orderBy, s.properties); break;
             case "replaceToDelta": b = b.replaceToDelta(s.entity, s.event, s.orderBy, s.properties, s.outputs); break;
             case "pickByMin": b = b.pickByMin(s.array, s.property, s.as); break;

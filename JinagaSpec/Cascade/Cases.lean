@@ -19,8 +19,9 @@ and the TypeScript are known to differ, a case stays inside what they agree on,
 and the generator checks it (`Case.check`): summed children define the summed
 property, a flattened child carries no name of its parent's, and the siblings an
 ordered step sorts have order-by values of one type with no ties, the
-children a pick compares have numbers with no ties, and an enriching source's
-rows differ in their collection key.
+children a pick compares have numbers with no ties, an enriching source's
+rows differ in their collection key, and a defined property's expression reads
+no changing property its dependencies leave out.
 -/
 namespace JinagaSpec.Cascade
 
@@ -34,6 +35,33 @@ def Pred.eval : Pred → Props → Bool
   | .gt p n, ps => match ps p with | some (.int m) => decide (m > n) | _ => false
   | .lt p n, ps => match ps p with | some (.int m) => decide (m < n) | _ => false
   | .eq p v, ps => ps p == some v
+
+/-- The property a predicate reads. -/
+def Pred.prop : Pred → String
+  | .gt p _ | .lt p _ | .eq p _ => p
+
+/-- An expression a `defineProperty` computes from a root row's props. -/
+inductive Expr where
+  | prop (p : String)
+  | lit (v : Val)
+  /-- The sum of two numbers, and no value unless both are numbers. -/
+  | add (a b : Expr)
+  | cond (pred : Pred) (a b : Expr)
+
+def Expr.eval (ps : Props) : Expr → Option Val
+  | .prop p => ps p
+  | .lit v => some v
+  | .add a b => match a.eval ps, b.eval ps with
+    | some (.int m), some (.int n) => some (.int (m + n))
+    | _, _ => none
+  | .cond P a b => if P.eval ps then a.eval ps else b.eval ps
+
+/-- The properties an expression reads. -/
+def Expr.reads : Expr → List String
+  | .prop p => [p]
+  | .lit _ => []
+  | .add a b => a.reads ++ b.reads
+  | .cond P a b => P.prop :: (a.reads ++ b.reads)
 
 /-! ## The order of ordered steps -/
 
@@ -78,6 +106,8 @@ inductive PStep where
   | dropProperty (p : String)
   | flatten (parent child as : String)
   | filter (pred : Pred)
+  /-- `defineProperty(as, row => e, deps)`. -/
+  | defineProperty (as : String) (e : Expr) (deps : List String)
   | cumulativeSum (array : String) (orderBy props : List String)
   | replaceToDelta (entity event : String) (orderBy : List String) (deltas : Deltas)
   | pickByMin (array p as : String)
@@ -118,6 +148,7 @@ def PStep.denote (root : String) (I : Source → Tree) : PStep → Tree → Tree
   | .dropProperty p => dropProperty.F [] p
   | .flatten P C O => fun T => flatten.F P C O (T.namesAt [P]) T
   | .filter P => filter.F P.eval
+  | .defineProperty q e _ => defineProperty.F [] q (Expr.eval · e)
   | .cumulativeSum a O P => cumulativeSum.F [a] (byOrder O) P
   | .replaceToDelta e v O D => replaceToDelta.F [e, v] (byOrder O) D
   | .pickByMin a p q => pickBy.F [a] (fun x y => byOrder [p] y x) (fun ps => (ps p).isSome) q
@@ -312,6 +343,37 @@ def cases : List Case := [
       (none, addRow 3 [("sku", .str "b")]),
       on "stock" (addRow 3 [("sku", .str "b"), ("qty", 1)]),
       on "stock" (.remove [] 3 [])]
-    orders := [[0, 1, 2, 3, 4, 5, 6], [2, 3, 5, 6, 0, 1, 4], [4, 5, 1, 2, 6, 0, 3]] }]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [2, 3, 5, 6, 0, 1, 4], [4, 5, 1, 2, 6, 0, 3]] },
+  { name := "define-tier-regroup"
+    description := "Each folder's tier, defined from its total, then the folders grouped by tier: a folder moves as its total crosses the threshold and back."
+    root := "folders"
+    steps := [.sum "bookmarks" "size" "total",
+      .defineProperty "tier" (.cond (.gt "total" 10) (.lit (.str "big")) (.lit (.str "small"))) ["total"],
+      .groupBy ["tier"] "tiers"]
+    ops := primary [addRow 1 [("name", .str "home")], addRow 2 [("name", .str "work")],
+      addChild "bookmarks" 1 1 [("size", 8)], addChild "bookmarks" 1 2 [("size", 5)],
+      addChild "bookmarks" 2 1 [("size", 20)], .remove ["bookmarks"] 2 [1], addRow 3 [("name", .str "misc")]]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [1, 4, 0, 3, 5, 6, 2], [6, 0, 2, 1, 4, 3, 5]] },
+  { name := "define-score-filter"
+    description := "A score defined from two fixed values, with no dependencies, and the rows whose score is greater than 5; a row missing a value has no score."
+    root := "rows"
+    steps := [.defineProperty "score" (.add (.prop "a") (.prop "b")) [], .filter (.gt "score" 5)]
+    ops := primary [addRow 1 [("a", 2), ("b", 5)], addRow 2 [("a", 1), ("b", 1)], addRow 3 [("a", 9)],
+      addRow 4 [("a", 4), ("b", 4)], .remove [] 4 []]
+    orders := [[0, 1, 2, 3, 4], [3, 2, 4, 1, 0], [1, 3, 0, 4, 2]] },
+  { name := "define-key-enrich"
+    description := "Each order's band, defined from its total, as the key that enriches it: an order changes bands, and its enrichment, as lines arrive."
+    root := "orders"
+    steps := [.sum "lines" "amount" "total",
+      .defineProperty "band" (.cond (.gt "total" 50) (.lit (.str "high")) (.lit (.str "low"))) ["total"],
+      .enrich "bands" "bandRows" [.groupBy ["band"] "bands"] ["band"] "bandInfo" none]
+    ops := [on "bands" (addRow 1 [("band", .str "high"), ("label", .str "High")]),
+      (none, addRow 1 [("id", .str "o1")]),
+      (none, addChild "lines" 1 1 [("amount", 30)]),
+      on "bands" (addRow 2 [("band", .str "low"), ("label", .str "Low")]),
+      (none, addChild "lines" 1 2 [("amount", 40)]),
+      (none, addRow 2 [("id", .str "o2")]),
+      (none, addChild "lines" 2 1 [("amount", 10)])]
+    orders := [[0, 1, 2, 3, 4, 5, 6], [1, 2, 4, 5, 6, 3, 0], [5, 3, 1, 6, 0, 2, 4]] }]
 
 end JinagaSpec.Cascade

@@ -431,8 +431,8 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: nested scopes; conformance vectors for `defineProperty`; and
-   mutants that check the vectors catch what they should.
+5. Cascade: nested scopes, and mutants that check the vectors catch what they
+   should.
 
 ## License
 

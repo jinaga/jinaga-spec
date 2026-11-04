@@ -1,0 +1,48 @@
+{"pipeline":
+ {"steps":
+  [{"step": "sum", "property": "size", "as": "total", "array": "bookmarks"},
+   {"step": "defineProperty",
+    "expr":
+    {"then": {"value": "big", "op": "lit"},
+     "predicate": {"value": 10, "property": "total", "op": "gt"},
+     "op": "cond",
+     "else": {"value": "small", "op": "lit"}},
+    "deps": ["total"],
+    "as": "tier"},
+   {"step": "groupBy", "by": ["tier"], "as": "tiers"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "name"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "size"}], "arrays": []},
+     "name": "bookmarks"}]},
+  "root": "folders"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [1, 4, 0, 3, 5, 6, 2], [6, 0, 2, 1, 4, 3, 5]],
+ "ops":
+ [{"props": {"name": "home"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"name": "work"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"size": 8},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"size": 5},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"size": 20},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["2", "1"]},
+  {"props": {"size": 20},
+   "path": ["bookmarks"],
+   "op": "remove",
+   "keys": ["2", "1"]},
+  {"props": {"name": "misc"}, "path": [], "op": "add", "keys": ["3"]}],
+ "name": "define-tier-regroup",
+ "expected":
+ [{"tier": "big",
+   "folders":
+   [{"total": 13, "name": "home", "bookmarks": [{"size": 5}, {"size": 8}]}]},
+  {"tier": "small", "folders": [{"name": "misc"}, {"name": "work"}]}],
+ "description":
+ "Each folder's tier, defined from its total, then the folders grouped by tier: a folder moves as its total crosses the threshold and back."}
