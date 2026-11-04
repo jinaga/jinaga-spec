@@ -249,7 +249,8 @@ pick's compared values must be numbers, since the TypeScript converts a string
 with `Number()`, and no two children of a parent may tie. A secondary
 pipeline is checked as the vector's own pipeline is, and its root rows must
 differ in their collection key: where several match, the model gives
-`whenMissing` and the TypeScript the last it saw.
+`whenMissing` and the TypeScript the last it saw. A secondary pipeline may not enrich in turn:
+an op names one source, and a source's own sources are not modelled.
 
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
 `CASCADE_CORE` pointing at a checkout) runs them.

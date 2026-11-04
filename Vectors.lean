@@ -347,6 +347,10 @@ partial def checkSteps (name : String) (steps : List PStep) (prefixes : List (Li
     -- key. Source `""` is the model's primary.
     | .enrich src r S _ _ _ =>
       if src = "" then throw <| IO.userError s!"cascade case {name}: a source has an empty name"
+      -- An operation names one source: a source's own sources, which
+      -- cascade-core nests below it, are not modelled.
+      if S.any (· matches .enrich ..) then
+        throw <| IO.userError s!"cascade case {name}: the secondary pipeline of {src} enriches in turn"
       let stages := sources.map fun I => PStep.stages r I S (I src)
       checkSteps name S stages sources
       let CK := collectionKey S

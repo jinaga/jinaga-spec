@@ -96,9 +96,13 @@ def PStep.root (root : String) : PStep → String
   | .groupBy _ r => r
   | _ => root
 
-/-- A pipeline's root collection key: the names of its last root `groupBy`. -/
+/-- A pipeline's root collection key: the names of its last root `groupBy`, or
+none once a step drops one of them, as cascade-core clears it. -/
 def collectionKey (S : List PStep) : List String :=
-  S.foldl (fun ck s => match s with | .groupBy G _ => G | _ => ck) []
+  S.foldl (fun ck s => match s with
+    | .groupBy G _ => G
+    | .dropProperty p => if p ∈ ck then [] else ck
+    | _ => ck) []
 
 mutual
 /-- A step's denotation, from the root scope's name and each source's input `I`.
