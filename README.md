@@ -42,7 +42,7 @@ and the libraries now port from it:
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
 | `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
-| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: finite maps and JSON values (`CMap.lean`, `Json.lean`), the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), and the steps over ordered siblings (`Ordered.lean`). |
+| `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: finite maps and JSON values (`CMap.lean`, `Json.lean`), the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), the steps over ordered siblings (`Ordered.lean`), named sources and joins (`Sources.lean`), and `enrich` (`Enrich.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
 | `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
@@ -285,6 +285,15 @@ they were built in (`CMap.ext`). The model builds its maps that way, and a
 caller's values are assumed canonical (`Json.Canonical`). Equality is structural
 and decidable, so the model runs.
 
+A pipeline can read more than one source (`Sources.lean`). Each source has its
+own tree, and each runs its own pipeline (`lift_correct`). A join reads every
+source and emits one tree's events, and composes with the pipelines before it
+and the steps after it (`Join.after_correct`, `Join.andThen_correct`). Events
+from different sources arrive in one stream, so `Join.order_independent` covers
+how they interleave. `enrich` is a join (`enrich_correct`, `enrich_denotation`):
+each primary row holds a copy of its matching secondary root row, with
+everything below it, as one value (`Tree.copy`).
+
 `tiers_correct` composes five steps into
 the pipeline that reproduced #29 without `enrich`.
 
@@ -418,8 +427,8 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: the remaining step (`enrich`), nested scopes, and conformance vectors and mutants that
-   bind the model to `@jinaga/cascade-core`.
+5. Cascade: nested scopes, and conformance vectors and mutants that bind the
+   model to `@jinaga/cascade-core`.
 
 ## License
 

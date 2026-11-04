@@ -899,6 +899,35 @@ step emits only what its input declares (`cumulativeSum_keeps`).
 `replaceToDelta` declares its outputs mutable at the events' level
 (`replaceToDelta_keeps`).
 
+## Cascade: `enrich`
+
+`enrich` is the step that reads two pipelines. The model first considered a step
+with two inputs, which would have needed its own composition theorems and its
+own proof that the inputs' events can interleave in any order. Instead each
+source has its own tree, and an event names its source (`Sources.lean`). The
+existing trees, steps and proofs are untouched: a source's pipeline is an
+ordinary step run on its own tree (`lift_correct`). `enrich` is a join, a step
+that reads every source and emits one tree's events. Events from both sources
+arrive in one stream, so the order theorem for joins covers interleaving as the
+single-source one covers arrival order.
+
+A primary row holds a copy of the secondary root row whose collection-key values
+equal its key values. The copy carries the row's nested arrays, keyed by their
+children's keys, which is what made the model's values finite: see the `pickBy*`
+section. A primary event is handled by the overlay step with the secondary held
+fixed, so its proof is `overlay_correct`. A secondary event changes no primary
+row, only what some rows hold, and the step emits a change for each row whose
+copy differs (`retarget_correct`). The denotation compares copies of equivalent
+secondaries, which are equal because every map in a copy is built from keys
+whose membership, not order, decides it (`copy_congr`).
+
+Three differences from the TypeScript are recorded rather than modelled. It keeps
+an empty array in a copy after the array's last child leaves, where the model's
+copy has an array only while it has children; a secondary whose collection key
+is not unique leaves the TypeScript with the last match it saw, where the model
+gives `whenMissing`; and the TypeScript passes an upstream change to the enriched
+property through, where the model hides it, as for the aggregates.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -931,6 +960,8 @@ step emits only what its input declares (`cumulativeSum_keeps`).
 | `Proofs/Cascade/Cache.lean` | The TypeScript caches of `groupBy`, the aggregates and `defineProperty` emit exactly the model's events, so the steps as written are correct. |
 | `Proofs/Cascade/Flatten.lean` | `flatten` at the root is correct: parents' changes and moves reach their rows, and a moved child takes on its new parent's values; it emits only what its descriptor declares. |
 | `Proofs/Cascade/Ordered.lean` | A step that overwrites properties with values computed from the input is correct for any values; `cumulativeSum`, `replaceToDelta` and `pickBy*` are instances, their values ignore list order under a strict total order, and they match the TypeScript's sorted list or heap. |
+| `Proofs/Cascade/Sources.lean` | Each source's correct pipeline, run on its own tree, is correct for the sources; a correct join composes with what comes before and after it, and its output does not depend on how the sources' events interleave. |
+| `Proofs/Cascade/Enrich.lean` | `enrich` is correct for any event in either source, and its copies depend only on what the secondary holds. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 
 The redesign changed the proofs less than it changed the definitions. The
@@ -945,7 +976,7 @@ became 350, with the check included.
 ## Not covered
 
 `field`/`hash`/`time` projections and nested specification projections are
-not modelled. In the cascade model: `enrich`; `groupBy`,
+not modelled. In the cascade model: `groupBy`,
 `filter` and `flatten` below the root; and the caches of the steps other than
 `groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
 the stream, not for the split. `buildFeeds`, skeleton canonicity
