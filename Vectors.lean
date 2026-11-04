@@ -247,6 +247,8 @@ def stepJson : PStep → Lean.Json
       ("orderBy", strs O), ("properties", strs P)]
   | .replaceToDelta e v O D => Lean.Json.mkObj [("step", "replaceToDelta"), ("entity", e), ("event", v),
       ("orderBy", strs O), ("properties", strs (D.map (·.1))), ("outputs", strs (D.map (·.2)))]
+  | .pickByMin a p q => Lean.Json.mkObj [("step", "pickByMin"), ("array", a), ("property", p), ("as", q)]
+  | .pickByMax a p q => Lean.Json.mkObj [("step", "pickByMax"), ("array", a), ("property", p), ("as", q)]
 
 /-- The level an ordered step sorts, the names it sorts by, and the names whose
 values it adds or subtracts. -/
@@ -309,6 +311,17 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
       | .sum a p _ =>
         unless inputs.all fun T => (T.filter (·.1.1 = [a])).all fun e => e.2.props p matches some (.int _) do
           throw <| IO.userError s!"cascade case {c.name}: a child of {a} has no number {p} to sum"
+      -- A pick compares the values it finds as numbers, converting a string
+      -- with `Number()`: they must be numbers, and no two siblings tied.
+      | .pickByMin a p _ | .pickByMax a p _ =>
+        for T in inputs do
+          let nodes := (T.filter (·.1.1 = [a])).filter fun e => (e.2.props p).isSome
+          unless nodes.all fun e => e.2.props p matches some (.int _) do
+            throw <| IO.userError s!"cascade case {c.name}: a value of {p} in {a} is not a number"
+          for x in nodes do
+            for y in nodes do
+              if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ x.2.props p = y.2.props p then
+                throw <| IO.userError s!"cascade case {c.name}: two children in {a} tie on {p}"
       -- A flattened child's names, and its arrays' names, must avoid every
       -- name its parents ever carried.
       | .flatten P C _ =>

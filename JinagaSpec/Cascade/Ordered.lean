@@ -54,6 +54,11 @@ structure StrictTotal (lt : Key × Props → Key × Props → Bool) : Prop where
   trans : ∀ a b c, lt a b = true → lt b c = true → lt a c = true
   total : ∀ a b, a.1 ≠ b.1 → lt a b = true ∨ lt b a = true
 
+/-- The reverse of a strict total order is one. -/
+theorem StrictTotal.swap {lt : Key × Props → Key × Props → Bool} (h : StrictTotal lt) :
+    StrictTotal fun a b => lt b a :=
+  ⟨h.irrefl, fun a b c h₁ h₂ => h.trans c b a h₂ h₁, fun a b hne => (h.total a b hne).symm⟩
+
 /-! ## Overwriting properties of one level -/
 
 /-- `ps` with the names in `Q` taken from `v`. -/
