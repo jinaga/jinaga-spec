@@ -1,0 +1,36 @@
+{"pipeline":
+ {"steps":
+  [{"step": "count", "as": "n", "array": "bookmarks"},
+   {"step": "sum", "property": "size", "as": "total", "array": "bookmarks"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "name"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "size"}], "arrays": []},
+     "name": "bookmarks"}]},
+  "root": "folders"},
+ "orders": [[0, 1, 2, 3, 4, 5], [1, 4, 0, 3, 5, 2], [0, 3, 2, 1, 5, 4]],
+ "ops":
+ [{"props": {"name": "home"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"name": "work"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"size": 10},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"size": 32},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"size": 5},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["2", "1"]},
+  {"props": {"size": 32},
+   "path": ["bookmarks"],
+   "op": "remove",
+   "keys": ["1", "2"]}],
+ "name": "source-array-aggregates",
+ "expected":
+ [{"total": 10, "name": "home", "n": 1, "bookmarks": [{"size": 10}]},
+  {"total": 5, "name": "work", "n": 1, "bookmarks": [{"size": 5}]}],
+ "description":
+ "A count and a total over a declared source array, fed through collection()."}

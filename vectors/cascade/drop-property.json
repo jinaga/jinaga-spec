@@ -1,0 +1,14 @@
+{"pipeline":
+ {"steps": [{"step": "dropProperty", "property": "secret"}],
+  "source":
+  {"scalars":
+   [{"type": "string", "name": "secret"}, {"type": "number", "name": "v"}],
+   "arrays": []},
+  "root": "rows"},
+ "orders": [[0, 1], [1, 0]],
+ "ops":
+ [{"props": {"v": 5, "secret": "x"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"v": 3, "secret": "y"}, "path": [], "op": "add", "keys": ["2"]}],
+ "name": "drop-property",
+ "expected": [{"v": 3}, {"v": 5}],
+ "description": "A property dropped from every root row."}

@@ -1,0 +1,34 @@
+{"pipeline":
+ {"steps":
+  [{"step": "sum", "property": "size", "as": "total", "array": "bookmarks"},
+   {"step": "groupBy", "by": ["total"], "as": "totals"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "name"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "size"}], "arrays": []},
+     "name": "bookmarks"}]},
+  "root": "folders"},
+ "orders": [[0, 1, 2, 3, 4], [1, 4, 3, 0, 2], [0, 2, 1, 3, 4]],
+ "ops":
+ [{"props": {"name": "home"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"name": "work"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"size": 10},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"size": 4},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["2", "1"]},
+  {"props": {"size": 6},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["2", "2"]}],
+ "name": "regroup-by-total",
+ "expected":
+ [{"total": 10,
+   "folders":
+   [{"name": "home", "bookmarks": [{"size": 10}]},
+    {"name": "work", "bookmarks": [{"size": 4}, {"size": 6}]}]}],
+ "description":
+ "Folders grouped by their total, which a new bookmark changes: the folder moves to another group (jinaga/jinaga-cascade-core#29)."}

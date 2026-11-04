@@ -1,0 +1,23 @@
+{"pipeline":
+ {"steps":
+  [{"step": "groupBy", "by": ["cat"], "as": "groups"},
+   {"step": "min", "property": "v", "as": "lo", "array": "rows"},
+   {"step": "max", "property": "v", "as": "hi", "array": "rows"}],
+  "source":
+  {"scalars":
+   [{"type": "string", "name": "cat"}, {"type": "number", "name": "v"}],
+   "arrays": []},
+  "root": "rows"},
+ "orders": [[0, 1, 2, 3, 4], [1, 3, 4, 2, 0], [4, 2, 1, 0, 3]],
+ "ops":
+ [{"props": {"v": 5, "cat": "a"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"v": 3, "cat": "a"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"v": 9, "cat": "a"}, "path": [], "op": "add", "keys": ["3"]},
+  {"props": {"v": 3, "cat": "a"}, "path": [], "op": "remove", "keys": ["2"]},
+  {"props": {"v": 2, "cat": "b"}, "path": [], "op": "add", "keys": ["4"]}],
+ "name": "group-min-max",
+ "expected":
+ [{"rows": [{"v": 5}, {"v": 9}], "lo": 5, "hi": 9, "cat": "a"},
+  {"rows": [{"v": 2}], "lo": 2, "hi": 2, "cat": "b"}],
+ "description":
+ "Each group's least and greatest value, after its least row leaves."}

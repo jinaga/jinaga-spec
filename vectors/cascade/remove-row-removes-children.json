@@ -1,0 +1,24 @@
+{"pipeline":
+ {"steps": [{"step": "count", "as": "n", "array": "bookmarks"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "name"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "size"}], "arrays": []},
+     "name": "bookmarks"}]},
+  "root": "folders"},
+ "orders": [[0, 1, 2, 3, 4], [3, 0, 2, 1, 4]],
+ "ops":
+ [{"props": {"name": "home"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"size": 10},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"size": 4},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"name": "work"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"name": "home"}, "path": [], "op": "remove", "keys": ["1"]}],
+ "name": "remove-row-removes-children",
+ "expected": [{"name": "work"}],
+ "description": "Removing a row removes the children fed under it."}

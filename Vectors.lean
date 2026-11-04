@@ -166,14 +166,129 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
     fun c => c.givens.any fun (_, id) => c.batch.any (·.id == id)),
   ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone)]
 
+
+/-! ## Cascade vectors -/
+
+namespace CascadeVectors
+open JinagaSpec.Cascade
+
+/-- A model value as JSON. A map whose keys are all strings is an object. -/
+partial def valueJson : JinagaSpec.Cascade.Json → Lean.Json
+  | .int n => Lean.Json.num n
+  | .str s => Lean.Json.str s
+  | .list vs => Lean.Json.arr (vs.map valueJson).toArray
+  | .map es =>
+    if es.all (fun e => match e.1 with | .str _ => true | _ => false) then
+      Lean.Json.mkObj (es.map fun e => (match e.1 with | .str k => k | _ => "", valueJson e.2))
+    else Lean.Json.arr (es.map fun e => Lean.Json.arr #[valueJson e.1, valueJson e.2]).toArray
+
+def propsJson (ps : Props) : List (String × Lean.Json) := ps.entries.map fun (k, v) => (k, valueJson v)
+
+/-- An array's items in a canonical order, so the file does not depend on the
+order of the tree's list. -/
+def sortJson (xs : List Lean.Json) : Lean.Json := Lean.Json.arr (xs.mergeSort fun a b => a.compress ≤ b.compress).toArray
+
+/-- A node as the output shows it: its props, and each of its arrays. -/
+def nodeJson (T : Tree) : Nat → Level → Key → Props → Lean.Json
+  | 0, _, _, ps => Lean.Json.mkObj (propsJson ps)
+  | n + 1, l, k, ps => Lean.Json.mkObj (propsJson ps ++ (T.arraysOf l k).map fun a =>
+      (a, sortJson ((T.keysIn l k a).filterMap fun ck =>
+        (T.get (l ++ [a], ck)).map fun c => nodeJson T n (l ++ [a]) ck c.props)))
+
+/-- The output: the root rows, as `toPipelinePlainOutput` gives them. -/
+def outputJson (T : Tree) : Lean.Json :=
+  sortJson ((T.filter (·.1.1 = [])).map fun e => nodeJson T T.length [] e.1.2 e.2.props)
+
+def typeOf : JinagaSpec.Cascade.Json → String
+  | .int _ => "number"
+  | .str _ => "string"
+  | _ => "unknown"
+
+def addsAt (ops : List Op) (l : Level) : List Props :=
+  ops.filterMap fun | .add l' _ _ ps => if l' = l then some ps else none | _ => none
+
+/-- A level's declared scalars and arrays, from every row the operations add:
+the descriptor is complete. -/
+partial def nodeDescriptor (ops : List Op) (l : Level) : Lean.Json :=
+  let names : List (String × String) := dedup ((addsAt ops l).flatMap fun ps => ps.entries.map fun (k, v) => (k, typeOf v))
+  let arrays : List String := dedup (ops.filterMap fun
+    | .add l' _ _ _ => if l'.length = l.length + 1 ∧ l'.take l.length = l then l'.getLast? else none
+    | _ => none)
+  Lean.Json.mkObj [
+    ("scalars", Lean.Json.arr (names.map fun (k, t) => Lean.Json.mkObj [("name", k), ("type", t)]).toArray),
+    ("arrays", Lean.Json.arr (arrays.map fun a => Lean.Json.mkObj [("name", Lean.Json.str a), ("type", nodeDescriptor ops (l ++ [a]))]).toArray)]
+
+def opJson (ops : List Op) : Op → Lean.Json
+  | .add l r rest ps => Lean.Json.mkObj [("op", "add"), ("path", Lean.Json.arr (l.map Lean.Json.str).toArray),
+      ("keys", Lean.Json.arr ((r :: rest).map fun n => Lean.Json.str (toString n)).toArray), ("props", Lean.Json.mkObj (propsJson ps))]
+  | .remove l r rest =>
+    -- The TypeScript's remove takes the row's props: those it was added with.
+    let ps := (ops.findSome? fun | .add l' r' rest' ps => if l' = l ∧ r' = r ∧ rest' = rest then some ps else none | _ => none).getD CMap.empty
+    Lean.Json.mkObj [("op", "remove"), ("path", Lean.Json.arr (l.map Lean.Json.str).toArray),
+      ("keys", Lean.Json.arr ((r :: rest).map fun n => Lean.Json.str (toString n)).toArray), ("props", Lean.Json.mkObj (propsJson ps))]
+
+def predJson : Pred → Lean.Json
+  | .gt p n => Lean.Json.mkObj [("op", "gt"), ("property", p), ("value", Lean.Json.num n)]
+  | .lt p n => Lean.Json.mkObj [("op", "lt"), ("property", p), ("value", Lean.Json.num n)]
+  | .eq p v => Lean.Json.mkObj [("op", "eq"), ("property", p), ("value", valueJson v)]
+
+def stepJson : PStep → Lean.Json
+  | .groupBy G C => Lean.Json.mkObj [("step", "groupBy"), ("by", Lean.Json.arr (G.map Lean.Json.str).toArray), ("as", C)]
+  | .sum a p q => Lean.Json.mkObj [("step", "sum"), ("array", a), ("property", p), ("as", q)]
+  | .count a q => Lean.Json.mkObj [("step", "count"), ("array", a), ("as", q)]
+  | .min a p q => Lean.Json.mkObj [("step", "min"), ("array", a), ("property", p), ("as", q)]
+  | .max a p q => Lean.Json.mkObj [("step", "max"), ("array", a), ("property", p), ("as", q)]
+  | .dropProperty p => Lean.Json.mkObj [("step", "dropProperty"), ("property", p)]
+  | .flatten P C O => Lean.Json.mkObj [("step", "flatten"), ("parent", P), ("child", C), ("as", O)]
+  | .filter P => Lean.Json.mkObj [("step", "filter"), ("predicate", predJson P)]
+
+/-- Refuse a case outside what the model and the TypeScript agree on, or whose
+orders disagree. -/
+def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
+  let n := c.ops.length
+  for o in c.orders do
+    unless o.length = n ∧ o.Nodup ∧ o.all (· < n) do
+      throw <| IO.userError s!"cascade case {c.name}: an order is not a permutation of its operations"
+  let outs := c.orders.map fun o => (outputJson (c.denote (c.input o))).compress
+  unless outs.all (· = outs.headD "") do
+    throw <| IO.userError s!"cascade case {c.name}: its orders give different outputs"
+  for o in c.orders do
+    let stages := c.stages (c.input o)
+    for (s, (_, T)) in c.steps.zip stages do
+      match s with
+      | .sum a p _ =>
+        unless (T.filter (·.1.1 = [a])).all fun e => (e.2.props p).isSome do
+          throw <| IO.userError s!"cascade case {c.name}: a child of {a} has no {p} to sum"
+      | .flatten P C _ =>
+        let I := T.namesAt [P]
+        unless (T.filter (·.1.1 = [P, C])).all fun e => e.2.props.keys.all (· ∉ I) do
+          throw <| IO.userError s!"cascade case {c.name}: a child of {P} carries one of its parent's names"
+      | _ => pure ()
+
+def vector (c : JinagaSpec.Cascade.Case) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("name", c.name),
+    ("description", c.description),
+    ("pipeline", Lean.Json.mkObj [
+      ("root", c.root),
+      ("source", nodeDescriptor c.ops []),
+      ("steps", Lean.Json.arr (c.steps.map stepJson).toArray)]),
+    ("ops", Lean.Json.arr (c.ops.map (opJson c.ops)).toArray),
+    ("orders", Lean.Json.arr (c.orders.map fun o => Lean.Json.arr (o.map fun (i : Nat) => Lean.Json.num i).toArray).toArray),
+    ("expected", outputJson (c.denote (c.input (c.orders.headD []))))]
+
+end CascadeVectors
+
 def main (args : List String) : IO Unit := do
   let root : System.FilePath := args.headD "vectors"
   let splitDir := root / "split"
   let wfDir := root / "well-formed"
   let inverseDir := root / "inverse"
+  let cascadeDir := root / "cascade"
   IO.FS.createDirAll splitDir
   IO.FS.createDirAll wfDir
   IO.FS.createDirAll inverseDir
+  IO.FS.createDirAll cascadeDir
   let inverseAll := inverseCases ++ randomInverseCases "random-" 1 12 ++ randomInverseCases "random-batch-" 3 6
   for (shape, shows) in inverseCoverage do
     unless inverseAll.any shows do
@@ -196,4 +311,7 @@ def main (args : List String) : IO Unit := do
   for c in wellFormedCases do
     checkIntent c
     IO.FS.writeFile (wfDir / s!"{c.name}.json") ((wellFormedCaseToJson c).pretty ++ "\n")
+  for c in JinagaSpec.Cascade.cases do
+    CascadeVectors.check c
+    IO.FS.writeFile (cascadeDir / s!"{c.name}.json") ((CascadeVectors.vector c).pretty ++ "\n")
   IO.println s!"wrote {cases.length} split vectors to {splitDir}, {wellFormedCases.length} well-formedness vectors to {wfDir}, and {inverseAll.length} inverse vectors to {inverseDir}"
