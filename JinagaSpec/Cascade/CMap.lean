@@ -205,11 +205,9 @@ theorem sorted_insertEntry (k : α) (v : β) :
         · exact h.1 e he
 
 theorem lookup_insertEntry (k k' : α) (v : β) :
-    ∀ (l : List (α × β)), (l.map (·.1)).Pairwise Encode.lt →
-      lookup k' (insertEntry k v l) = if k = k' then some v else lookup k' l
-  | [], _ => by simp [insertEntry, lookup_cons, lookup_nil]
-  | (k₀, v₀) :: l, h => by
-    rw [sorted_cons] at h
+    ∀ (l : List (α × β)), lookup k' (insertEntry k v l) = if k = k' then some v else lookup k' l
+  | [] => by simp [insertEntry, lookup_cons, lookup_nil]
+  | (k₀, v₀) :: l => by
     unfold insertEntry
     split
     · rw [lookup_cons]
@@ -219,7 +217,7 @@ theorem lookup_insertEntry (k k' : α) (v : β) :
         rw [lookup_cons, lookup_cons]
         by_cases hk : k = k' <;> simp [hk]
       · rename_i _ hne
-        rw [lookup_cons, lookup_cons, lookup_insertEntry k k' v l h.2]
+        rw [lookup_cons, lookup_cons, lookup_insertEntry k k' v l]
         by_cases hk : k = k'
         · subst hk; simp [Ne.symm hne]
         · by_cases hk0 : k₀ = k' <;> simp [hk, hk0]
@@ -258,7 +256,7 @@ def set (m : CMap α β) (k : α) : Option β → CMap α β
   cases v with
   | some v =>
     show lookup k' (insertEntry k v m.entries) = _
-    rw [lookup_insertEntry k k' v _ m.sorted]
+    rw [lookup_insertEntry k k' v _]
     by_cases h : k' = k
     · subst h; simp
     · simp [h, Ne.symm h]; rfl
@@ -290,8 +288,9 @@ theorem get_ofFn (ks : List α) (f : α → Option β) (k : α) :
 def keys (m : CMap α β) : List α := m.entries.map (·.1)
 
 theorem get_isSome_iff_mem_keys (m : CMap α β) (k : α) : (m.get k).isSome ↔ k ∈ m.keys := by
-  obtain ⟨l, _⟩ := m
+  obtain ⟨l, hl⟩ := m
   show (lookup k l).isSome ↔ k ∈ l.map (·.1)
+  clear hl
   induction l with
   | nil => simp [lookup_nil]
   | cons e l ih =>
@@ -300,7 +299,7 @@ theorem get_isSome_iff_mem_keys (m : CMap α β) (k : α) : (m.get k).isSome ↔
     by_cases h : k₀ = k
     · subst h; simp
     · simp only [h, ↓reduceIte, List.map_cons, List.mem_cons]
-      rw [ih (by exact List.Pairwise.of_cons (by assumption))]
+      rw [ih]
       constructor
       · exact Or.inr
       · rintro (h' | h')
