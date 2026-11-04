@@ -19,8 +19,6 @@ smaller cache instead (an aggregate per parent, the members of each group).
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 structure Step where
   /-- The events to emit for input event `e` arriving at input tree `T`. -/
   handle : Tree → Event → List Event
@@ -48,7 +46,5 @@ def run (S : Step) : Tree → List Event → List Event
 at the first's output tree. -/
 def Step.andThen (S₁ S₂ : Step) (F₁ : Tree → Tree) : Step where
   handle T e := run S₂ (F₁ T) (S₁.handle T e)
-
-end
 
 end JinagaSpec.Cascade

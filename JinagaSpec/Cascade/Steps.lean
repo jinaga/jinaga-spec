@@ -12,13 +12,11 @@ later step.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-- Change the props of every node at level `s`. -/
 def Tree.mapProps (T : Tree) (s : Level) (φ : Key → Props → Props) : Tree :=
   T.map fun e => if e.1.1 = s then (e.1, { e.2 with props := φ e.1.2 e.2.props }) else e
 
-def Props.drop (ps : Props) (q : String) : Props := fun r => if r = q then none else ps r
+def Props.drop (ps : Props) (q : String) : Props := ps.set q none
 
 /-! ## `dropProperty` -/
 
@@ -162,12 +160,13 @@ def dedup {α : Type} [DecidableEq α] : List α → List α
 def groupKey (G : List String) (ps : Props) : Key := .group (G.map ps)
 
 /-- A group's props: its grouping values. -/
-def groupProps (G : List String) : Key → Props
-  | .group vs => fun p => ((G.zip vs).find? (·.1 = p)).bind (·.2)
-  | _ => fun _ => none
+def groupProps (G : List String) (k : Key) : Props :=
+  match k.groupValues? with
+  | some vs => Props.ofFn G fun p => ((G.zip vs).find? (·.1 = p)).bind (·.2)
+  | none => CMap.empty
 
 /-- A row's props without its grouping values, which belong to its group. -/
-def omitProps (G : List String) (ps : Props) : Props := fun p => if p ∈ G then none else ps p
+def omitProps (G : List String) (ps : Props) : Props := Props.override G (fun _ => none) ps
 
 /-- Whether some root row of `T` belongs to group `g`. -/
 def hasMember (G : List String) (T : Tree) (g : Key) : Bool :=
@@ -279,7 +278,5 @@ def filterStep (P : Props → Bool) (deps : List String) : Step where
         if l = [] ∧ p ∈ deps then change (l, k)
         else if visible P T (l, k) then [e] else []
       | .placed l k _ _ => change (l, k)
-
-end
 
 end JinagaSpec.Cascade

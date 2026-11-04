@@ -11,8 +11,6 @@ a given parent contribute to it.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 variable {c : Level} {contributes : Props → Bool} {g : List Props → Option Val}
 
 /-! ## A tree's list order does not change an aggregate -/
@@ -484,7 +482,5 @@ theorem average_correct (c : Level) (hc : c ≠ []) (q p : String) :
 theorem average_denotation (c : Level) (q p : String) :
     Denotation (aggregate.F c q (fun _ => true) (averageOf p)) :=
   aggregate_denotation c q _ _ (averageOf_perm p)
-
-end
 
 end JinagaSpec.Cascade

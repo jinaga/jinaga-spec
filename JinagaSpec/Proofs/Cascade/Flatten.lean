@@ -11,8 +11,6 @@ and its parent. `flatten_correct` follows event by event.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 variable {P C O : String} {I : List String}
 
 /-! ## Levels -/
@@ -635,27 +633,27 @@ theorem nodup_children {T : Tree} (hnd : (T.map (·.1)).Nodup) (k : Key) :
 
 theorem flattenProps_set_mem {x : String} (hx : x ∈ I) (pp cp : Props) (v : Option Val) :
     flattenProps I (pp.set x v) cp = (flattenProps I pp cp).set x v := by
-  funext y; by_cases hy : y = x
-  · subst hy; simp [flattenProps, Props.set, hx]
-  · simp [flattenProps, Props.set, hy]
+  apply Props.ext; intro y; by_cases hy : y = x
+  · subst hy; simp [flattenProps, hx]
+  · simp [flattenProps, hy]
 
 theorem flattenProps_set_not_mem_parent {x : String} (hx : x ∉ I) (pp cp : Props) (v : Option Val) :
     flattenProps I (pp.set x v) cp = flattenProps I pp cp := by
-  funext y; by_cases hy : y = x
+  apply Props.ext; intro y; by_cases hy : y = x
   · subst hy; simp [flattenProps, hx]
-  · simp [flattenProps, Props.set, hy]
+  · simp [flattenProps, hy]
 
 theorem flattenProps_set_mem_child {x : String} (hx : x ∈ I) (pp cp : Props) (v : Option Val) :
     flattenProps I pp (cp.set x v) = flattenProps I pp cp := by
-  funext y; by_cases hy : y = x
+  apply Props.ext; intro y; by_cases hy : y = x
   · subst hy; simp [flattenProps, hx]
-  · simp [flattenProps, Props.set, hy]
+  · simp [flattenProps, hy]
 
 theorem flattenProps_set_not_mem_child {x : String} (hx : x ∉ I) (pp cp : Props) (v : Option Val) :
     flattenProps I pp (cp.set x v) = (flattenProps I pp cp).set x v := by
-  funext y; by_cases hy : y = x
-  · subst hy; simp [flattenProps, Props.set, hx]
-  · simp [flattenProps, Props.set, hy]
+  apply Props.ext; intro y; by_cases hy : y = x
+  · subst hy; simp [flattenProps, hx]
+  · simp [flattenProps, hy]
 
 /-! ## Applying one event per row -/
 
@@ -731,10 +729,10 @@ theorem applyAll_inherited {k : Key} {pa pb : Props} :
       ∃ V', V.applyAll (L.filterMap fun x =>
           if pa x = pb x then none else some (.modified [O] k x (pa x) (pb x))) = some V' ∧
         ∀ id, V'.get id = if id = ([O], k)
-          then some { m with props := fun x => if x ∈ L then pb x else m.props x } else V.get id := by
+          then some { m with props := Props.override L pb m.props } else V.get id := by
   intro L
   induction L with
-  | nil => intro V m _ hm _; exact ⟨V, rfl, fun id => by split <;> simp_all⟩
+  | nil => intro V m _ hm _; exact ⟨V, rfl, fun id => by split <;> simp_all [Props.override]⟩
   | cons x L ih =>
     intro V m hnd hm hx
     simp only [List.nodup_cons] at hnd
@@ -743,7 +741,7 @@ theorem applyAll_inherited {k : Key} {pa pb : Props} :
       refine ⟨V', by simpa [List.filterMap_cons, hxe] using hV', fun id => ?_⟩
       rw [hget]
       split
-      · congr 2; funext y
+      · congr 2; apply Props.ext; intro y
         by_cases hy : y = x
         · subst hy; simp [hnd.1, hx y (List.mem_cons_self ..), hxe]
         · simp [hy]
@@ -756,16 +754,16 @@ theorem applyAll_inherited {k : Key} {pa pb : Props} :
           some m1 := by rw [get_update]; simp [hm, m1]
       obtain ⟨V', hV', hget⟩ := ih _ m1 hnd.2 hm1 fun y hy => by
         have : y ≠ x := fun h => hnd.1 (h ▸ hy)
-        simp [m1, Props.set, this, hx y (List.mem_cons_of_mem _ hy)]
+        simp [m1, this, hx y (List.mem_cons_of_mem _ hy)]
       refine ⟨V', by simp [hxe, Tree.applyAll, h1, hV'], fun id => ?_⟩
       rw [hget, get_update]
       by_cases hid : id = ([O], k)
       · subst hid
         simp only [↓reduceIte, Option.some.injEq]
-        congr 1; funext y
+        congr 1; apply Props.ext; intro y
         by_cases hy : y = x
-        · subst hy; simp [m1, Props.set, hnd.1]
-        · simp [m1, Props.set, hy]
+        · subst hy; simp [m1, hnd.1]
+        · simp [m1, hy]
       · simp [hid]
 
 /-! ## A parent's events -/
@@ -1087,7 +1085,7 @@ theorem flatten_child_placed (hPO : P ≠ O) (hwf : T.WF) {a b : Key}
   · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
     rw [get_row_of_child hPO hwf'.nodup hn' rfl hpb'', hgb]
     simp only [↓reduceIte, Option.some.injEq, Node.mk.injEq, true_and]
-    funext x
+    apply Props.ext; intro x
     by_cases hx : x ∈ I
     · simp [flattenProps, mem_dedup, hx]
     · simp [flattenProps, mem_dedup, hx]
@@ -1259,7 +1257,5 @@ theorem flatten_keeps (P C O : String) (I : List String) (hPO : P ≠ O) (σ : S
       · rename_i hlP hPC
         obtain ⟨l', hl, rfl⟩ := relocate _ _ he'
         simpa [Event.Declared, (declared_relocated hPO hl hPC).2] using hd
-
-end
 
 end JinagaSpec.Cascade

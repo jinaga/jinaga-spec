@@ -11,8 +11,6 @@ each step handles the rest.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 variable {s : Level} {φ : Key → Props → Props}
 
 def mapNode (s : Level) (φ : Key → Props → Props) (id : Id) (n : Node) : Node :=
@@ -163,11 +161,11 @@ theorem mapProps_hidden {T T' : Tree} {k : Key} {p : String} {old new : Option V
 
 theorem Props.drop_set_self (ps : Props) (q : String) (v : Option Val) :
     (ps.set q v).drop q = ps.drop q := by
-  funext r; by_cases h : r = q <;> simp [Props.drop, Props.set, h]
+  apply Props.ext; intro r; by_cases h : r = q <;> simp [Props.drop, h]
 
 theorem Props.drop_set (ps : Props) {q p : String} (h : p ≠ q) (v : Option Val) :
     (ps.set p v).drop q = (ps.drop q).set p v := by
-  funext r; simp only [Props.drop, Props.set]
+  apply Props.ext; intro r; simp only [Props.drop, Props.set_apply]
   by_cases hr : r = p <;> simp_all
 
 theorem dropProperty_denotation (s : Level) (q : String) : Denotation (dropProperty.F s q) :=
@@ -205,11 +203,11 @@ theorem dropProperty_correct (s : Level) (q : String) :
 
 theorem Props.set_set_self (ps : Props) (q : String) (v w : Option Val) :
     (ps.set q v).set q w = ps.set q w := by
-  funext r; by_cases h : r = q <;> simp [Props.set, h]
+  apply Props.ext; intro r; by_cases h : r = q <;> simp [h]
 
 theorem Props.set_comm (ps : Props) {p q : String} (h : p ≠ q) (v w : Option Val) :
     (ps.set p v).set q w = (ps.set q w).set p v := by
-  funext r; by_cases hp : r = p <;> by_cases hq : r = q <;> simp_all [Props.set]
+  apply Props.ext; intro r; by_cases hp : r = p <;> by_cases hq : r = q <;> simp_all
 
 theorem defineProperty_denotation (s : Level) (q : String) (f : Props → Option Val) :
     Denotation (defineProperty.F s q f) :=
@@ -276,7 +274,5 @@ theorem defineProperty_correct (s : Level) (q : String) (f : Props → Option Va
             simp [hn, mapNode, hsame, Props.set_comm _ hp]
           · rfl
     · simpa [hl, applyAll_single] using mapProps_forward hwf he (by simp [Event.propsLevel, hl])
-
-end
 
 end JinagaSpec.Cascade

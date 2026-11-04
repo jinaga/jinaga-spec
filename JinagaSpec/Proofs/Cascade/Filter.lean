@@ -12,8 +12,6 @@ added nodes already carry it.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 variable {P : Props → Bool}
 
 /-! ## Walking up parents -/
@@ -777,7 +775,5 @@ theorem filter_correct (P : Props → Bool) (deps : List String)
       by_cases hy : y = (l, k)
       · subst hy; simp [hFn, hv1, get_update, hn, f]
       · simp [hy]
-
-end
 
 end JinagaSpec.Cascade

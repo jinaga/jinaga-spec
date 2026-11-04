@@ -20,8 +20,6 @@ that never fires costs nothing.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 structure Sig where
   /-- Whether property `p` of a node at level `l` can change after it is added. -/
   mutable : Level → String → Bool
@@ -80,7 +78,5 @@ def groupBy.sig (G : List String) (C : String) (σ : Sig) : Sig where
 
 /-- `filter` declares what its input declares. -/
 def filterStep.sig (σ : Sig) : Sig := σ
-
-end
 
 end JinagaSpec.Cascade

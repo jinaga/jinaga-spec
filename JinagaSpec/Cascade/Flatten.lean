@@ -35,12 +35,10 @@ jinaga/jinaga-cascade-core#30 lost.
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-- A flattened row's values: the parent's for the inherited names `I`, the
 child's for the rest. -/
 def flattenProps (I : List String) (pp cp : Props) : Props :=
-  fun x => if x ∈ I then pp x else cp x
+  Props.override I pp cp
 
 /-- Where an input level goes in the output, if anywhere: `P :: C :: rest`
 becomes `O :: rest`; a parent, a parent's other arrays and an input array
@@ -134,7 +132,5 @@ def flatten.sig (P C O : String) (I : List String) (σ : Sig) : Sig where
     match flatten.source P C O l with
     | none => false
     | some s => if s = [P, C] then σ.movable [P] || σ.movable [P, C] else σ.movable s
-
-end
 
 end JinagaSpec.Cascade

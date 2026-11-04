@@ -15,8 +15,6 @@ TypeScript writes them are correct (`…_cached_correct`).
 -/
 namespace JinagaSpec.Cascade
 
-noncomputable section
-
 /-! ## Implementing a step -/
 
 /-- **`implements_run`.** Over events the input accepts, a cached step emits
@@ -114,22 +112,22 @@ theorem countP_update {T : Tree} (hnd : (T.map (·.1)).Nodup) {id : Id} {n : Nod
 /-! ## `groupBy` -/
 
 theorem groupKey_pick (G : List String) (ps : Props) : groupKey G (pick G ps) = groupKey G ps := by
-  simp only [groupKey, Key.group.injEq]
+  simp only [groupKey, Key.group_inj]
   exact List.map_congr_left fun q hq => by simp [pick, hq]
 
 theorem pick_set_mem {G : List String} {p : String} (hp : p ∈ G) (ps : Props) (v : Option Val) :
     pick G (ps.set p v) = (pick G ps).set p v := by
-  funext q
+  apply Props.ext; intro q
   by_cases hq : q = p
-  · subst hq; simp [pick, Props.set, hp]
-  · simp [pick, Props.set, hq]
+  · subst hq; simp [pick, hp]
+  · simp [pick, hq]
 
 theorem pick_set_not_mem {G : List String} {p : String} (hp : p ∉ G) (ps : Props) (v : Option Val) :
     pick G (ps.set p v) = pick G ps := by
-  funext q
+  apply Props.ext; intro q
   by_cases hq : q ∈ G
   · have : q ≠ p := fun h => hp (h ▸ hq)
-    simp [pick, Props.set, hq, this]
+    simp [pick, hq, this]
   · simp [pick, hq]
 
 theorem hasMember_iff_countP (G : List String) (T : Tree) (g : Key) :
@@ -376,12 +374,12 @@ theorem sum_update {T : Tree} (hnd : (T.map (·.1)).Nodup) {id : Id} {n : Node}
 
 theorem set_comm {a b : String} (h : a ≠ b) (ps : Props) (u v : Option Val) :
     (ps.set a u).set b v = (ps.set b v).set a u := by
-  funext x
+  apply Props.ext; intro x
   by_cases hb : x = b
-  · subst hb; simp [Props.set, Ne.symm h]
+  · subst hb; simp [Ne.symm h]
   · by_cases ha : x = a
-    · subst ha; simp [Props.set, h]
-    · simp [Props.set, ha, hb]
+    · subst ha; simp [h]
+    · simp [ha, hb]
 
 /-- A function that reads only `deps` ignores changes to other properties. -/
 theorem setAll_unlisted {β : Type} {f : Props → β} {deps : List String}
@@ -1047,7 +1045,5 @@ theorem defineProperty_cached_correct (s : Level) (q : String) (f : Props → Op
       U.Equiv (defineProperty.F s q f T') :=
   implements_correct (defineProperty_implements s q f deps hq hdeps)
     (defineProperty_correct s q f deps hq hdeps) (defineProperty_denotation s q f) h
-
-end
 
 end JinagaSpec.Cascade
