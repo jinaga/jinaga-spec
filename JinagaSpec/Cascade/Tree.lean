@@ -23,8 +23,40 @@ change from a value to itself forbids no-op events.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 abbrev Level := List String
-abbrev Val := Int
+
+/-- A property's value: a number, or an object. An object is a copy of a node's
+props, which `pickBy*` and `enrich` write onto another node; a later step sees
+it as one value and cannot reach inside it. -/
+inductive Val where
+  | int (n : Int)
+  | obj (props : String → Option Val)
+
+/-- Values compare by extension: two objects are equal when their props are.
+
+The TypeScript groups by `JSON.stringify` of the grouping values, which keeps an
+object's properties in insertion order, so `groupBy` on a copied object puts
+`{a: 1, b: 2}` and `{b: 2, a: 1}` in different groups. Insertion order is how an
+object was built, not something that varies in the domain, so the model does not
+represent it; the TypeScript agrees with the model when a grouping value is a
+number or an object built in one order. -/
+noncomputable instance : DecidableEq Val := fun a b => Classical.propDecidable (a = b)
+
+instance (n : Nat) : OfNat Val n := ⟨.int n⟩
+
+/-- A value as a number. An object counts 0, as the TypeScript's
+`toFiniteNumber` counts anything that is not a finite number. -/
+def Val.num : Val → Int
+  | int n => n
+  | obj _ => 0
+
+/-- A value's number, if it is one. -/
+def Val.toInt? : Val → Option Int
+  | int n => some n
+  | obj _ => none
+
 abbrev Props := String → Option Val
 
 /-- A key. A root row has a `row` key. A child fed through `collection()` has a
@@ -36,7 +68,8 @@ inductive Key where
   | row (n : Nat)
   | child (parent : Key) (k : Nat)
   | group (values : List (Option Val))
-  deriving DecidableEq, Repr
+
+noncomputable instance : DecidableEq Key := fun a b => Classical.propDecidable (a = b)
 
 abbrev Id := Level × Key
 
@@ -100,5 +133,7 @@ structure Tree.WF (T : Tree) : Prop where
 
 /-- Two trees hold the same nodes. The order of a tree's list means nothing. -/
 def Tree.Equiv (T U : Tree) : Prop := ∀ id, T.get id = U.get id
+
+end
 
 end JinagaSpec.Cascade

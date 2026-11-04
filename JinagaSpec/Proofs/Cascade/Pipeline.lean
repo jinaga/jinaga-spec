@@ -22,11 +22,13 @@ the issue's tests check by permutation.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-- An item's tier, from its total. -/
 def tierOf (ps : Props) : Option Val :=
-  if (ps "total").getD 0 > 50 then some 1 else some 0
+  if ((ps "total").map Val.num).getD 0 > 50 then some 1 else some 0
 
-def sumOf (p : String) : Props → Int := fun ps => (ps p).getD 0
+def sumOf (p : String) : Props → Int := fun ps => ((ps p).map Val.num).getD 0
 
 def tiersF : Tree → Tree :=
   aggregate.F ["groups"] "tierTotal" (fun _ => true) (sumBy (sumOf "total")) ∘
@@ -79,5 +81,7 @@ theorem tiers_order_independent {T T₁ T₂ : Tree} {es₁ es₂ : List Event} 
     ∃ U₁ U₂, (tiersF T).applyAll (run tiers T es₁) = some U₁ ∧
       (tiersF T).applyAll (run tiers T es₂) = some U₂ ∧ U₁.Equiv U₂ :=
   order_independent tiers_correct tiers_denotation hT h₁ h₂ h
+
+end
 
 end JinagaSpec.Cascade

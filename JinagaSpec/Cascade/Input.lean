@@ -23,6 +23,8 @@ step's events must produce.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-- The key of the row named by natural keys `r :: rest`, root first. -/
 def nodeKey (r : Nat) (rest : List Nat) : Key := rest.foldl .child (.row r)
 
@@ -60,5 +62,7 @@ of a subscription once. -/
 def Fresh (T : Tree) : Op → Prop
   | .add l r rest _ => T.get (l, nodeKey r rest) = none
   | .remove .. => True
+
+end
 
 end JinagaSpec.Cascade

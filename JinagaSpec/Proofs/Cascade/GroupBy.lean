@@ -14,6 +14,8 @@ when it first arrived.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 variable {G : List String} {C : String}
 
 /-! ## `dedup` -/
@@ -745,5 +747,7 @@ theorem groupBy_correct (G : List String) (C : String) :
       obtain ⟨n, hn, h1, -⟩ := apply_placed.mp he
       exact absurd (root_parent hwf hn) (by simp [h1])
     | cons x l => simpa [groupBy, applyAll_single] using groupBy_placed_cons hwf he
+
+end
 
 end JinagaSpec.Cascade

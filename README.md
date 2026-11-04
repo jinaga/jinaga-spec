@@ -271,6 +271,13 @@ order of the tree (`replaceToDelta_denotation`), and both values are what the
 TypeScript computes from its sorted list: the sum over a node's prefix
 (`cumulativeSum_val_sorted`) and the node just before it (`predecessor_sorted`).
 
+`pickByMin` and `pickByMax` are the same step one level up: each parent holds a
+copy of the greatest of its children in the order, the top of the TypeScript's
+heap (`pickBy_correct`, `pickBy_denotation`, `picked_sorted`). A value is a
+number or an object, a copy of a node's props: a later step sees the copy as one
+value, and it survives a step, such as `flatten`, that removes the node it was
+copied from.
+
 `tiers_correct` composes five steps into
 the pipeline that reproduced #29 without `enrich`.
 
@@ -404,7 +411,7 @@ harder to hide, but they are not a proof about the TypeScript.
    collections.
 4. Feeds: prove that they carry every relevant fact and that replicas converge
    (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
-5. Cascade: the remaining steps (`pickBy*`, `enrich`), nested scopes, and conformance vectors and mutants that
+5. Cascade: the remaining step (`enrich`), nested scopes, and conformance vectors and mutants that
    bind the model to `@jinaga/cascade-core`.
 
 ## License

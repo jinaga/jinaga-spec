@@ -14,6 +14,8 @@ same output, in whatever order the rows arrived.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 variable {S S₁ S₂ : Step} {F F₁ F₂ : Tree → Tree}
 
 /-- **`run_correct`.** Run over input events from `T` to `T'`, a correct step's
@@ -61,5 +63,7 @@ theorem order_independent (hS : Correct S F) (hF : Denotation F) {T T₁ T₂ : 
   obtain ⟨U₂, hU₂, hU₂e⟩ := run_correct hS hF es₂ T T₂ hT h₂
   exact ⟨U₁, U₂, hU₁, hU₂, hU₁e.trans
     ((hF.equiv _ _ (applyAll_wf hT h₁) (applyAll_wf hT h₂) h).trans hU₂e.symm)⟩
+
+end
 
 end JinagaSpec.Cascade

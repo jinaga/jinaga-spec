@@ -13,6 +13,8 @@ does.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-! ## Composed keys are unique -/
 
 theorem nodeKey_concat (r : Nat) (xs : List Nat) (x : Nat) :
@@ -237,5 +239,7 @@ theorem ops_order_independent {S : Step} {F : Tree → Tree} (hS : Correct S F)
   obtain ⟨U₂, hU₂, hU₂e⟩ := ops_correct hS hF ops₂ T hT h₂
   exact ⟨U₁, U₂, hU₁, hU₂, hU₁e.trans ((hF.equiv _ _ (receiveAll_wf ops₁ T hT h₁)
     (receiveAll_wf ops₂ T hT h₂) h).trans hU₂e.symm)⟩
+
+end
 
 end JinagaSpec.Cascade

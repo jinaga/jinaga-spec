@@ -5,25 +5,28 @@ import JinagaSpec.Cascade.Sig
 
 `cumulativeSum` and `replaceToDelta` give each node at a level `c` values
 computed from its siblings, the nodes at `c` with the same parent, taken in an
-order. Both are a step that overwrites some properties `Q` of the nodes at `c`
-with values computed from the whole input tree (`overlay.F`). The step forwards
-each event, hides upstream changes to `Q` at `c`, and then emits a change for
+order. `pickByMin` and `pickByMax` give each parent a copy of the greatest of its
+children in an order. Each is a step that overwrites some properties `Q` of the
+nodes at one level with values computed from the whole input tree (`overlay.F`). The step forwards
+each event, hides upstream changes to `Q` at that level, and then emits a change for
 each other node whose computed value changed (`overlayStep`). It is correct
 whatever the values are, so long as equivalent trees give the same values.
 
 ## The order
 
-Both TypeScript steps sort each parent's items. `cumulativeSum` compares its
+The TypeScript steps order each parent's items. `cumulativeSum` compares its
 `orderBy` values in turn, then the keys; `replaceToDelta` compares its `orderBy`
-values, which must include the collection key, then the keys. The model takes
+values, which must include the collection key, then the keys; `pickBy*` compares
+its comparison values, then the keys. The model takes
 the comparison as a parameter `lt` on a node's key and props, and assumes that
 it is a strict total order on nodes with distinct keys (`StrictTotal`).
 
 That is a condition on the TypeScript, not something it guarantees. Breaking
-ties on the key makes the comparison total, but not transitive: both comparators
-compare two numbers as numbers and anything else as strings, so `2 < 10`,
-`10 < "11"` and `"11" < 2`. The proofs apply to a pipeline whose `orderBy`
-values make the comparison transitive, such as values of one type.
+ties on the key makes the comparison total, but not transitive: each comparator
+compares two numbers as numbers and anything else as strings, so `2 < 10`,
+`10 < "11"` and `"11" < 2` (jinaga/jinaga-cascade-core#39). The proofs apply to a
+pipeline whose compared values make the comparison transitive, such as values of
+one type.
 
 `cumulativeSum`'s values need no assumption about `lt` to ignore list order;
 the assumption ties them to the TypeScript's sorted list (`prefix_of_sorted`).
@@ -44,6 +47,8 @@ and changes back. Moving `A` between `B` and `C`, with values 1, 2 and 3, emits
 where the model compares a step to its cache; these caches are not modelled.
 -/
 namespace JinagaSpec.Cascade
+
+noncomputable section
 
 /-- `lt` is a strict total order on nodes with distinct keys. -/
 structure StrictTotal (lt : Key × Props → Key × Props → Bool) : Prop where
@@ -97,13 +102,14 @@ def siblings (c : Level) (T : Tree) (p : Option Key) : List (Key × Props) :=
 /-! ## `cumulativeSum` -/
 
 /-- The running total of `x` at node `(c, k)`: the sum of `x` over the node and
-its siblings before it, an absent value counting 0. The TypeScript writes it
+its siblings before it, an absent value or an object counting 0
+(`toFiniteNumber`). The TypeScript writes it
 over `x` (`composeOutputProps`). -/
 def cumulativeSum.val (c : Level) (lt : Key × Props → Key × Props → Bool) (T : Tree) (k : Key)
     (x : String) : Option Val :=
-  (T.get (c, k)).map fun n =>
+  (T.get (c, k)).map fun n => .int
     (((siblings c T n.parent).filter fun y => y.1 == k || lt y (k, n.props)).map
-      fun y => (y.2 x).getD 0).sum
+      fun y => ((y.2 x).map Val.num).getD 0).sum
 
 /-- `cumulativeSum(c, orderBy, P)`. -/
 def cumulativeSum.F (c : Level) (lt : Key × Props → Key × Props → Bool) (P : List String) :
@@ -135,13 +141,14 @@ def predecessor (c : Level) (lt : Key × Props → Key × Props → Bool) (T : T
 abbrev Deltas := List (String × String)
 
 /-- Output `o` of node `(c, k)`, for the pair `(p, o)`: its `p` less its
-predecessor's, an absent value counting 0, and the first node's predecessor
-counting 0 (`computeDeltaForProperty`). -/
+predecessor's, an absent value or an object counting 0, and the first node's
+predecessor counting 0 (`computeDeltaForProperty`). -/
 def replaceToDelta.val (c : Level) (lt : Key × Props → Key × Props → Bool) (D : Deltas) (T : Tree)
     (k : Key) (o : String) : Option Val :=
   match D.find? (·.2 = o), T.get (c, k) with
   | some (p, _), some n =>
-    some ((n.props p).getD 0 - (((predecessor c lt T k n).bind (·.2 p)).getD 0))
+    some (.int (((n.props p).map Val.num).getD 0 -
+      (((predecessor c lt T k n).bind (·.2 p)).map Val.num).getD 0))
   | _, _ => none
 
 /-- `replaceToDelta(…, orderBy, properties, outputs)` on the events at `c`. -/
@@ -151,5 +158,34 @@ def replaceToDelta.F (c : Level) (lt : Key × Props → Key × Props → Bool) (
 
 def replaceToDeltaStep (c : Level) (lt : Key × Props → Key × Props → Bool) (D : Deltas) : Step :=
   overlayStep c (D.map (·.2)) (replaceToDelta.val c lt D)
+
+/-! ## `pickByMin`, `pickByMax` -/
+
+/-- The child of node `(c.dropLast, k)` that `pickBy` picks: the greatest under
+`lt` of its children at `c` that have a comparison value (`has`). For `pickByMin`,
+`lt a b` holds when `b`'s value is less than `a`'s, or equal with a lesser key;
+for `pickByMax`, when it is greater, or equal with a lesser key. The TypeScript
+keeps them in a heap whose top is the pick (`materializePickedItem`). -/
+def picked (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool) (T : Tree)
+    (k : Key) : Option (Key × Props) :=
+  latest lt ((siblings c T (some k)).filter fun y => has y.2)
+
+/-- The parent's value: a copy of the picked child's props, absent if no child
+has a comparison value. -/
+def pickBy.val (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool) (T : Tree)
+    (k : Key) (_ : String) : Option Val :=
+  (picked c lt has T k).map fun y => .obj y.2
+
+/-- `pickByMin(c, …, q)` and `pickByMax(c, …, q)`: each parent of the children
+at `c` holds the picked child as `q`. -/
+def pickBy.F (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool) (q : String) :
+    Tree → Tree :=
+  overlay.F c.dropLast [q] (pickBy.val c lt has)
+
+def pickByStep (c : Level) (lt : Key × Props → Key × Props → Bool) (has : Props → Bool) (q : String) :
+    Step :=
+  overlayStep c.dropLast [q] (pickBy.val c lt has)
+
+end
 
 end JinagaSpec.Cascade

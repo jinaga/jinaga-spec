@@ -11,6 +11,8 @@ a given parent contribute to it.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 variable {c : Level} {contributes : Props → Bool} {g : List Props → Option Val}
 
 /-! ## A tree's list order does not change an aggregate -/
@@ -62,16 +64,16 @@ theorem aggregate_denotation (c : Level) (q : String) (contributes : Props → B
 /-! ## The aggregates ignore order -/
 
 theorem sumBy_perm (w : Props → Int) : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → sumBy w l₁ = sumBy w l₂ :=
-  fun _ _ h => by simp only [sumBy, Option.some.injEq]; exact perm_sum_int (h.map _)
+  fun _ _ h => by simp only [sumBy, Option.some.injEq]; rw [perm_sum_int (h.map w)]
 
-theorem minStep_comm (x y : Val) (a : Option Val) : minStep x (minStep y a) = minStep y (minStep x a) := by
+theorem minStep_comm (x y : Int) (a : Option Int) : minStep x (minStep y a) = minStep y (minStep x a) := by
   cases a with
   | none => simp only [minStep, Option.some.injEq]; exact Int.min_comm x y
   | some a =>
     simp only [minStep, Option.some.injEq]
     rw [← Int.min_assoc, Int.min_comm x y, Int.min_assoc]
 
-theorem optMin_perm : ∀ {l₁ l₂ : List Val}, l₁.Perm l₂ → optMin l₁ = optMin l₂ := by
+theorem optMin_perm : ∀ {l₁ l₂ : List Int}, l₁.Perm l₂ → optMin l₁ = optMin l₂ := by
   intro l₁ l₂ h
   induction h with
   | nil => rfl
@@ -79,14 +81,14 @@ theorem optMin_perm : ∀ {l₁ l₂ : List Val}, l₁.Perm l₂ → optMin l₁
   | swap x y l => simp only [optMin, List.foldr_cons]; exact minStep_comm y x _
   | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
 
-theorem maxStep_comm (x y : Val) (a : Option Val) : maxStep x (maxStep y a) = maxStep y (maxStep x a) := by
+theorem maxStep_comm (x y : Int) (a : Option Int) : maxStep x (maxStep y a) = maxStep y (maxStep x a) := by
   cases a with
   | none => simp only [maxStep, Option.some.injEq]; exact Int.max_comm x y
   | some a =>
     simp only [maxStep, Option.some.injEq]
     rw [← Int.max_assoc, Int.max_comm x y, Int.max_assoc]
 
-theorem optMax_perm : ∀ {l₁ l₂ : List Val}, l₁.Perm l₂ → optMax l₁ = optMax l₂ := by
+theorem optMax_perm : ∀ {l₁ l₂ : List Int}, l₁.Perm l₂ → optMax l₁ = optMax l₂ := by
   intro l₁ l₂ h
   induction h with
   | nil => rfl
@@ -95,17 +97,18 @@ theorem optMax_perm : ∀ {l₁ l₂ : List Val}, l₁.Perm l₂ → optMax l₁
   | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
 
 theorem minOf_perm (p : String) : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → minOf p l₁ = minOf p l₂ :=
-  fun _ _ h => optMin_perm (h.filterMap _)
+  fun _ _ h => by simp only [minOf, numbersOf]; rw [optMin_perm (h.filterMap _)]
 
 theorem maxOf_perm (p : String) : ∀ l₁ l₂ : List Props, l₁.Perm l₂ → maxOf p l₁ = maxOf p l₂ :=
-  fun _ _ h => optMax_perm (h.filterMap _)
+  fun _ _ h => by simp only [maxOf, numbersOf]; rw [optMax_perm (h.filterMap _)]
 
 theorem averageOf_perm (p : String) :
     ∀ l₁ l₂ : List Props, l₁.Perm l₂ → averageOf p l₁ = averageOf p l₂ := by
   intro l₁ l₂ h
-  have hv := h.filterMap (· p)
-  unfold averageOf
-  cases h1 : l₁.filterMap (· p) <;> cases h2 : l₂.filterMap (· p)
+  have hv := h.filterMap fun q => (q p).bind Val.toInt?
+  unfold averageOf numbersOf
+  cases h1 : l₁.filterMap (fun q => (q p).bind Val.toInt?) <;>
+    cases h2 : l₂.filterMap (fun q => (q p).bind Val.toInt?)
   · rfl
   · rw [h1, h2] at hv; exact absurd hv.symm.eq_nil (by simp)
   · rw [h1, h2] at hv; exact absurd hv.eq_nil (by simp)
@@ -481,5 +484,7 @@ theorem average_correct (c : Level) (hc : c ≠ []) (q p : String) :
 theorem average_denotation (c : Level) (q p : String) :
     Denotation (aggregate.F c q (fun _ => true) (averageOf p)) :=
   aggregate_denotation c q _ _ (averageOf_perm p)
+
+end
 
 end JinagaSpec.Cascade

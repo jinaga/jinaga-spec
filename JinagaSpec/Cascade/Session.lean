@@ -19,6 +19,8 @@ is below it, and an operation at a missing location fails.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-- The keys of the ancestors of a node at level `l` whose parent is `p`, root
 first, read from the parents a tree records. Undefined when an ancestor is
 missing. -/
@@ -174,5 +176,7 @@ inductive Replay : Tree → List Pending → Tree → Prop where
 replays it to the index. -/
 def Session.Inv (S : Session) : Prop :=
   ∃ T₀, S.arrays.Holds T₀ ∧ Replay T₀ S.queue S.index
+
+end
 
 end JinagaSpec.Cascade

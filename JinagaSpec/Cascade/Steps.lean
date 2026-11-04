@@ -12,6 +12,8 @@ later step.
 -/
 namespace JinagaSpec.Cascade
 
+noncomputable section
+
 /-- Change the props of every node at level `s`. -/
 def Tree.mapProps (T : Tree) (s : Level) (φ : Key → Props → Props) : Tree :=
   T.map fun e => if e.1.1 = s then (e.1, { e.2 with props := φ e.1.2 e.2.props }) else e
@@ -86,41 +88,44 @@ def aggregate.F (c : Level) (q : String) (contributes : Props → Bool) (g : Lis
 /-- `sum(p)` and `count`: the total of each child's weight. `sum(p)` weighs a
 child by its `p`: every child if `p` is immutable (an absent value counts 0),
 and the children where it is defined if it is mutable. `count` weighs each 1. -/
-def sumBy (w : Props → Int) : List Props → Option Val := fun ps => some (ps.map w).sum
+def sumBy (w : Props → Int) : List Props → Option Val := fun ps => some (.int (ps.map w).sum)
 
 /-- One value into a running least. -/
-def minStep (x : Val) : Option Val → Option Val
+def minStep (x : Int) : Option Int → Option Int
   | none => some x
   | some a => some (min x a)
 
 /-- One value into a running greatest. -/
-def maxStep (x : Val) : Option Val → Option Val
+def maxStep (x : Int) : Option Int → Option Int
   | none => some x
   | some a => some (max x a)
 
 /-- The least of some values, if there are any. -/
-def optMin : List Val → Option Val := List.foldr minStep none
+def optMin : List Int → Option Int := List.foldr minStep none
 
 /-- The greatest of some values, if there are any. -/
-def optMax : List Val → Option Val := List.foldr maxStep none
+def optMax : List Int → Option Int := List.foldr maxStep none
 
-/-- `min(p)` and `max(p)`: the least or greatest defined `p`, ignoring children
-with none, and absent if no child has one. -/
-def minOf (p : String) : List Props → Option Val := fun ps => optMin (ps.filterMap (· p))
-def maxOf (p : String) : List Props → Option Val := fun ps => optMax (ps.filterMap (· p))
+/-- The numbers among the children's `p`. -/
+def numbersOf (p : String) (ps : List Props) : List Int := ps.filterMap fun q => (q p).bind Val.toInt?
 
-/-- `average(p)`: the mean of the defined `p`, absent if no child has one.
+/-- `min(p)` and `max(p)`: the least or greatest number `p`, ignoring children
+with none or with an object, and absent if no child has one. -/
+def minOf (p : String) : List Props → Option Val := fun ps => (optMin (numbersOf p ps)).map .int
+def maxOf (p : String) : List Props → Option Val := fun ps => (optMax (numbersOf p ps)).map .int
 
-The model's values are integers, so this divides as integers, and it is a
+/-- `average(p)`: the mean of the numbers `p`, absent if no child has one.
+
+The model's numbers are integers, so this divides as integers, and it is a
 stand-in for the TypeScript's real mean rather than a model of it: a change the
 rounding hides (the mean of 1 and 2 against that of 1 and 1) is a change the
 TypeScript emits and this does not. `aggregate_correct` holds for any function
 of the children's values, so it holds of the real mean as well; what the model
 cannot do is compute one. -/
 def averageOf (p : String) : List Props → Option Val := fun ps =>
-  match ps.filterMap (· p) with
+  match numbersOf p ps with
   | [] => none
-  | vs => some (vs.sum / vs.length)
+  | vs => some (.int (vs.sum / vs.length))
 
 /-- Forward each event. When a child at `c` arrives, leaves, changes or moves,
 emit a change to the aggregate of each parent it affects, if the aggregate
@@ -274,5 +279,7 @@ def filterStep (P : Props → Bool) (deps : List String) : Step where
         if l = [] ∧ p ∈ deps then change (l, k)
         else if visible P T (l, k) then [e] else []
       | .placed l k _ _ => change (l, k)
+
+end
 
 end JinagaSpec.Cascade
