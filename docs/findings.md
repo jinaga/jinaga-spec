@@ -862,9 +862,8 @@ tree already holds. That suggested references between nodes. But a later step
 can remove the node a reference points at: `flatten` removes the parents' level,
 and a pick on a root row among its parents would then point at nothing, where
 the TypeScript's copy survives. A step cannot reach inside an object, so
-downstream the copy is the step's output, not a cache of it. A value is now a
-number or an object (`Val.obj`), and a pick is a copy of the picked child's
-props. The reference is the TypeScript's cache, its heap and `lastEmitted`. The
+downstream the copy is the step's output, not a cache of it. A pick is a copy
+of the picked child's props (`Props.toJson`). The reference is the TypeScript's cache, its heap and `lastEmitted`. The
 pick is the same step as the running total, one level up: correct for any values
 (`pickBy_correct`), independent of the list's order under a strict total order
 (`pickBy_denotation`), and the top of the TypeScript's heap (`picked_sorted`).
@@ -875,6 +874,21 @@ the model when their props are, where the TypeScript groups by `JSON.stringify`,
 which keeps an object's insertion order: grouping by a copy separates
 `{a: 1, b: 2}` from `{b: 2, a: 1}`. The order is how the object was built, not a
 value, so the model does not represent it.
+
+What a value is took two attempts. Objects were first functions from names to
+values, like props. `enrich` copies a secondary row with its nested arrays, and
+a keyed array would be a function from keys; but a group's key holds its
+grouping values, so a value would contain functions from keys that contain
+values. That is Cantor's paradox: no model has it, and Lean rejects it. The
+TypeScript never meets it, because everything in it is finite and its keys are
+strings. So everything in the model is finite too. A value is `Json`: an
+integer, a string, a list, or a map. A map is kept sorted by key with no key
+repeated (`CMap`), so maps with the same entries are the same list, whatever
+order they were built in. Props are such a map from names to values. A key is
+a value, tagged by its form (a row, a child, a group), as the TypeScript's keys
+are strings. Keys are ordered through an injective encoding into lists of
+integers (`Json.enc_inj`). Equality is structural and decidable, so the model is
+computable and its examples are checked by evaluation.
 
 `cumulativeSum`'s descriptor transform is the identity: the TypeScript requires
 each summed property to be mutable already, and under that requirement the
@@ -902,6 +916,7 @@ step emits only what its input declares (`cumulativeSum_keeps`).
 | `Proofs/Exact.lean` | Two match lists over the same unknowns read as one are a conjunction; the exact inverses are sound on the new graph and complete, so a stream that applies their changes is exact. |
 | `Proofs/Stream.lean` | The candidates cover every change a replica reads, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
 | `Proofs/GivenConditions.lean` | Reducing conditions on a given to a match keeps what a replica reads, so the stream of a conditioned specification is exact. |
+| `Cascade/CMap.lean`, `Json.lean` | Sorted maps with the same lookups are equal; the encoding of JSON values is injective, so it orders and compares them. |
 | `Proofs/Cascade/Tree.lean`, `Step.lean` | `apply` keeps a tree well formed and takes equivalent trees to equivalent trees; correct steps compose, and a pipeline's output depends only on its input. |
 | `Proofs/Cascade/MapProps.lean` | `dropProperty` and `defineProperty`, which change the props of one level. |
 | `Proofs/Cascade/Aggregate.lean` | The aggregates (`sum`, `count`, `min`, `max`, `average`): forwarding each event and changing the aggregate of each affected parent. Correctness holds for any function of the contributing children's values; the denotation needs it to ignore their order. |
