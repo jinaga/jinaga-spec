@@ -274,10 +274,6 @@ def kind : Option JinagaSpec.Cascade.Json → Nat
 orders disagree. -/
 def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
   let n := c.ops.length
-  -- The TypeScript reads values as JavaScript numbers, exact only up to 2^53 - 1.
-  let safe : Int := 2 ^ 53 - 1
-  unless c.ops.all fun | .add _ _ _ ps => ps.entries.all fun (_, v) => (ints v).all (fun i => -safe ≤ i ∧ i ≤ safe) | _ => true do
-    throw <| IO.userError s!"cascade case {c.name}: an integer is outside JavaScript's safe range"
   for o in c.orders do
     unless o.length = n ∧ o.Nodup ∧ o.all (· < n) do
       throw <| IO.userError s!"cascade case {c.name}: an order is not a permutation of its operations"
@@ -289,6 +285,12 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
     -- descriptor declares every name a row ever carried, and a value that
     -- passes through can leave its mark on an ordered step's list.
     let prefixes := (List.range (o.length + 1)).map fun i => c.stages (c.input (o.take i))
+    -- The TypeScript holds values as JavaScript numbers, exact only up to
+    -- 2^53 - 1: every value a step reads or computes must be within it.
+    let safe : Int := 2 ^ 53 - 1
+    unless prefixes.all fun st => st.all fun (_, T) => T.all fun e =>
+        e.2.props.entries.all fun (_, v) => (ints v).all fun i => -safe ≤ i ∧ i ≤ safe do
+      throw <| IO.userError s!"cascade case {c.name}: an integer is outside JavaScript's safe range"
     for (s, j) in c.steps.zipIdx do
       let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)
       -- The siblings an ordered step sorts must compare by their values alone:
