@@ -281,8 +281,9 @@ Everything in the model is finite, as in the TypeScript. A value is JSON
 (`Json.lean`): an integer, a string, a list, or a map; props are a map from
 names to values; and a key is a value. A map is kept sorted by key with no key
 repeated (`CMap.lean`), so maps with the same entries are equal whatever order
-they were built in (`CMap.ext`). Equality is structural and decidable, so the
-model runs.
+they were built in (`CMap.ext`). The model builds its maps that way, and a
+caller's values are assumed canonical (`Json.Canonical`). Equality is structural
+and decidable, so the model runs.
 
 `tiers_correct` composes five steps into
 the pipeline that reproduced #29 without `enrich`.

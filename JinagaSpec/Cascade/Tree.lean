@@ -30,9 +30,13 @@ abbrev Level := List String
 /-- A property's value: JSON (`Json.lean`). An object, such as the copy of a
 node's props that `pickBy*` and `enrich` write onto another node, is a map from
 names to values; a later step sees it as one value and cannot reach inside it.
-Maps are canonical, so two objects are equal when their props are, whatever
-order they were built in. (The TypeScript groups by `JSON.stringify`, which keeps
-insertion order: jinaga/jinaga-cascade-core#41.) -/
+The model builds every map through `CMap`, so the values it builds are canonical
+(`Json.Canonical`): two of them are equal when they hold the same JSON, whatever
+order they were built in. A caller's values are assumed canonical, as they are
+when the input reads them as JSON. Under that contract, objects that differ only
+in the order of their properties are the same value, and so group together;
+the TypeScript groups by `JSON.stringify`, which keeps insertion order
+(jinaga/jinaga-cascade-core#41). -/
 abbrev Val := Json
 
 instance (n : Nat) : OfNat Json n := ⟨.int n⟩

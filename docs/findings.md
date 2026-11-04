@@ -888,7 +888,10 @@ order they were built in. Props are such a map from names to values. A key is
 a value, tagged by its form (a row, a child, a group), as the TypeScript's keys
 are strings. Keys are ordered through an injective encoding into lists of
 integers (`Json.enc_inj`). Equality is structural and decidable, so the model is
-computable and its examples are checked by evaluation.
+computable and its examples are checked by evaluation. `Json.map` holds a plain
+list, so canonical form (`Json.Canonical`) is a condition rather than a type: the
+model builds its maps through `CMap`, and a caller's values are assumed
+canonical, as they are when the input reads them as JSON.
 
 `cumulativeSum`'s descriptor transform is the identity: the TypeScript requires
 each summed property to be mutable already, and under that requirement the
