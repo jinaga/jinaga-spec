@@ -1,0 +1,74 @@
+{"pipeline":
+ {"steps":
+  [{"step": "replaceToDelta",
+    "properties": ["value"],
+    "outputs": ["delta"],
+    "orderBy": ["at"],
+    "event": "readings",
+    "entity": "meters"}],
+  "source":
+  {"scalars": [{"type": "string", "name": "name"}],
+   "arrays":
+   [{"type":
+     {"scalars": [{"type": "string", "name": "label"}],
+      "arrays":
+      [{"type":
+        {"scalars":
+         [{"type": "number", "name": "at"},
+          {"type": "number", "name": "value"}],
+         "arrays": []},
+        "name": "readings"}]},
+     "name": "meters"}]},
+  "root": "sites"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6, 7, 8],
+  [0, 2, 6, 1, 5, 7, 3, 4, 8],
+  [0, 1, 2, 4, 3, 8, 5, 7, 6]],
+ "ops":
+ [{"props": {"name": "north"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"label": "m1"},
+   "path": ["meters"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"label": "m2"},
+   "path": ["meters"],
+   "op": "add",
+   "keys": ["1", "2"]},
+  {"props": {"value": 100, "at": 10},
+   "path": ["meters", "readings"],
+   "op": "add",
+   "keys": ["1", "1", "1"]},
+  {"props": {"value": 130, "at": 20},
+   "path": ["meters", "readings"],
+   "op": "add",
+   "keys": ["1", "1", "2"]},
+  {"props": {"value": 175, "at": 30},
+   "path": ["meters", "readings"],
+   "op": "add",
+   "keys": ["1", "1", "3"]},
+  {"props": {"value": 50, "at": 15},
+   "path": ["meters", "readings"],
+   "op": "add",
+   "keys": ["1", "2", "1"]},
+  {"props": {"value": 20, "at": 5},
+   "path": ["meters", "readings"],
+   "op": "add",
+   "keys": ["1", "2", "2"]},
+  {"props": {"value": 130, "at": 20},
+   "path": ["meters", "readings"],
+   "op": "remove",
+   "keys": ["1", "1", "2"]}],
+ "name": "replace-to-delta-readings",
+ "expected":
+ [{"name": "north",
+   "meters":
+   [{"readings":
+     [{"value": 100, "delta": 100, "at": 10},
+      {"value": 175, "delta": 75, "at": 30}],
+     "label": "m1"},
+    {"readings":
+     [{"value": 50, "delta": 30, "at": 15},
+      {"value": 20, "delta": 20, "at": 5}],
+     "label": "m2"}]}],
+ "description":
+ "Each meter's readings, in time order, as the change since the reading before; a middle reading leaves."}

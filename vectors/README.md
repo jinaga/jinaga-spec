@@ -212,7 +212,9 @@ each group in an array named for the scope they came from), `sum`, `min`, `max`
 (`property`), `flatten` (`parent`, `child`, `as`), and `filter` (`predicate`:
 `{ "op": "gt" | "lt" | "eq", "property", "value" }`, a comparison of a root
 row's property with a constant; the property is the filter's mutable
-property).
+property). `cumulativeSum` (`array`, `orderBy`, `properties`) and
+`replaceToDelta` (`entity`, `event`, `orderBy`, `properties`, `outputs`) order
+siblings by their `orderBy` values in turn, then by key.
 
 A port passes a vector when, for every order, its output equals `expected` up to
 the order of each of the tree's arrays, those its descriptor declares, with an
@@ -224,7 +226,11 @@ every property the ops carry, so the pipeline's descriptors are complete.
 model and `@jinaga/cascade-core` are meant to agree on: a summed child that
 lacks the summed property, or a flattened child whose names or arrays' names
 include a name its parents carry in any input the operations pass through,
-since a descriptor declares every name a row ever carried.
+since a descriptor declares every name a row ever carried. It also refuses an
+ordered step whose siblings would compare by anything but their values: an
+`orderBy` value absent, or not of one type, numbers or strings, across the
+level (jinaga/jinaga-cascade-core#39), or two siblings with the same values,
+since the model and the TypeScript break ties by different orders of keys.
 
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
 `CASCADE_CORE` pointing at a checkout) runs them.

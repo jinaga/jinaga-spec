@@ -232,6 +232,8 @@ def predJson : Pred → Lean.Json
   | .lt p n => Lean.Json.mkObj [("op", "lt"), ("property", p), ("value", Lean.Json.num n)]
   | .eq p v => Lean.Json.mkObj [("op", "eq"), ("property", p), ("value", valueJson v)]
 
+def strs (l : List String) : Lean.Json := Lean.Json.arr (l.map Lean.Json.str).toArray
+
 def stepJson : PStep → Lean.Json
   | .groupBy G C => Lean.Json.mkObj [("step", "groupBy"), ("by", Lean.Json.arr (G.map Lean.Json.str).toArray), ("as", C)]
   | .sum a p q => Lean.Json.mkObj [("step", "sum"), ("array", a), ("property", p), ("as", q)]
@@ -241,6 +243,22 @@ def stepJson : PStep → Lean.Json
   | .dropProperty p => Lean.Json.mkObj [("step", "dropProperty"), ("property", p)]
   | .flatten P C O => Lean.Json.mkObj [("step", "flatten"), ("parent", P), ("child", C), ("as", O)]
   | .filter P => Lean.Json.mkObj [("step", "filter"), ("predicate", predJson P)]
+  | .cumulativeSum a O P => Lean.Json.mkObj [("step", "cumulativeSum"), ("array", a),
+      ("orderBy", strs O), ("properties", strs P)]
+  | .replaceToDelta e v O D => Lean.Json.mkObj [("step", "replaceToDelta"), ("entity", e), ("event", v),
+      ("orderBy", strs O), ("properties", strs (D.map (·.1))), ("outputs", strs (D.map (·.2)))]
+
+/-- The level an ordered step sorts, and the names it sorts by. -/
+def ordered : PStep → Option (Level × List String)
+  | .cumulativeSum a O _ => some ([a], O)
+  | .replaceToDelta e v O _ => some ([e, v], O)
+  | _ => none
+
+/-- A value's type, as the ordered steps compare it: 0 a number, 1 a string. -/
+def kind : Option JinagaSpec.Cascade.Json → Nat
+  | some (.int _) => 0
+  | some (.str _) => 1
+  | _ => 2
 
 /-- Refuse a case outside what the model and the TypeScript agree on, or whose
 orders disagree. -/
@@ -265,6 +283,19 @@ def check (c : JinagaSpec.Cascade.Case) : IO Unit := do
     -- ever carried, in any input the operations pass through.
     let prefixes := (List.range (o.length + 1)).map fun i => c.stages (c.input (o.take i))
     for (s, j) in c.steps.zipIdx do
+      -- The siblings an ordered step sorts must compare by their values alone:
+      -- each order-by value present and of one type, and no two siblings tied.
+      for (l, O) in (ordered s).toList do
+        for T in prefixes.filterMap fun st => st[j]?.map (·.2) do
+          let nodes := T.filter (·.1.1 = l)
+          for p in O do
+            let kinds := nodes.map fun e => kind (e.2.props p)
+            unless kinds.all (· = kinds.headD 0) ∧ kinds.all (· < 2) do
+              throw <| IO.userError s!"cascade case {c.name}: the values of {p} at {l} are not all numbers or all strings"
+          for x in nodes do
+            for y in nodes do
+              if x.1 ≠ y.1 ∧ x.2.parent = y.2.parent ∧ O.map x.2.props = O.map y.2.props then
+                throw <| IO.userError s!"cascade case {c.name}: two siblings at {l} tie on {O}"
       match s with
       | .flatten P C _ =>
         let inputs := prefixes.filterMap fun st => st[j]?.map (·.2)

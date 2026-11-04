@@ -1,0 +1,59 @@
+{"pipeline":
+ {"steps":
+  [{"step": "sum", "property": "size", "as": "total", "array": "bookmarks"},
+   {"step": "groupBy", "by": ["cat"], "as": "groups"},
+   {"step": "cumulativeSum",
+    "properties": ["total"],
+    "orderBy": ["name"],
+    "array": "folders"}],
+  "source":
+  {"scalars":
+   [{"type": "string", "name": "cat"}, {"type": "string", "name": "name"}],
+   "arrays":
+   [{"type": {"scalars": [{"type": "number", "name": "size"}], "arrays": []},
+     "name": "bookmarks"}]},
+  "root": "folders"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [3, 2, 7, 1, 0, 6, 5, 8, 4, 9],
+  [1, 5, 8, 0, 4, 9, 2, 6, 3, 7]],
+ "ops":
+ [{"props": {"name": "b", "cat": "a"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"name": "a", "cat": "a"}, "path": [], "op": "add", "keys": ["2"]},
+  {"props": {"name": "c", "cat": "a"}, "path": [], "op": "add", "keys": ["3"]},
+  {"props": {"name": "a", "cat": "b"}, "path": [], "op": "add", "keys": ["4"]},
+  {"props": {"size": 10},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["1", "1"]},
+  {"props": {"size": 4},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["2", "1"]},
+  {"props": {"size": 1},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["3", "1"]},
+  {"props": {"size": 7},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["4", "1"]},
+  {"props": {"size": 3},
+   "path": ["bookmarks"],
+   "op": "add",
+   "keys": ["2", "2"]},
+  {"props": {"size": 10},
+   "path": ["bookmarks"],
+   "op": "remove",
+   "keys": ["1", "1"]}],
+ "name": "cumulative-sum-by-name",
+ "expected":
+ [{"folders":
+   [{"total": 8, "name": "c", "bookmarks": [{"size": 1}]},
+    {"total": 7, "name": "a", "bookmarks": [{"size": 3}, {"size": 4}]},
+    {"total": 7, "name": "b"}],
+   "cat": "a"},
+  {"folders": [{"total": 7, "name": "a", "bookmarks": [{"size": 7}]}],
+   "cat": "b"}],
+ "description":
+ "Each folder's total, then a running total of the folders in each category by name; a folder loses its only bookmark."}
