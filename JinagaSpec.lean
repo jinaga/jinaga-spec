@@ -60,4 +60,6 @@ import JinagaSpec.Cascade.Sources
 import JinagaSpec.Proofs.Cascade.Sources
 import JinagaSpec.Cascade.Enrich
 import JinagaSpec.Proofs.Cascade.Enrich
+import JinagaSpec.Cascade.Within
+import JinagaSpec.Proofs.Cascade.Within
 import JinagaSpec.Cascade.Cases

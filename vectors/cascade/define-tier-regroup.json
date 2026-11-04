@@ -9,7 +9,7 @@
      "else": {"value": "small", "op": "lit"}},
     "deps": ["total"],
     "as": "tier"},
-   {"step": "groupBy", "by": ["tier"], "as": "tiers"}],
+   {"step": "groupBy", "scope": [], "by": ["tier"], "as": "tiers"}],
   "source":
   {"scalars": [{"type": "string", "name": "name"}],
    "arrays":

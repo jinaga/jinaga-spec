@@ -8,6 +8,7 @@
     "deps": [],
     "as": "score"},
    {"step": "filter",
+    "scope": [],
     "predicate": {"value": 5, "property": "score", "op": "gt"}}],
   "source":
   {"scalars":

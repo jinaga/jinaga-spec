@@ -1,7 +1,7 @@
 {"pipeline":
  {"steps":
   [{"step": "sum", "property": "size", "as": "total", "array": "bookmarks"},
-   {"step": "groupBy", "by": ["total"], "as": "totals"}],
+   {"step": "groupBy", "scope": [], "by": ["total"], "as": "totals"}],
   "source":
   {"scalars": [{"type": "string", "name": "name"}],
    "arrays":

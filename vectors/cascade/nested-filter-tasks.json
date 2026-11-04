@@ -1,0 +1,39 @@
+{"pipeline":
+ {"steps":
+  [{"step": "filter",
+    "scope": ["tasks"],
+    "predicate": {"value": 2, "property": "hours", "op": "gt"}}],
+  "source":
+  {"scalars": [{"type": "string", "name": "team"}],
+   "arrays":
+   [{"type":
+     {"scalars": [{"type": "number", "name": "hours"}],
+      "arrays":
+      [{"type": {"scalars": [{"type": "string", "name": "note"}], "arrays": []},
+        "name": "steps"}]},
+     "name": "tasks"}]},
+  "root": "teams"},
+ "orders":
+ [[0, 1, 2, 3, 4, 5, 6], [0, 2, 4, 5, 1, 6, 3], [0, 5, 1, 3, 6, 2, 4]],
+ "ops":
+ [{"props": {"team": "core"}, "path": [], "op": "add", "keys": ["1"]},
+  {"props": {"hours": 3}, "path": ["tasks"], "op": "add", "keys": ["1", "1"]},
+  {"props": {"hours": 1}, "path": ["tasks"], "op": "add", "keys": ["1", "2"]},
+  {"props": {"note": "draft"},
+   "path": ["tasks", "steps"],
+   "op": "add",
+   "keys": ["1", "1", "1"]},
+  {"props": {"note": "skip"},
+   "path": ["tasks", "steps"],
+   "op": "add",
+   "keys": ["1", "2", "1"]},
+  {"props": {"hours": 4}, "path": ["tasks"], "op": "add", "keys": ["1", "3"]},
+  {"props": {"hours": 4},
+   "path": ["tasks"],
+   "op": "remove",
+   "keys": ["1", "3"]}],
+ "name": "nested-filter-tasks",
+ "expected":
+ [{"team": "core", "tasks": [{"steps": [{"note": "draft"}], "hours": 3}]}],
+ "description":
+ "Each team's tasks of more than 2 hours; a task that fails hides its steps."}

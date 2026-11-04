@@ -928,6 +928,27 @@ is not unique leaves the TypeScript with the last match it saw, where the model
 gives `whenMissing`; and the TypeScript passes an upstream change to the enriched
 property through, where the model hides it, as for the aggregates.
 
+## Cascade: a step below the root
+
+The model's steps were written for the root scope. Rather than give each of
+`groupBy`, `filter` and `flatten` a scope and prove it again, a step below the
+root is the root step run on each root row's subtree as a tree of its own
+(`Within.lean`). One theorem, `within_correct`, carries any root step's proof
+there, so the root proofs are untouched and the nested ones are one line each.
+
+Three things make the lift faithful. A view's keys are the input's, but the
+keys a step makes, such as group keys, could coincide across rows, so each key
+of the output is tagged with its row's: the TypeScript composes a nested group's
+key with its parent's for the same reason. A move between rows is not an event
+of any one view: the step removes the node's subtree from the old row's view and
+adds it to the new one's, the same lists `filter` already uses (`evict`,
+`admit`). And the step's output array can differ from its input's, as
+`groupBy(G, o)` replaces array `a` with `o`.
+
+The output keeps an item's key tagged where the TypeScript keeps it plain. The
+vectors never compare keys, so the difference is not observable in them. No
+cascade-core runtime test scoped a `flatten` before these vectors; they pass.
+
 ## Where the proof effort went
 
 | file | what it proves |

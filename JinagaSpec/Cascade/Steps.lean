@@ -7,8 +7,8 @@ Each step is a denotation, what its output is, and an implementation, which
 events it emits for each input event. They are written to be read next to
 `src/steps/*.ts` in `@jinaga/cascade-core`.
 
-Only root-scope `groupBy` and `filter` are modelled here; a nested scope is a
-later step.
+`groupBy` and `filter` are written for the root scope; `Within.lean` runs
+them below it.
 -/
 namespace JinagaSpec.Cascade
 
