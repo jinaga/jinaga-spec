@@ -169,11 +169,11 @@ vector:
 
 ## `feeds/<name>.json`
 
-The feeds `buildFeeds` makes of a specification (`JinagaSpec/Feeds.lean`), and
-what they deliver on a graph a replicator holds. Generated from
+The feeds `buildFeeds` makes of a specification (`JinagaSpec/Feeds.lean`), one
+per level, and what they deliver on a graph a replicator holds. Generated from
 `JinagaSpec/FeedCases.lean` (named cases) and a fixed random seed (`random-<n>`:
-specifications shaped like an application's, on graphs where a restoring feed
-delivers a result).
+specifications shaped like an application's, with at least three feeds, on
+graphs where each delivers a fact).
 
 ```jsonc
 {
@@ -191,15 +191,15 @@ delivers a result).
 }
 ```
 
-A feed has a composite projection with no components, and its givens are the
-specification's givens its path conditions name, in the order they first name
-them. A feed is read from the subscription's givens, by name, as the replicator
+A feed has a composite projection with no components, only path conditions,
+and as givens the specification's givens its path conditions name, in the
+specification's order. A feed is read from the subscription's givens, by name, as the replicator
 reads `GET /feeds/{hash}`. `delivered` does not list the givens.
 
 A port of `buildFeeds` passes a vector when its feeds equal `expected.feeds`,
 and, whatever its feeds, when a replica holding the givens, what its feeds
 deliver on `graph`, and the predecessors of each, reads `expected.results`
-(`FeedsCover`). The second is what eventual consistency needs; the first pins
+(`feeds_cover`). The second is what eventual consistency needs; the first pins
 the algorithm. `lake exe vectors` refuses to write a vector whose results the
 reference's own feeds do not cover.
 

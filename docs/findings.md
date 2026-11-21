@@ -954,7 +954,7 @@ cascade-core runtime test scoped a `flatten` before these vectors; they pass.
 A replica reads a specification's feeds page by page, loads what they name with
 its predecessors, and runs the specification on what it holds. Eventual
 consistency is the claim that once every feed's page comes back empty, it reads
-what the replicator reads. It splits into two parts.
+what the replicator reads. It splits into two parts, and both are proved.
 
 **Paging loses nothing** (`Cursor.lean`, `Proofs/Cursor.lean`). A tuple's
 position is its fact ids, largest first, compared lexicographically, as
@@ -963,36 +963,39 @@ the bookmark has been delivered) holds from the start, after every page, and
 after every batch the replicator saves, and an empty page then means every
 tuple is delivered. Two tuples at one position hold the same facts, so a
 `LIMIT` that cuts between them loses nothing. The growth step rests on two
-things. `feed_antitone`: a feed's conditions are only path conditions and
-negative conditions over path conditions (`buildFeeds_shape`), so a tuple that
-appears after a batch binds a fact of the batch. And `IdsIncrease`: that fact's
-id is larger than every id the replica's bookmark names. jinaga-server assigns
-`fact_id` from a sequence before commit, and its saves take no lock, so two
-saves can commit out of id order and a bookmark can pass a fact that commits
-later. That is jinaga/jinaga-server#203, reproduced there against replicator
-3.8.0, and #207.
+things. `feed_antitone`: a feed has only path conditions (`buildFeeds_shape`),
+so a tuple that appears after a batch binds a fact of the batch. And
+`IdsIncrease`: that fact's id is larger than every id the replica's bookmark
+names. jinaga-server assigns `fact_id` from a sequence before commit, and its
+saves take no lock, so two saves can commit out of id order and a bookmark can
+pass a fact that commits later. That is jinaga/jinaga-server#203, reproduced
+there against replicator 3.8.0, and #207.
 
-**The feeds cover the specification** (`FeedsCover`). A replica holding the
-givens, every fact the feeds deliver, their predecessors, and any other facts
-of the graph reads what the replicator reads. `feed_converges` proves eventual
-consistency from it. It is stated and checked (`check-feeds`, on 600 random
-specifications and 18,000 graphs per seed), not proved.
+**The feeds cover the specification** (`feeds_cover`, `Proofs/Cover.lean`). A
+replica holding the givens, every fact the feeds deliver, their predecessors,
+and any other facts of the graph reads what the replicator reads.
+`feed_converges` puts the two together. This is #9's `relevance_complete`, in
+the form the stream already uses: the replica is `g`, and the rest of the
+replicator's graph is a fresh batch `B` to it, since a replica saves each fact
+with its predecessors.
 
-Checking it found two defects in `jinaga.js`'s `buildFeeds`, both in the Lean
-definition until the check refuted them:
+### Levels, not excluding and restoring feeds
+
+The first port of `jinaga.js`'s `buildFeeds` was a machine over a work list:
+parity, stop markers, negative conditions applied as stripped filters, and a
+restoring feed for every result a stripped filter wrongly excludes, which must
+go on to match the rest of the specification. Checking `FeedsCover` against it
+found two defects, both in `jinaga.js`:
 
 - **A restoring feed asks too much of the fact it restores.** An excluded fact
   is cancelled when any one of its negative conditions fails. `jinaga.js`'s
   restoring branch for one of them keeps the stripped conditions its excluding
   feed already attached, and applies the conditions still waiting on the fact.
   A delete that is both restored and undone is then restored by no feed, and
-  what follows the condition (the event's name) reaches the replica through
-  none (`not-exists-cancelled-twice`). The correction drops the attached
-  conditions (`unattach`), which the mutants show correctness needs, and skips
-  the rest of the excluded condition (`afterStop`), which makes fewer feeds:
-  2,377 rather than 2,828 on seed 1. jinaga/jinaga.js#368 fixed the conditions
-  waiting on the match at the even level, which a restoring branch does need;
-  the same rule reached the odd level too.
+  the event's name reaches the replica through none
+  (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`).
+  jinaga/jinaga.js#368 fixed the conditions waiting at the even level, which a
+  restoring branch does need; the same rule reached the odd level too.
 - **A positive condition inside a negative one replaces it.**
   `buildExistentialCondition` builds the inner positive condition from its own
   matches, doubled, and assigns it over the outer one. The main feed of
@@ -1000,16 +1003,61 @@ definition until the check refuted them:
   `E { a, a }`, which names `d` without binding it; jinaga.js's own
   `MemoryStore` throws reading it (`exists-inside-not-exists`).
 
-The TypeScript reference, `ports/typescript/feed-builder.ts`, passes every feed
-vector. `jinaga.js` misses a result on four of the fifteen; its `MemoryStore`
-reads the vectors' feeds as the Lean definition does on all of them.
+Correcting the machine worked, but every degree of freedom in it existed to
+support the negative filters, so the next step was to ask what is left without
+them. Three candidates, measured by `check-feeds` on seed 1 (600
+specifications, 30 graphs each):
+
+| | feeds | facts delivered | tuples | covers |
+|---|---|---|---|---|
+| filtered, as `jinaga.js`, corrected | 2,377 | 9,865 | 9,513 | yes |
+| no polarity: a feed for every existential condition | 2,311 | 14,657 | 22,798 | yes |
+| **levels** | **1,641** | **8,934** | 13,028 | yes |
+
+*No polarity* is the simplest, and covers, but a feed for a positive condition's
+own matches leaves the condition out of the feed of its match. The distribution
+engine authorizes a feed by matching it to a rule's own feeds, so a rule that
+shares "projects where `E { member }`" would authorize every project. Positive
+conditions narrow; a feed must keep them.
+
+*Levels* keep them and drop everything else. A specification's levels are its
+matches and the matches of each negative condition, at any depth. Each level is
+one feed: its matches with every positive condition joined in, as the inverse
+algorithm flattens them (`flattenMatches`, now parameterized over which
+conditions to lift), keeping only path conditions, after the matches of the
+levels that enclose it. A negative condition filters nothing; the facts that
+exclude a result arrive in its own level's feed, and the facts that cancel
+those in the next level down. The definition is six lines (`levelFeeds`), where
+the machine was 22 with about 120 lines of helpers; the TypeScript reference
+went from 157 lines to 63. It makes fewer feeds and delivers fewer facts than
+the corrected filtered algorithm; the cost is tuples, because a negative
+condition's feed joins its whole enclosing level. It delivers results after a
+negative condition, such as the names of deleted events, that the filtered
+algorithm withholds, but the filtered algorithm never withheld the facts at the
+condition: its excluding feed delivers every deleted event with its delete.
+Negative conditions never narrowed what a replica may see.
+
+With a feed being a conjunctive query, the proof is direct. A flattened level
+agrees on both graphs by induction along it (`flat_agree`): through a candidate
+fact, either the rest of the level has no solution of its path conditions, and
+neither graph has a solution through the candidate, or it has one, `τ`; a
+negative condition reads the same at the candidate as at `τ` (`holds_agree`,
+`Locality.lean`), and at `τ` its own level is a feed, so it agrees by induction.
+Any level then agrees through `flatten_correct`, reused from `Proofs/Reorder.lean`
+with every positive condition lifted (`level_agree`). A dropped feed, which walks
+only to predecessors, binds only facts reached from what the replica holds
+(`dropped_settled`). The theorem needs `WellFormed`, `DistinctLabels` (so that
+joining a positive condition binds nothing twice) and `RootedMatches` (every
+match has a path condition, which `jinaga.js` requires).
+
+The feed vectors hold the reference to levels. `jinaga.js`'s `buildFeeds` makes
+other feeds on fourteen of fifteen, and misses a result on five; its
+`MemoryStore` reads every vector's feeds as the Lean definition does.
 
 A specification that reuses a name an existential condition declared, which
-`WellFormed` allows, can give a feed two matches with the same label (52 feeds
-in 600 specifications with reuse). The coverage check still holds, because the
-semantics shadows, but the SQL a feed becomes names its labels by name.
-`buildFeeds_shape` proves each feed's labels distinct when the specification's
-are (`DistinctLabels`).
+`WellFormed` allows, can give a level two matches with the same label. The
+check still covers it, because the semantics shadows, but the SQL a feed becomes
+names its labels by name; `DistinctLabels` excludes it.
 
 ## Where the proof effort went
 
@@ -1046,8 +1094,9 @@ are (`DistinctLabels`).
 | `Proofs/Cascade/Sources.lean` | Each source's correct pipeline, run on its own tree, is correct for the sources; a correct join composes with what comes before and after it, and its output does not depend on how the sources' events interleave. |
 | `Proofs/Cascade/Enrich.lean` | `enrich` is correct for any event in either source, and its copies depend only on what the secondary holds. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
-| `Proofs/Feeds.lean` | Every feed has `FeedShape`, and distinct labels when the specification does; a tuple new to a feed binds a new fact. |
-| `Proofs/Cursor.lean` | Paging by bookmark keeps a replica caught up from the first page to an empty one while the graph grows; eventual consistency, given `FeedsCover`. |
+| `Proofs/Feeds.lean` | A feed has only path conditions, so a tuple new to a feed binds a new fact. |
+| `Proofs/Cursor.lean` | Paging by bookmark keeps a replica caught up from the first page to an empty one while the graph grows. |
+| `Proofs/Cover.lean` | A flat level, then any level, agrees on a replica holding what its feeds deliver; every feed is scoped and binds each label once; the feeds cover the specification, and a replica that has paged them all converges. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
@@ -1064,6 +1113,5 @@ became 350, with the check included.
 not modelled. In the cascade model: `groupBy`,
 `filter` and `flatten` below the root; and the caches of the steps other than
 `groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
-the stream, not for the split. `FeedsCover` is checked and not proved. Skeleton
-canonicity (feed hashes), the stream session's wake-ups (liveness), and
-distribution soundness are not started.
+the stream, not for the split. Skeleton canonicity (feed hashes), the stream
+session's wake-ups (liveness), and distribution soundness are not started.

@@ -201,12 +201,6 @@ def genAcyclicGraph (s : Specification) (size : Nat) : Gen Graph := do
     facts := facts ++ [{ id := i, type := type, predecessors := preds }]
   return facts
 
-def feedShape (ms : List Match) : Bool :=
-  ms.all fun m => m.conditions.all fun
-    | .path _ => true
-    | .existential false ms' => ms'.all (·.conditions.all (·.isPath))
-    | .existential true _ => false
-
 /-! ## Specifications shaped like the ones applications write
 
 Each match reaches a successor of an earlier label, the way `successors`

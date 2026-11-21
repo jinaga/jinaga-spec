@@ -52,21 +52,22 @@ mutual
 end
 
 mutual
-  /-- Lift the matches of every existential condition that holds the pin into
-  the list, after the match that held it. -/
-  def flattenMatches : List Match → List Match
+  /-- Lift the matches of every `exists` condition that `lift` picks into the
+  list, after the match that held it. Here `lift` picks those that hold the
+  pin; feeds lift every one (`Feeds.lean`). -/
+  def flattenMatches (lift : List Match → Bool) : List Match → List Match
     | [] => []
     | .mk u cs :: rest =>
-      let (keep, lifted) := flattenConditions cs
-      .mk u keep :: lifted ++ flattenMatches rest
+      let (keep, lifted) := flattenConditions lift cs
+      .mk u keep :: lifted ++ flattenMatches lift rest
 
-  def flattenConditions : List Condition → List Condition × List Match
+  def flattenConditions (lift : List Match → Bool) : List Condition → List Condition × List Match
     | [] => ([], [])
     | c :: cs =>
-      let (keep, lifted) := flattenConditions cs
+      let (keep, lifted) := flattenConditions lift cs
       match c with
       | .existential true ms =>
-        if pinnedMatches ms then (keep, flattenMatches ms ++ lifted)
+        if lift ms then (keep, flattenMatches lift ms ++ lifted)
         else (c :: keep, lifted)
       | c => (c :: keep, lifted)
 end
@@ -191,13 +192,13 @@ def arranges (scope : List Name) (ms1 ms2 : List Match) : Bool :=
 /-- An inverse, reordered to start at the new fact. -/
 def reorder (i : Specification) : Option Specification :=
   let givens := (i.given.map (·.name)).filter (· != pinLabel)
-  (orderFromPin givens (flattenMatches i.matchList)).map fun ms => { i with matchList := ms }
+  (orderFromPin givens (flattenMatches pinnedMatches i.matchList)).map fun ms => { i with matchList := ms }
 
 /-- The reordered inverse, if it checks. -/
 def reorderChecked (i : Specification) : Option Specification :=
   let scope := pinLabel :: (i.given.map (·.name)).filter (· != pinLabel)
   (reorder i).filter fun r =>
-    isScopedMatches scope i.matchList && arranges scope (flattenMatches i.matchList) r.matchList &&
+    isScopedMatches scope i.matchList && arranges scope (flattenMatches pinnedMatches i.matchList) r.matchList &&
       i.projection.labels.all fun l => scope.contains l || (i.matchList.map (·.unknown.name)).contains l
 
 /-- The reordered inverse when it checks, and otherwise the inverse itself. -/

@@ -13,10 +13,11 @@
 //    src/specification/feed-builder.ts, or from PORT:
 //    a. its feeds equal the vector's, structurally and in order, and
 //    b. a replica holding what its feeds deliver, with their predecessors,
-//       reads the vector's results (`FeedsCover`).
-//    With PORT both must pass. Against jinaga.js they are reported: the
-//    vectors named in `jinagaMisses` are expected to fail 2b until jinaga.js
-//    takes the corrections in feed-builder.ts, and every vector 2a.
+//       reads the vector's results (`feeds_cover`).
+//    With PORT both must pass. Against jinaga.js they are reported: its
+//    feeds are not levels, so 2a fails on every vector with a negative
+//    condition, and 2b on the vectors named in `jinagaMisses`, until jinaga.js
+//    builds levels as feed-builder.ts does.
 import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -36,7 +37,7 @@ const implementation = strict
     : await load("src/specification/feed-builder.ts");
 
 /** The vectors jinaga.js's `buildFeeds` is expected to miss a result on. */
-const jinagaMisses = new Set(["not-exists-cancelled-twice", "not-exists-cancelled-by-second", "exists-inside-not-exists", "random-3"]);
+const jinagaMisses = new Set(["not-exists-cancelled-twice", "not-exists-cancelled-by-second", "exists-inside-not-exists", "random-4", "random-6"]);
 
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
 const key = (row: unknown) => JSON.stringify(row);

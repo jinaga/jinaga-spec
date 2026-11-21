@@ -73,7 +73,7 @@
  {"results": [[1, 6]],
   "feeds":
   [{"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    x: Restore [\n        x->delete: Delete = d\n    ]\n    v: Revoke [\n        v->restore: Restore = x\n    ]\n}\n",
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -83,6 +83,84 @@
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
          "labelRight": "t"}]},
+      {"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]}],
+     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
+   {"text":
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "Event", "name": "e"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+         "labelRight": "t"}]},
+      {"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]},
+      {"unknown": {"type": "Delete", "name": "d"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]}],
+     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
+   {"text":
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    x: Restore [\n        x->delete: Delete = d\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "Event", "name": "e"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+         "labelRight": "t"}]},
+      {"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]},
+      {"unknown": {"type": "Delete", "name": "d"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]},
+      {"unknown": {"type": "Restore", "name": "x"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Delete", "name": "delete"}],
+         "labelRight": "d"}]}],
+     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
+   {"text":
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    x: Restore [\n        x->delete: Delete = d\n    ]\n    v: Revoke [\n        v->restore: Restore = x\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "Event", "name": "e"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+         "labelRight": "t"}]},
+      {"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]},
       {"unknown": {"type": "Delete", "name": "d"},
        "conditions":
        [{"type": "path",
@@ -103,7 +181,7 @@
          "labelRight": "x"}]}],
      "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
    {"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    x: Restore [\n        x->delete: Delete = d\n        !E {\n            v: Revoke [\n                v->restore: Restore = x\n            ]\n        }\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    u: Undo [\n        u->delete: Delete = d\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -113,45 +191,12 @@
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
          "labelRight": "t"}]},
-      {"unknown": {"type": "Delete", "name": "d"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]},
-      {"unknown": {"type": "Restore", "name": "x"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Delete", "name": "delete"}],
-         "labelRight": "d"},
-        {"type": "existential",
-         "matches":
-         [{"unknown": {"type": "Revoke", "name": "v"},
-           "conditions":
-           [{"type": "path",
-             "rolesRight": [],
-             "rolesLeft": [{"predecessorType": "Restore", "name": "restore"}],
-             "labelRight": "x"}]}],
-         "exists": false}]},
       {"unknown": {"type": "Name", "name": "n"},
        "conditions":
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]}],
-     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
-   {"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    u: Undo [\n        u->delete: Delete = d\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
-    "specification":
-    {"projection": {"type": "composite", "components": []},
-     "matches":
-     [{"unknown": {"type": "Event", "name": "e"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
-         "labelRight": "t"}]},
+         "labelRight": "e"}]},
       {"unknown": {"type": "Delete", "name": "d"},
        "conditions":
        [{"type": "path",
@@ -163,77 +208,8 @@
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Delete", "name": "delete"}],
-         "labelRight": "d"}]},
-      {"unknown": {"type": "Name", "name": "n"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]}],
-     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
-   {"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    d: Delete [\n        d->event: Event = e\n        !E {\n            x: Restore [\n                x->delete: Delete = d\n            ]\n        }\n        !E {\n            u: Undo [\n                u->delete: Delete = d\n            ]\n        }\n    ]\n}\n",
-    "specification":
-    {"projection": {"type": "composite", "components": []},
-     "matches":
-     [{"unknown": {"type": "Event", "name": "e"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
-         "labelRight": "t"}]},
-      {"unknown": {"type": "Delete", "name": "d"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"},
-        {"type": "existential",
-         "matches":
-         [{"unknown": {"type": "Restore", "name": "x"},
-           "conditions":
-           [{"type": "path",
-             "rolesRight": [],
-             "rolesLeft": [{"predecessorType": "Delete", "name": "delete"}],
-             "labelRight": "d"}]}],
-         "exists": false},
-        {"type": "existential",
-         "matches":
-         [{"unknown": {"type": "Undo", "name": "u"},
-           "conditions":
-           [{"type": "path",
-             "rolesRight": [],
-             "rolesLeft": [{"predecessorType": "Delete", "name": "delete"}],
-             "labelRight": "d"}]}],
-         "exists": false}]}],
-     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
-   {"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n        !E {\n            d: Delete [\n                d->event: Event = e\n            ]\n        }\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
-    "specification":
-    {"projection": {"type": "composite", "components": []},
-     "matches":
-     [{"unknown": {"type": "Event", "name": "e"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
-         "labelRight": "t"},
-        {"type": "existential",
-         "matches":
-         [{"unknown": {"type": "Delete", "name": "d"},
-           "conditions":
-           [{"type": "path",
-             "rolesRight": [],
-             "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-             "labelRight": "e"}]}],
-         "exists": false}]},
-      {"unknown": {"type": "Name", "name": "n"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]}],
+         "labelRight": "d"}]}],
      "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}}],
   "delivered": [1, 2, 3, 4, 5, 6]},
  "description":
- "A delete undone, whose restore was revoked. A restoring feed for the undo that keeps the excluding feed's own condition on restores delivers no name."}
+ "A delete undone, whose restore was revoked. jinaga.js's restoring feed for the undo keeps its excluding feed's condition on restores, and delivers no name."}

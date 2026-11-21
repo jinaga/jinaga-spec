@@ -38,7 +38,6 @@ the replicator serves them, and checks they deliver the vector's facts. Then
 checks a `buildFeeds`: that its feeds equal the vector's, and that a replica
 holding what they deliver reads the vector's results. `feed-builder.ts` is the
 reference implementation, and must pass both. Against jinaga.js's own
-`buildFeeds` both are reported; the vectors the runner names in `jinagaMisses`
-are expected to miss a result until jinaga.js takes the corrections
-`feed-builder.ts` describes.
+`buildFeeds` both are reported: its feeds are not levels, and on the vectors the
+runner names in `jinagaMisses` a replica of them misses a result.
 

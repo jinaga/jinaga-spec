@@ -17,15 +17,18 @@ Two algorithms are covered end to end:
   `exact_stream_correct` proves a stream that applies them exact, when the
   projection names every top-level unknown.
 
-A third is checked, and proved in part:
+A third is proved as well:
 
 - **Feeds** (`buildFeeds`), which a replica pages by bookmark to learn the facts
-  a specification reads. `feed_converges` proves that a replica that has paged
-  every feed to an empty page reads what the replicator reads, given
-  `FeedsCover`: that the feeds deliver every fact that can change a result.
-  `FeedsCover` is checked on random specifications and graphs, not yet proved
-  (#9). Checking it found two defects in `jinaga.js`'s `buildFeeds`, corrected
-  in the definition (`docs/findings.md`).
+  a specification reads. A specification has one feed per *level*: its matches,
+  and the matches of each negative condition, each with positive conditions
+  joined in and only path conditions kept. `feeds_cover` proves that a replica
+  holding what the feeds deliver reads what the replicator reads, and
+  `feed_converges` that a replica that has paged every feed to an empty page
+  does, while the replicator's graph grows, provided ids increase in commit
+  order (jinaga/jinaga-server#203). Levels replace `jinaga.js`'s excluding and
+  restoring feeds, two of whose rules the randomized check refuted
+  (`docs/findings.md`).
 
 **Status.** It began as a spike to find out whether this approach keeps the
 definitions readable, the proofs tractable, and the ports checkable. It does,
@@ -48,7 +51,7 @@ and the libraries now port from it:
 | `JinagaSpec/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary `tailReadsGiven` decides. |
 | `JinagaSpec/Candidates.lean`, `Reorder.lean` | `candidates`: the inverses of a specification, each reordered to start at the new fact. |
 | `JinagaSpec/Exact.lean` | `changes`: the exact inverses, which report adds and removes from one read each, and a stream that applies them. |
-| `JinagaSpec/Feeds.lean`, `Cursor.lean` | `buildFeeds`: the feeds of a specification, what they deliver, and `FeedsCover`; paging a feed by bookmark, as jinaga-server does. |
+| `JinagaSpec/Feeds.lean`, `Cursor.lean` | `buildFeeds`: the feeds of a specification, one per level, and what they deliver; paging a feed by bookmark, as jinaga-server does. |
 | `JinagaSpec/Maintain.lean` | A stream that re-checks candidates after each batch. |
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
@@ -452,10 +455,10 @@ harder to hide, but they are not a proof about the TypeScript.
    must be serialized (#13).
 3. Conditions on givens in the split, the remaining projections, and nested
    collections.
-4. Feeds: prove `FeedsCover` (#9). `jinaga.js` takes the corrections in
-   `ports/typescript/feed-builder.ts`, and jinaga-server serializes saves so
-   that ids increase in commit order (jinaga/jinaga-server#203). Then skeleton
-   canonicity and distribution soundness.
+4. Feeds: `jinaga.js` builds levels as `ports/typescript/feed-builder.ts` does,
+   and jinaga-server serializes saves so that ids increase in commit order
+   (jinaga/jinaga-server#203). Then skeleton canonicity and distribution
+   soundness.
 
 ## License
 

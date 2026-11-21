@@ -118,29 +118,9 @@ theorem caught_grow {g : Graph} {B : List Fact} {T T' : List (List FactId)} {b :
 /-- Facts arriving at the replicator keep a replica that pages a feed caught up,
 provided their ids are larger than every id it has seen. -/
 theorem feed_grow {g : Graph} {B : List Fact} (hf : Fresh g B) (hinc : IdsIncrease g B)
-    {f : Specification} (hs : FeedShape f.matchList) (hnd : (names f.matchList).Nodup)
+    {f : Specification} (hs : PathsOnly f.matchList) (hnd : (names f.matchList).Nodup)
     {env : Env} (henv : Settled B env) {b : List Nat} {D : List FactId}
     (hc : Caught (f.tuples g env) b D) (hb : g.Bounds b) : Caught (f.tuples (g ++ B) env) b D :=
   caught_grow hc hb hinc fun _ ht hout => feed_antitone hf hs hnd henv ht hout
-
-/-- **Eventual consistency.** A replica that has paged every feed of `s` until a
-page came back empty, and holds what the pages delivered with its predecessors,
-reads what the replicator reads, provided the feeds cover the specification.
-
-`caught_page`, `caught_grow` and `caught_start` keep each feed `Caught` from the
-first page to the last while the replicator's graph grows; this theorem takes
-the last step. -/
-theorem feed_converges {s : Specification} (hcover : FeedsCover s) {G S : Graph} {env : Env}
-    (huniq : G.IdsUnique) (hsub : ∀ x ∈ S, x ∈ G) (hclosed : S.Closed)
-    (hgiv : ∀ l ∈ s.given, S.has env l = true)
-    (bookmark : Specification → List Nat) (D : List FactId)
-    (hcaught : ∀ f ∈ buildFeeds s, Caught (f.tuples G env) (bookmark f) D)
-    (hsync : ∀ f ∈ buildFeeds s, IsPage (f.tuples G env) [] (bookmark f))
-    (hheld : ∀ id ∈ D, ∃ x ∈ S, x.id = id) :
-    ∀ r, r ∈ s.read S env ↔ r ∈ s.read G env :=
-  hcover G S env huniq hsub hclosed hgiv fun id hid => by
-    obtain ⟨f, hf, hid⟩ := List.mem_flatMap.mp hid
-    obtain ⟨t, ht, hid⟩ := List.mem_flatten.mp hid
-    exact hheld id (caught_sync (hcaught f hf) (hsync f hf) t ht id hid)
 
 end JinagaSpec

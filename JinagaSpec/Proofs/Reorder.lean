@@ -26,7 +26,7 @@ inverse meant.
 -/
 namespace JinagaSpec
 
-variable {G : Graph}
+variable {G : Graph} {lift : List Match → Bool}
 
 theorem allHold_iff {env : Env} {u : Name} :
     ∀ cs : List Condition, allHold G env u cs = true ↔ ∀ c ∈ cs, holds G env u c = true
@@ -193,7 +193,7 @@ theorem names_append (a b : List Match) : names (a ++ b) = names a ++ names b :=
 
 theorem flattenConditions_keep_scoped {inner outer : List Name} :
     ∀ cs : List Condition, ScopedConditions inner outer cs →
-      ScopedConditions inner outer (flattenConditions cs).1
+      ScopedConditions inner outer (flattenConditions lift cs).1
   | [], _ => by unfold flattenConditions; trivial
   | c :: cs, ⟨hc, hcs⟩ => by
     have ih := flattenConditions_keep_scoped cs hcs
@@ -206,12 +206,12 @@ theorem flattenConditions_keep_scoped {inner outer : List Name} :
       | true => dsimp only; split <;> first | exact ih | exact ⟨hc, ih⟩
 
 /-- Flattening keeps the top-level unknowns. -/
-theorem mem_names_flatten {x : Name} : ∀ {ms : List Match}, x ∈ names ms → x ∈ names (flattenMatches ms)
+theorem mem_names_flatten {x : Name} : ∀ {ms : List Match}, x ∈ names ms → x ∈ names (flattenMatches lift ms)
   | [], h => by simpa [flattenMatches] using h
   | .mk u cs :: rest, h => by
-    have hflat : flattenMatches (.mk u cs :: rest) =
-        .mk u (flattenConditions cs).1 :: ((flattenConditions cs).2 ++ flattenMatches rest) := by
-      rw [flattenMatches]; rcases flattenConditions cs with ⟨k, l⟩; rfl
+    have hflat : flattenMatches lift (.mk u cs :: rest) =
+        .mk u (flattenConditions lift cs).1 :: ((flattenConditions lift cs).2 ++ flattenMatches lift rest) := by
+      rw [flattenMatches]; rcases flattenConditions lift cs with ⟨k, l⟩; rfl
     rw [hflat]
     simp only [names, List.map_cons, List.mem_cons, Match.unknown_mk, List.map_append,
       List.mem_append] at h ⊢
@@ -224,30 +224,30 @@ mutual
   one of the flattened list, and back, agreeing on the original's unknowns. -/
   theorem flatten_correct :
       ∀ (ms : List Match) (S : List Name) (env : Env), ScopedMatches S ms →
-        (names (flattenMatches ms)).Nodup → (∀ x ∈ names (flattenMatches ms), x ∉ S) →
-        (∀ σ ∈ evalMatches G env ms, ∃ σ' ∈ evalMatches G env (flattenMatches ms), Agree (names ms) σ σ') ∧
-        (∀ σ' ∈ evalMatches G env (flattenMatches ms), ∃ σ ∈ evalMatches G env ms, Agree (names ms) σ σ')
+        (names (flattenMatches lift ms)).Nodup → (∀ x ∈ names (flattenMatches lift ms), x ∉ S) →
+        (∀ σ ∈ evalMatches G env ms, ∃ σ' ∈ evalMatches G env (flattenMatches lift ms), Agree (names ms) σ σ') ∧
+        (∀ σ' ∈ evalMatches G env (flattenMatches lift ms), ∃ σ ∈ evalMatches G env ms, Agree (names ms) σ σ')
     | [], _, env, _, _, _ => by
       simp only [flattenMatches, evalMatches, List.mem_singleton]
       exact ⟨fun σ h => ⟨σ, h, fun _ h => by simp [names] at h⟩,
         fun σ h => ⟨σ, h, fun _ h => by simp [names] at h⟩⟩
     | .mk u cs :: rest, S, env, ⟨hcs, hrest⟩, hnd, hdis => by
       -- The flattened list: `u` with the conditions kept, the lifted matches, then `rest` flattened.
-      have hflat : flattenMatches (.mk u cs :: rest) =
-          .mk u (flattenConditions cs).1 :: ((flattenConditions cs).2 ++ flattenMatches rest) := by
-        rw [flattenMatches]; rcases flattenConditions cs with ⟨k, l⟩; rfl
+      have hflat : flattenMatches lift (.mk u cs :: rest) =
+          .mk u (flattenConditions lift cs).1 :: ((flattenConditions lift cs).2 ++ flattenMatches lift rest) := by
+        rw [flattenMatches]; rcases flattenConditions lift cs with ⟨k, l⟩; rfl
       rw [hflat] at hnd hdis ⊢
       simp only [names, List.map_cons, List.map_append, List.nodup_cons, Match.unknown_mk,
         List.mem_append, not_or] at hnd
       obtain ⟨⟨huL, huR⟩, hndLR⟩ := hnd
       have hndL := (List.nodup_append.mp hndLR).1
       have hndR := (List.nodup_append.mp hndLR).2.1
-      have hdisL : ∀ x ∈ names (flattenConditions cs).2, x ∉ u.name :: S := by
+      have hdisL : ∀ x ∈ names (flattenConditions lift cs).2, x ∉ u.name :: S := by
         intro x hx hxS
         rcases List.mem_cons.mp hxS with rfl | hxS
         · exact huL hx
         · exact hdis x (by simp [names] at hx ⊢; exact Or.inr (Or.inl hx)) hxS
-      have hdisR : ∀ x ∈ names (flattenMatches rest), x ∉ u.name :: S := by
+      have hdisR : ∀ x ∈ names (flattenMatches lift rest), x ∉ u.name :: S := by
         intro x hx hxS
         rcases List.mem_cons.mp hxS with rfl | hxS
         · exact huR hx
@@ -255,13 +255,13 @@ mutual
       have hcond := fun e => flattenConditions_correct cs u.name S e hcs hndL hdisL
       have ih := fun e => flatten_correct rest (u.name :: S) e hrest hndR hdisR
       -- Lifted bindings leave `u` and the scope alone.
-      have hframeL : ∀ e1 σ1, σ1 ∈ evalMatches G e1 (flattenConditions cs).2 → Agree (u.name :: S) e1 σ1 :=
+      have hframeL : ∀ e1 σ1, σ1 ∈ evalMatches G e1 (flattenConditions lift cs).2 → Agree (u.name :: S) e1 σ1 :=
         fun e1 σ1 h x hx => (evalMatches_frame h x fun hm => hdisL x hm hx).symm
       -- `u` itself is untouched by everything after it.
       have hu_rest : u.name ∉ names rest := fun h => huR (mem_names_flatten h)
       -- On `u`, both sides read what `x` was bound to.
-      have hu_eq : ∀ e1 σ σ1 σ3, σ ∈ evalMatches G e1 rest → σ1 ∈ evalMatches G e1 (flattenConditions cs).2 →
-          σ3 ∈ evalMatches G σ1 (flattenMatches rest) → σ u.name = σ3 u.name := by
+      have hu_eq : ∀ e1 σ σ1 σ3, σ ∈ evalMatches G e1 rest → σ1 ∈ evalMatches G e1 (flattenConditions lift cs).2 →
+          σ3 ∈ evalMatches G σ1 (flattenMatches lift rest) → σ u.name = σ3 u.name := by
         intro e1 σ σ1 σ3 hσ hσ1 hσ3
         rw [evalMatches_frame hσ _ hu_rest, evalMatches_frame hσ3 _ huR, evalMatches_frame hσ1 _ huL]
       constructor
@@ -293,36 +293,36 @@ mutual
   the kept ones hold and the lifted matches have a solution. -/
   theorem flattenConditions_correct :
       ∀ (cs : List Condition) (u : Name) (S : List Name) (env : Env),
-        ScopedConditions (u :: S) S cs → (names (flattenConditions cs).2).Nodup →
-        (∀ x ∈ names (flattenConditions cs).2, x ∉ u :: S) →
+        ScopedConditions (u :: S) S cs → (names (flattenConditions lift cs).2).Nodup →
+        (∀ x ∈ names (flattenConditions lift cs).2, x ∉ u :: S) →
         (allHold G env u cs = true ↔
-          allHold G env u (flattenConditions cs).1 = true ∧
-            ∃ σ ∈ evalMatches G env (flattenConditions cs).2, True)
+          allHold G env u (flattenConditions lift cs).1 = true ∧
+            ∃ σ ∈ evalMatches G env (flattenConditions lift cs).2, True)
     | [], _, _, env, _, _, _ => by simp [flattenConditions, allHold, evalMatches]
     | c :: cs, u, S, env, ⟨hc, hcs⟩, hnd, hdis => by
       -- The kept conditions read only `u` and the scope, so any binding that
       -- agrees there answers the same.
-      have hkeep := flattenConditions_keep_scoped cs hcs
+      have hkeep := flattenConditions_keep_scoped (lift := lift) cs hcs
       cases c with
       | path pc =>
-        have hfc : flattenConditions (.path pc :: cs) = (.path pc :: (flattenConditions cs).1, (flattenConditions cs).2) := by
+        have hfc : flattenConditions lift (.path pc :: cs) = (.path pc :: (flattenConditions lift cs).1, (flattenConditions lift cs).2) := by
           rw [flattenConditions]
         rw [hfc] at hnd hdis ⊢
         simp only [allHold, Bool.and_eq_true]
         rw [flattenConditions_correct cs u S env hcs hnd hdis]
         exact and_assoc.symm
       | existential e ms =>
-        by_cases hlift : e = true ∧ pinnedMatches ms = true
+        by_cases hlift : e = true ∧ lift ms = true
         · obtain ⟨rfl, hp⟩ := hlift
-          have hfc : flattenConditions (.existential true ms :: cs) =
-              ((flattenConditions cs).1, flattenMatches ms ++ (flattenConditions cs).2) := by
+          have hfc : flattenConditions lift (.existential true ms :: cs) =
+              ((flattenConditions lift cs).1, flattenMatches lift ms ++ (flattenConditions lift cs).2) := by
             rw [flattenConditions]; simp [hp]
           rw [hfc] at hnd hdis ⊢
           simp only [names_append, List.nodup_append, List.mem_append] at hnd hdis
-          have hdisM : ∀ x ∈ names (flattenMatches ms), x ∉ u :: S := fun x hx => hdis x (Or.inl hx)
-          have hdisC : ∀ x ∈ names (flattenConditions cs).2, x ∉ u :: S := fun x hx => hdis x (Or.inr hx)
+          have hdisM : ∀ x ∈ names (flattenMatches lift ms), x ∉ u :: S := fun x hx => hdis x (Or.inl hx)
+          have hdisC : ∀ x ∈ names (flattenConditions lift cs).2, x ∉ u :: S := fun x hx => hdis x (Or.inr hx)
           have hms := flatten_correct ms (u :: S) env hc hnd.1 hdisM
-          have hagM : ∀ σ1 ∈ evalMatches G env (flattenMatches ms), Agree (u :: S) env σ1 :=
+          have hagM : ∀ σ1 ∈ evalMatches G env (flattenMatches lift ms), Agree (u :: S) env σ1 :=
             fun σ1 h x hx => (evalMatches_frame h x fun hm => hdisM x hm hx).symm
           simp only [allHold, Bool.and_eq_true, holds_exists]
           constructor
@@ -338,8 +338,8 @@ mutual
             rw [allHold_agree G _ u S env σ1 hkeep (hagM σ1 hσ1)] at hk
             have := (flattenConditions_correct cs u S σ1 hcs hnd.2.1 hdisC).mpr ⟨hk, σ2, hσ2, trivial⟩
             exact ⟨⟨σ0, hσ0⟩, by rwa [allHold_agree G cs u S env σ1 hcs (hagM σ1 hσ1)]⟩
-        · have hfc : flattenConditions (.existential e ms :: cs) =
-              (.existential e ms :: (flattenConditions cs).1, (flattenConditions cs).2) := by
+        · have hfc : flattenConditions lift (.existential e ms :: cs) =
+              (.existential e ms :: (flattenConditions lift cs).1, (flattenConditions lift cs).2) := by
             rw [flattenConditions]
             cases e with
             | false => rfl
@@ -372,10 +372,10 @@ theorem reorderOrSelf_correct (i : Specification) (env : Env) (row : List (Optio
     have hflat := harr
     simp only [arranges, Bool.and_eq_true] at hflat
     obtain ⟨-, hndF, hdisF⟩ := bindsOnce_spec hflat.1.1.1.1.1
-    have hfc := flatten_correct (G := G) i.matchList scope env (isScopedMatches_spec _ _ hsc) hndF hdisF
+    have hfc := flatten_correct (G := G) (lift := pinnedMatches) i.matchList scope env (isScopedMatches_spec _ _ hsc) hndF hdisF
     -- A binding of the original and of the flattened list that agree on the
     -- original's unknowns project the same result.
-    have hsame : ∀ σ ∈ evalMatches G env i.matchList, ∀ σ' ∈ evalMatches G env (flattenMatches i.matchList),
+    have hsame : ∀ σ ∈ evalMatches G env i.matchList, ∀ σ' ∈ evalMatches G env (flattenMatches pinnedMatches i.matchList),
         Agree (names i.matchList) σ σ' → i.projection.labels.map σ = i.projection.labels.map σ' := by
       intro σ hσ σ' hσ' hag
       refine List.map_congr_left fun l hl => ?_

@@ -186,7 +186,7 @@ def feedVector (c : FeedCase) : Json :=
       ("results", rowsToJson (c.spec.read c.graph env))])]
 
 /-- Random specifications shaped like an application's, each with a graph on
-which a restoring feed delivers a result, from a fixed seed. -/
+which every one of at least three levels delivers a fact, from a fixed seed. -/
 def randomFeedCases (count : Nat) : List FeedCase := Id.run do
   let mut gen : StdGen × Nat := (mkStdGen 11, 0)
   let mut out : List FeedCase := []
@@ -198,15 +198,14 @@ def randomFeedCases (count : Nat) : List FeedCase := Id.run do
       let G ← genFeedGraph s 8
       return (G, ← genEnv s G) : Gen (Graph × Env)).run gen
     gen := g
-    -- A result that only a restoring feed delivers: the feeds that do not go
-    -- through a negative condition's own matches miss it.
+    -- Every level delivers something: the results, the facts that exclude
+    -- some, and the facts that cancel those.
     let results := s.read G env
-    let plain := (buildFeeds s).filter fun f => f.matchList.length ≤ s.matchList.length + 1
-    let missed := results.any fun row => row.any fun id =>
-      id.any fun id => !(plain.flatMap fun f => (f.tuples G env).flatten).contains id
+    let feeds := buildFeeds s
+    let missed := feeds.length ≥ 3 && feeds.all fun f => !(f.tuples G env).isEmpty
     if !results.isEmpty && missed then
       out := out ++ [{ name := s!"random-{out.length + 1}"
-                       description := "A random specification shaped like an application's, and a graph on which a restoring feed delivers a result."
+                       description := "A random specification shaped like an application's, and a graph on which each of its levels delivers a fact."
                        source := "lake exe vectors, seed 11"
                        spec := s, givens := s.given.map fun l => (l.name, (env l.name).getD 0), graph := G }]
   return out

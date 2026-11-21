@@ -329,40 +329,6 @@ theorem hoistMatches_unknowns (scope : List Name) :
     simp only at hih
     simp [heq, Match.unknown_mk, hih]
 
-/-! ## Scope is monotone in the allowed names -/
-
-mutual
-  theorem scopedMatches_mono :
-      ∀ (ms : List Match) (A B : List Name), (∀ x ∈ A, x ∈ B) → ScopedMatches A ms → ScopedMatches B ms
-    | [], _, _, _, _ => trivial
-    | .mk u cs :: rest, A, B, hsub, h => by
-      obtain ⟨h1, h2⟩ : ScopedConditions (u.name :: A) A cs ∧ ScopedMatches (u.name :: A) rest := h
-      have hsub' : ∀ x ∈ u.name :: A, x ∈ u.name :: B := by
-        intro x hx
-        rcases List.mem_cons.mp hx with rfl | hx
-        · exact List.mem_cons_self ..
-        · exact List.mem_cons_of_mem _ (hsub x hx)
-      exact ⟨scopedConditions_mono cs (u.name :: A) (u.name :: B) A B hsub' hsub h1,
-        scopedMatches_mono rest (u.name :: A) (u.name :: B) hsub' h2⟩
-
-  theorem scopedConditions_mono :
-      ∀ (cs : List Condition) (inner1 inner2 outer1 outer2 : List Name),
-        (∀ x ∈ inner1, x ∈ inner2) → (∀ x ∈ outer1, x ∈ outer2) →
-        ScopedConditions inner1 outer1 cs → ScopedConditions inner2 outer2 cs
-    | [], _, _, _, _, _, _, _ => trivial
-    | c :: cs, inner1, inner2, outer1, outer2, hi, ho, h => by
-      obtain ⟨h1, h2⟩ : ScopedCondition inner1 outer1 c ∧ ScopedConditions inner1 outer1 cs := h
-      exact ⟨scopedCondition_mono c inner1 inner2 outer1 outer2 hi ho h1,
-        scopedConditions_mono cs inner1 inner2 outer1 outer2 hi ho h2⟩
-
-  theorem scopedCondition_mono :
-      ∀ (c : Condition) (inner1 inner2 outer1 outer2 : List Name),
-        (∀ x ∈ inner1, x ∈ inner2) → (∀ x ∈ outer1, x ∈ outer2) →
-        ScopedCondition inner1 outer1 c → ScopedCondition inner2 outer2 c
-    | .path _, _, _, _, _, _, ho, h => ho _ h
-    | .existential _ ms, inner1, inner2, _, _, hi, _, h => scopedMatches_mono ms inner1 inner2 hi h
-end
-
 /-! ## Hoisting preserves scope, adding the split labels it introduces -/
 
 mutual
