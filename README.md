@@ -31,8 +31,8 @@ A third:
   inserted behind a bookmark (`feed_antitone`). And a new client is not sent
   the details of an entity whose exclusion nothing has cancelled, a child
   specification's facts about it included (`feeds_defer`). No feeds do better:
-  any that are consistent and append-only send the details of some entity
-  whose exclusion stands (`exact_deferral_impossible`). Paging by bookmark loses nothing while the graph grows,
+  any that are consistent and append-only send, on some graph, the details of
+  an entity whose one delete stands (`exact_deferral_impossible`). Paging by bookmark loses nothing while the graph grows,
   provided ids increase in commit order (`Cursor.lean`;
   jinaga/jinaga-server#203). So a replica that pages every feed to an empty
   page converges (`feed_converges`).

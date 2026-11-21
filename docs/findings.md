@@ -1084,9 +1084,9 @@ that. The two-level case is not separately proved.
 The second withholds the name once every revocation is undone. The third
 defers exactly with a nested negative condition, and a tuple of it appears,
 binding no new fact, when the last unrevoke arrives. The check fails if any
-feed set is all three. The proof itself is about 330 lines. Most of it
-evaluates `contested` on a graph with a variable number of revokes, one level
-at a time (`zs_iff` to `ds_iff`).
+feed set is all three. The proof is about 320 lines. The count is about
+50 of them; the rest evaluates `contested` on a graph with a variable number of
+revokes, one level at a time (`zs_iff` to `ds_iff`).
 
 The cost is measured on chapter 12's case: 50 events of 10 names each, 30
 deleted, and 10 of those restored. A new client downloads 391 of the graph's
