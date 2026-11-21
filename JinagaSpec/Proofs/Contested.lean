@@ -2,38 +2,45 @@ import JinagaSpec.Proofs.Children
 import JinagaSpec.Proofs.Maintain
 import JinagaSpec.Proofs.WellFormedCheck
 import JinagaSpec.FeedCases
+import JinagaSpec.Proofs.Rename
 
 /-!
 # No feeds defer a contested exclusion exactly
 
 `feeds_defer` withholds an entity's details while no witness of its exclusion
 has a cancelling fact. It does not withhold them while every witness stands.
-This file proves that no feeds can: any feeds at all, meeting consistency and
-append-only, deliver the details of an entity that is excluded, with its one
-witness standing (`exact_deferral_impossible`).
+This file proves that no feeds can: any feeds meeting consistency and
+append-only deliver the name of an event that is excluded, its one delete
+standing (`exact_deferral_impossible`).
 
 The specification is `contested` (`FeedCases.lean`): an event's names, unless
 its delete stands; a delete stands unless restored, a restore unless revoked,
-a revoke unless unrevoked. The graphs have one event, one delete, one restore,
-`N` revokes of the restore, and an unrevoke of each revoke in `U`.
+a revoke unless unrevoked. The graphs (`graph N U`) have one event, one
+delete, one restore, `N` revokes of the restore, and an unrevoke of each
+revoke in `U`, then the event's name.
 
 * With every revoke unrevoked, the restore stands, the delete is cancelled,
-  and the event's name is a result. Consistency forces some feed to deliver
-  the name: a replica missing it would read nothing.
-* Take away any one unrevoke `i`, and the restore is revoked, the delete
-  stands, and the event is excluded. Exact deferral would withhold the name.
-  But the unrevoke arrives as a fresh batch, so append-only says the tuple
-  delivering the name on the full graph was a tuple before it arrived, unless
-  it binds the unrevoke.
-* So the tuple binds every one of the `N` unrevokes. A feed's tuple binds one
-  fact per match, and `N` is more than any feed has.
+  and the event's name is a result. Consistency forces some feed's tuple to
+  deliver the name: a replica missing it would read nothing.
+* Take away the last unrevoke, the one with the largest id, and the restore is
+  revoked, the delete stands, and the event is excluded. Exact deferral would
+  withhold the name. But the unrevoke arrives as a batch with a larger id than
+  any the graph holds, so append-only says the tuple was there before it
+  arrived, unless it binds that unrevoke.
+* Ids mean nothing to a specification (`tuples_rename`), and swapping two
+  revokes with their unrevokes keeps the graph. So any unrevoke can be the
+  last, and the tuple binds every one of the `N`. A tuple binds one fact per
+  match, and `N` is more than any feed has.
 
 The requirements are stated for any list of feeds, as `feeds_cover`'s and
-`feed_antitone`'s conclusions (`Consistent`, `AppendOnly`). A feed may be any
-specification, with any nesting of conditions: the argument counts only the
-facts a tuple binds. `buildFeeds` meets both (`buildFeeds_consistent`,
-`buildFeeds_appendOnly`), on `contested` too (`contested_feasible`), so it is
-deferral that cannot be made exact.
+`feed_antitone`'s conclusions (`Consistent`, `AppendOnly`), the latter for
+the batches paging meets (`IdsIncrease`). A feed may be any specification,
+with any nesting of conditions. What it delivers is the facts its matches
+bind, at the specification's givens (`Specification.tuples`); a feed's
+projection, and any child specification in it, deliver nothing. `buildFeeds`
+meets both requirements (`buildFeeds_consistent`, `buildFeeds_appendOnly`), on
+`contested` too (`contested_feasible`), so it is deferral that cannot be made
+exact.
 -/
 namespace JinagaSpec
 
@@ -46,11 +53,12 @@ def Consistent (s : Specification) (Fs : List Specification) : Prop :=
   ∀ (g : Graph) (B : List Fact) (env : Env), Fresh g B → Settled B env → (∀ l ∈ s.given, g.has env l = true) →
     (∀ id ∈ deliver Fs (g ++ B) env, Outside B id) → ∀ r, s.Reads g env r ↔ s.Reads (g ++ B) env r
 
-/-- **Append-only**, for a feed: `feed_antitone`'s conclusion. A tuple found
-after a fresh batch, none of whose facts is in the batch, was found before, so
-a tuple never appears behind a bookmark. -/
+/-- **Append-only**, for a feed: `feed_antitone`'s conclusion, for the batches
+paging by bookmark meets (`caught_grow`), whose ids are larger than the graph's.
+A tuple found after such a batch, none of whose facts is in the batch, was
+found before, so a tuple never appears behind a bookmark. -/
 def AppendOnly (f : Specification) : Prop :=
-  ∀ (g : Graph) (B : List Fact) (env : Env), Fresh g B → Settled B env →
+  ∀ (g : Graph) (B : List Fact) (env : Env), Fresh g B → IdsIncrease g B → Settled B env →
     ∀ t ∈ f.tuples (g ++ B) env, (∀ id ∈ t, Outside B id) → t ∈ f.tuples g env
 
 theorem buildFeeds_consistent {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d)
@@ -60,16 +68,10 @@ theorem buildFeeds_consistent {s : Specification} (hwf : ∀ d ∈ s.descendants
 
 theorem buildFeeds_appendOnly {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d)
     (hd : ∀ d ∈ s.descendants, DistinctLabels d) : ∀ f ∈ buildFeeds s, AppendOnly f :=
-  fun f hf _ _ _ hfr henv _ ht hout =>
+  fun f hf _ _ _ hfr _ henv _ ht hout =>
     feed_antitone hfr (buildFeeds_feedShape s f hf) (buildFeeds_nodup hwf hd f hf) henv ht hout
 
 /-! ## Evaluating one role -/
-
-theorem factOf_of_mem {g : Graph} (hu : g.IdsUnique) {f : Fact} (hf : f ∈ g) : g.factOf f.id = some f := by
-  unfold Graph.factOf
-  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp
-    (List.find?_isSome (p := fun x : Fact => x.id == f.id) |>.mpr ⟨f, hf, beq_self_eq_true _⟩)
-  rw [ha, hu a (List.mem_of_find?_eq_some ha) f hf (by simpa using List.find?_some ha)]
 
 /-- A path condition of one role, `u->ρ = r`, where `u` and `r` are bound to
 facts `f` and `f'` of the graph, `f'` of the role's type: `f` names `f'` by the
@@ -100,23 +102,6 @@ theorem exists_unknown {g : Graph} (hu : g.IdsUnique) {env : Env} {u t r : Name}
 theorem tuples_congr {g g' : Graph} (hmem : ∀ x, x ∈ g ↔ x ∈ g') (hu : g.IdsUnique) (f : Specification)
     (env : Env) (t : List FactId) : t ∈ f.tuples g env ↔ t ∈ f.tuples g' env := by
   simp only [Specification.tuples, List.mem_map, evalMatches_congr hmem (factOf_congr hmem hu)]
-
-theorem mem_deliver {Fs : List Specification} {G : Graph} {env : Env} {id : FactId} :
-    id ∈ deliver Fs G env ↔ ∃ f ∈ Fs, ∃ t ∈ f.tuples G env, id ∈ t := by
-  simp [deliver, List.mem_flatMap, List.mem_flatten]
-
-/-- A tuple binds one fact for each match. -/
-theorem length_tuple {f : Specification} {G : Graph} {env : Env} {t : List FactId} (h : t ∈ f.tuples G env) :
-    t.length ≤ f.matchList.length := by
-  obtain ⟨e, -, rfl⟩ := List.mem_map.mp h
-  exact Nat.le_trans (List.length_filterMap_le _ _) (by simp)
-
-theorem length_le_flatMap {α β : Type} (g : α → List β) : ∀ {l : List α} {a : α}, a ∈ l → (g a).length ≤ (l.flatMap g).length
-  | b :: l, a, h => by
-    rw [List.flatMap_cons, List.length_append]
-    rcases List.mem_cons.mp h with rfl | h
-    · omega
-    · have := length_le_flatMap g h; omega
 
 /-! ## The graphs -/
 
@@ -310,6 +295,84 @@ theorem settled {B : List Fact} (hB : ∀ b ∈ B, b.id ≠ 0) : Settled B env0 
   · cases h; exact (hB b hb).symm
   · cases h
 
+/-- The last unrevoke has the largest id. -/
+theorem increase_last (m : Nat) :
+    IdsIncrease (graph (m + 1) ((List.range (m + 1)).erase m) ++ [name]) [unrevoke m] := by
+  intro x hx y hy
+  rw [List.mem_singleton.mp hy]
+  rcases cases_graph (by simp) hx with rfl | rfl | rfl | rfl | rfl | ⟨k, hk, rfl⟩ | ⟨j, hj, rfl⟩ <;> simp
+  · omega
+  · have := List.nodup_range.mem_erase_iff.mp hj; simp at this; omega
+
+/-! ## Any unrevoke can come last
+
+The ids of a graph do not matter to a specification (`tuples_rename`), so
+swapping two revokes, with their unrevokes, gives a graph of the same facts and
+the same tuples, renamed. -/
+
+/-- Swap the indices `i` and `m`. -/
+def swap (i m k : Nat) : Nat := if k = i then m else if k = m then i else k
+
+/-- Swap the ids of revokes `i` and `m`, and of their unrevokes. -/
+def swapIds (i m : Nat) (id : FactId) : FactId :=
+  if id < 5 then id else 2 * swap i m ((id - 5) / 2) + 5 + (id - 5) % 2
+
+theorem swap_swap (i m k : Nat) : swap i m (swap i m k) = k := by
+  unfold swap; by_cases h1 : k = i <;> by_cases h2 : k = m <;> simp [h1, h2] <;> omega
+
+theorem swap_lt {i m k : Nat} (hi : i < N) (hm : m < N) (hk : k < N) : swap i m k < N := by
+  unfold swap; split <;> (try split) <;> omega
+
+theorem swapIds_swapIds (i m id : Nat) : swapIds i m (swapIds i m id) = id := by
+  unfold swapIds
+  by_cases h : id < 5
+  · simp [h]
+  · obtain ⟨k, r, hr, rfl⟩ : ∃ k r, r < 2 ∧ id = 2 * k + 5 + r := ⟨(id - 5) / 2, (id - 5) % 2, by omega, by omega⟩
+    rw [ite_eq_right h, show (2 * k + 5 + r - 5) / 2 = k by omega, show (2 * k + 5 + r - 5) % 2 = r by omega,
+      ite_eq_right (show ¬ 2 * swap i m k + 5 + r < 5 by omega), show (2 * swap i m k + 5 + r - 5) / 2 = swap i m k by omega,
+      show (2 * swap i m k + 5 + r - 5) % 2 = r by omega, swap_swap]
+
+theorem swapIds_inj (i m : Nat) : ∀ a b, swapIds i m a = swapIds i m b → a = b := fun a b h => by
+  rw [← swapIds_swapIds i m a, h, swapIds_swapIds]
+
+theorem swapIds_small {i m id : Nat} (h : id < 5) : swapIds i m id = id := by simp [swapIds, h]
+
+theorem swapIds_revoke (i m k : Nat) : swapIds i m (2 * k + 5) = 2 * swap i m k + 5 := by
+  unfold swapIds
+  rw [ite_eq_right (show ¬ 2 * k + 5 < 5 by omega), show (2 * k + 5 - 5) / 2 = k by omega,
+    show (2 * k + 5 - 5) % 2 = 0 by omega]
+
+theorem swapIds_unrevoke (i m k : Nat) : swapIds i m (2 * k + 6) = 2 * swap i m k + 6 := by
+  unfold swapIds
+  rw [ite_eq_right (show ¬ 2 * k + 6 < 5 by omega), show (2 * k + 6 - 5) / 2 = k by omega,
+    show (2 * k + 6 - 5) % 2 = 1 by omega]
+
+theorem env0_rename (i m : Nat) : env0.rename (swapIds i m) = env0 := by
+  funext n; simp only [Env.rename, env0, Env.bind]; split <;> simp [swapIds_small]
+
+/-- Swapping two revokes keeps the graph with every revoke unrevoked. -/
+theorem rename_full {i m : Nat} (hi : i < N) (hm : m < N) (x : Fact) :
+    x ∈ graph N (List.range N) ++ [name] ↔ x ∈ (graph N (List.range N) ++ [name]).rename (swapIds i m) := by
+  have hT : ∀ f ∈ [name], f = name := by simp
+  -- The graph is closed under the swap, which is its own inverse.
+  have hclosed : ∀ y ∈ graph N (List.range N) ++ [name], y.rename (swapIds i m) ∈ graph N (List.range N) ++ [name] := by
+    intro y hy
+    rcases cases_graph hT hy with rfl | rfl | rfl | rfl | rfl | ⟨k, hk, rfl⟩ | ⟨k, hk, rfl⟩
+    all_goals simp only [Fact.rename, tenant, event, delete, restore, name, revoke, unrevoke, List.map,
+      swapIds_small (by decide : 0 < 5), swapIds_small (by decide : 1 < 5), swapIds_small (by decide : 2 < 5),
+      swapIds_small (by decide : 3 < 5), swapIds_small (by decide : 4 < 5), swapIds_revoke, swapIds_unrevoke]
+    · exact base_mem (f := tenant) (by simp)
+    · exact base_mem (f := event) (by simp)
+    · exact base_mem (f := delete) (by simp)
+    · exact base_mem (f := restore) (by simp)
+    · exact List.mem_append_right _ (by simp)
+    · exact revoke_mem (swap_lt hi hm hk)
+    · exact unrevoke_mem (List.mem_range.mpr (swap_lt hi hm (List.mem_range.mp hk)))
+  have hinv : ∀ y : Fact, (y.rename (swapIds i m)).rename (swapIds i m) = y := fun ⟨id, t, ps⟩ => by
+    simp [Fact.rename, swapIds_swapIds, List.map_map, Function.comp_def]
+  simp only [Graph.rename, List.mem_map]
+  exact ⟨fun h => ⟨_, hclosed x h, hinv x⟩, fun ⟨y, hy, h⟩ => h ▸ hclosed y hy⟩
+
 end Contested
 
 theorem contested_descendants : contested.descendants = [contested] := by
@@ -329,18 +392,23 @@ theorem contested_feasible :
 
 open Contested in
 /-- **Exact deferral is impossible** (R4). Any feeds of `contested` that are
-consistent and append-only deliver, on some graph, the name of an event that
-is excluded, whose one delete stands.
+consistent and append-only deliver the name of an event that is excluded: on a
+graph of the event, its one delete, a restore of the delete, `N` revokes of the
+restore and an unrevoke of each revoke in `U`, where some revoke is not
+unrevoked. The delete stands, so the event reads no result, and yet the feeds
+deliver its name.
 
 So `feeds_defer` cannot be strengthened to "withheld while every witness
-stands", for any feeds, let alone to "withheld while excluded". The graph is
-`restore-revoked-and-unrevoked`'s, with more revokes than the feeds have
-matches. -/
+stands", for any feeds, let alone to "withheld while excluded". With `N = 2`
+the graph is `restore-revoked-and-unrevoked`'s, up to ids. -/
 theorem exact_deferral_impossible (Fs : List Specification) (hc : Consistent contested Fs)
     (ha : ∀ f ∈ Fs, AppendOnly f) :
-    ∃ G : Graph, (∀ r, ¬ contested.Reads G env0 r) ∧ (G.filter (·.type == "Delete")).length = 1 ∧
-      name.id ∈ deliver Fs G env0 := by
-  let N := (Fs.flatMap (·.matchList)).length + 1
+    ∃ N U, (∃ i < N, i ∉ U) ∧ (∀ r, ¬ contested.Reads (graph N U ++ [name]) env0 r) ∧
+      name.id ∈ deliver Fs (graph N U ++ [name]) env0 := by
+  -- More unrevokes than the feeds have matches.
+  let m := (Fs.flatMap (·.matchList)).length
+  let N := m + 1
+  have hT : ∀ f ∈ [name], f = name := by simp
   have hfull : name.id ∈ deliver Fs (graph N (List.range N) ++ [name]) env0 := by
     refine Classical.byContradiction fun hn => ?_
     have h := hc (graph N (List.range N)) [name] env0 fresh_name (settled (by simp [name]))
@@ -348,28 +416,39 @@ theorem exact_deferral_impossible (Fs : List Specification) (hc : Consistent con
       (fun id hid b hb => by rw [List.mem_singleton.mp hb]; exact fun h => hn (h ▸ hid)) (.mk [some name.id] [])
     have h0 := reads_contested (N := N) (U := List.range N) (T := []) (by simp) (.mk [some name.id] [])
     rw [List.append_nil] at h0
-    rw [reads_contested (by simp)] at h
+    rw [reads_contested hT] at h
     simp at h0 h
     exact h0 h
   obtain ⟨f, hf, t, ht, hnt⟩ := mem_deliver.mp hfull
-  refine Classical.byContradiction fun hno => ?_
-  have hT : ∀ f ∈ [name], f = name := by simp
+  -- The graph without the last unrevoke: the event is excluded.
+  have hU : m ∉ (List.range N).erase m := fun h => (List.nodup_range.mem_erase_iff.mp h).1 rfl
+  by_cases hd : name.id ∈ deliver Fs (graph N ((List.range N).erase m) ++ [name]) env0
+  · exact ⟨N, _, ⟨m, by omega, hU⟩, fun r hr => hU (((reads_contested hT r).mp hr).1 m (by omega)), hd⟩
+  exfalso
+  have hperm : ((List.range N).map unrevoke).Perm (((List.range N).erase m).map unrevoke ++ [unrevoke m]) :=
+    ((List.perm_cons_erase (List.mem_range.mpr (by omega))).map _).trans (List.perm_append_singleton _ _).symm
+  have hmem : ∀ x, x ∈ graph N (List.range N) ++ [name] ↔
+      x ∈ graph N ((List.range N).erase m) ++ [name] ++ [unrevoke m] := fun x => by
+    simp only [graph, List.mem_append, hperm.mem_iff]
+    simp only [or_assoc, or_comm]
+  -- Every unrevoke `i`, swapped with the last, is one the tuple binds.
   have hz : ∀ i < N, (unrevoke i).id ∈ t := by
     intro i hi
-    refine Classical.byContradiction fun hz => hno ?_
-    have hU : i ∉ (List.range N).erase i := fun h => (List.nodup_range.mem_erase_iff.mp h).1 rfl
-    have hperm : ((List.range N).map unrevoke).Perm (((List.range N).erase i).map unrevoke ++ [unrevoke i]) :=
-      ((List.perm_cons_erase (List.mem_range.mpr hi)).map _).trans (List.perm_append_singleton _ _).symm
-    have hmem : ∀ x, x ∈ graph N (List.range N) ++ [name] ↔
-        x ∈ graph N ((List.range N).erase i) ++ [name] ++ [unrevoke i] := fun x => by
-      simp only [graph, List.mem_append, hperm.mem_iff]
-      simp only [or_assoc, or_comm, or_left_comm]
-    have ht' := ha f hf _ [unrevoke i] env0 (fresh_unrevoke hT hU) (settled (by simp [unrevoke]))
-      t ((tuples_congr hmem (idsUnique hT) f env0 t).mp ht)
-      (fun id hid b hb => by rw [List.mem_singleton.mp hb]; exact fun h => hz (h ▸ hid))
-    refine ⟨_, fun r hr => hU (((reads_contested hT r).mp hr).1 i hi), ?_, mem_deliver.mpr ⟨f, hf, t, ht', hnt⟩⟩
-    simp [graph, List.filter_append, List.filter_map, Function.comp_def, tenant, event, delete, restore, name,
-      revoke, unrevoke]
+    refine Classical.byContradiction fun hz => hd ?_
+    have hr := tuples_rename (swapIds_inj i m) f (graph N (List.range N) ++ [name]) env0
+    rw [env0_rename] at hr
+    have ht1 : t.map (swapIds i m) ∈ f.tuples (graph N ((List.range N).erase m) ++ [name] ++ [unrevoke m]) env0 :=
+      (tuples_congr hmem (idsUnique hT) f env0 _).mp ((tuples_congr (rename_full hi (by omega)) (idsUnique hT) f env0 _).mpr
+        (hr ▸ List.mem_map_of_mem ht))
+    have hout : ∀ id ∈ t.map (swapIds i m), Outside [unrevoke m] id := by
+      intro id hid b hb heq
+      obtain ⟨a, ha', rfl⟩ := List.mem_map.mp hid
+      rw [List.mem_singleton.mp hb] at heq
+      have : a = (unrevoke i).id := by
+        rw [← swapIds_swapIds i m a, heq]; simp [unrevoke, swapIds_unrevoke, swap]; split <;> omega
+      exact hz (this ▸ ha')
+    exact mem_deliver.mpr ⟨f, hf, _, ha f hf _ [unrevoke m] env0 (fresh_unrevoke hT hU) (increase_last m)
+      (settled (by simp [unrevoke])) _ ht1 hout, List.mem_map.mpr ⟨_, hnt, swapIds_small (by simp [name])⟩⟩
   have hN := List.Nodup.length_le_of_subset (l₁ := (List.range N).map fun i => (unrevoke i).id)
     (List.Pairwise.map _ (fun a b hab h => hab (by simp [unrevoke] at h; omega)) List.nodup_range)
     (fun x hx => by obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hx; exact hz i (List.mem_range.mp hi))

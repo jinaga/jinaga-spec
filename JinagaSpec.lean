@@ -23,6 +23,7 @@ import JinagaSpec.Proofs.Flat
 import JinagaSpec.Proofs.Defer
 import JinagaSpec.Proofs.Cover
 import JinagaSpec.Proofs.Children
+import JinagaSpec.Proofs.Rename
 import JinagaSpec.Proofs.Contested
 import JinagaSpec.Proofs.Scoped
 import JinagaSpec.Proofs.Basic

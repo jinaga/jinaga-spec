@@ -191,4 +191,14 @@ theorem feed_antitone (hf : Fresh g B) {f : Specification} (hp : FeedShape f.mat
   · exact hout id (List.mem_filterMap.mpr ⟨n, hm, hn⟩)
   · exact henv n id (by rw [← evalMatches_frame he n hm]; exact hn)
 
+theorem mem_deliver {Fs : List Specification} {G : Graph} {env : Env} {id : FactId} :
+    id ∈ deliver Fs G env ↔ ∃ f ∈ Fs, ∃ t ∈ f.tuples G env, id ∈ t := by
+  simp [deliver, List.mem_flatMap, List.mem_flatten]
+
+/-- A tuple binds one fact for each match. -/
+theorem length_tuple {f : Specification} {G : Graph} {env : Env} {t : List FactId} (h : t ∈ f.tuples G env) :
+    t.length ≤ f.matchList.length := by
+  obtain ⟨e, -, rfl⟩ := List.mem_map.mp h
+  exact Nat.le_trans (List.length_filterMap_le _ _) (by simp)
+
 end JinagaSpec

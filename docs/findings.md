@@ -1025,44 +1025,53 @@ vector `restore-revoked-and-unrevoked` shows it.
 
 **No feeds can do better** (`exact_deferral_impossible`,
 `Proofs/Contested.lean`). The theorem quantifies over any list of feeds, each
-any specification, with any nesting of conditions. It holds two requirements
-fixed, each stated as the conclusion of the theorem that proves it of
-`buildFeeds`:
+any specification, with any nesting of conditions. A feed delivers the facts
+its matches bind, at the specification's givens (`Specification.tuples`); its
+projection, and any child specification in it, deliver nothing. The theorem
+holds two requirements fixed, each stated as the conclusion of the theorem
+that proves it of `buildFeeds`:
 
 - `Consistent s Fs` is `feeds_cover`'s conclusion, under its hypotheses on the
   graphs: a replica that holds the givens and what the feeds deliver reads what
   the replicator reads.
-- `AppendOnly f` is `feed_antitone`'s conclusion: a tuple found after a fresh
-  batch, none of whose facts is in the batch, was found before.
+- `AppendOnly f` is `feed_antitone`'s conclusion, for a batch whose ids are
+  larger than the graph's (`IdsIncrease`): a tuple found after it, none of
+  whose facts is in it, was found before. That is exactly what paging by
+  bookmark needs of a feed (`caught_grow`, `feed_grow`).
 
 `FeedShape` is not assumed. It is how `buildFeeds` meets append-only, not the
-requirement itself, and the semantic form is both weaker and the one paging by
-bookmark uses (`feed_grow`). So the class is every feed set a replicator could
-page. `buildFeeds` is in it (`buildFeeds_consistent`, `buildFeeds_appendOnly`),
-on the counterexample too (`contested_feasible`), so the hypotheses can be met.
+requirement itself. So the class is every feed set a replicator could page.
+`buildFeeds` is in it (`buildFeeds_consistent`, `buildFeeds_appendOnly`), on
+the counterexample too (`contested_feasible`), so the hypotheses can be met.
 
 The specification is `contested`: an event's names, unless its delete stands;
 a delete stands unless restored, a restore unless revoked, a revoke unless
-unrevoked. The conclusion: on some graph, the feeds deliver the name of an
-event that reads no result, and whose only delete therefore stands. That
-refutes "withheld while every witness stands", and so also "withheld while
-excluded". The proof is a count:
+unrevoked. The graphs are `graph N U ++ [name]`: the event, its one delete, a
+restore, `N` revokes of the restore, an unrevoke of each revoke in `U`, and
+the event's name. The conclusion names one with a revoke not unrevoked, on
+which the event reads no result, so its one delete stands, and the feeds
+deliver the name. That refutes "withheld while every witness stands", and so
+also "withheld while excluded". The proof is a count:
 
 1. Take `N` revokes of the restore, more than all the feeds have matches. With
    every revoke unrevoked, the delete is cancelled and the name is a result.
    A replica holding everything but the name would read nothing, so
    consistency forces some feed's tuple to deliver it.
-2. Take away unrevoke `i`. The delete stands and the event is excluded. The
-   unrevoke is a fresh batch to that graph, so append-only says the tuple was
-   already there before it arrived, unless it binds unrevoke `i`. If it does
-   not, it delivers the name while the event is excluded.
-3. Otherwise the tuple binds all `N` unrevokes. A tuple binds one fact per
-   match, and no feed has `N` matches.
+2. Take away the last unrevoke, which has the largest id. The delete stands
+   and the event is excluded. The unrevoke is a batch with larger ids than the
+   graph, so append-only says the tuple was there before it arrived, unless it
+   binds that unrevoke. If no such tuple binds it, the name is delivered while
+   the event is excluded.
+3. A specification sees ids only for equality, so renaming them renames the
+   tuples (`tuples_rename`, `Proofs/Rename.lean`). Swapping any revoke and its
+   unrevoke with the last keeps the graph, so the tuple binds every one of the
+   `N` unrevokes. A tuple binds one fact per match, and no feed has `N`
+   matches.
 
 So `feeds_defer`'s weaker form is the most a feed design can promise for a
 contested exclusion, not a limitation of this walk. Exact deferral is possible
-only by giving up append-only, which would mean a tuple could appear behind a
-bookmark and be lost, or consistency. The vector
+only by giving up append-only, so that a tuple could appear behind a bookmark
+and be missed, or consistency. The vector
 `restore-revoked-and-both-unrevoked` is the other side of the count: the name,
 delivered through an unrevoke once every revocation is undone.
 
@@ -1084,9 +1093,11 @@ that. The two-level case is not separately proved.
 The second withholds the name once every revocation is undone. The third
 defers exactly with a nested negative condition, and a tuple of it appears,
 binding no new fact, when the last unrevoke arrives. The check fails if any
-feed set is all three. The proof is about 320 lines. The count is about
-50 of them; the rest evaluates `contested` on a graph with a variable number of
-revokes, one level at a time (`zs_iff` to `ds_iff`).
+feed set is all three. The proof is about 390 lines, and renaming ids
+(`Proofs/Rename.lean`, which holds for any specification) about 95 more. The
+count is about 60 lines, and swapping two revokes about 70. The rest
+evaluates `contested` on a graph with a variable number of revokes, one level
+at a time (`zs_iff` to `ds_iff`).
 
 The cost is measured on chapter 12's case: 50 events of 10 names each, 30
 deleted, and 10 of those restored. A new client downloads 391 of the graph's

@@ -309,7 +309,9 @@ def exactOn (Fs : List Specification) (N : Nat) : Bool × Bool × Bool := Id.run
   for i in all do
     let G := Contested.graph N (all.erase i) ++ [Contested.name]
     consistent := consistent && coverHolds contested G env (deliver Fs G env) []
-    appendOnly := appendOnly && Fs.all fun f => antitoneHolds f G [Contested.unrevoke i] env
+    -- `AppendOnly` is for a batch with larger ids: the last unrevoke.
+    if i + 1 == N then
+      appendOnly := appendOnly && Fs.all fun f => antitoneHolds f G [Contested.unrevoke i] env
     exact := exact && !(deliver Fs G env).contains Contested.name.id
   return (consistent, appendOnly, exact)
 
