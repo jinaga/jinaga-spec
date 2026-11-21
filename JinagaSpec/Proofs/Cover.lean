@@ -1125,4 +1125,266 @@ end
 
 end Positive
 
+/-! ## Every feed is scoped and rooted -/
+
+/-- A feed's path conditions name only givens and labels bound before them, and
+each of its matches has one. -/
+def Rooted (G0 : List Name) (Q : List Match) : Prop :=
+  ScopedMatches G0 (Q.map Match.paths) ∧ ∀ m ∈ Q, HasPath m
+
+theorem paths_paths (m : Match) : m.paths.paths = m.paths := by
+  cases m; simp [Match.paths, List.filter_filter]
+
+theorem negativesOf_rooted {N : List Match} (hr : RootedMatches N) : ∀ ns ∈ negativesOf N, RootedMatches ns := by
+  intro ns hns
+  obtain ⟨m, hm, hn⟩ := List.mem_flatMap.mp hns
+  exact (flatten_rooted N hr).2 m hm ns hn
+
+theorem Rooted.append {G0 : List Name} {Q N : List Match} (h : Rooted G0 Q) (hsc : ScopedMatches (G0 ++ names Q) N)
+    (hr : RootedMatches N) : Rooted G0 (Q ++ level N) := by
+  refine ⟨?_, fun m hm => ?_⟩
+  · rw [List.map_append, scopedMatches_append]
+    refine ⟨h.1, ?_⟩
+    rw [show (level N).map Match.paths = level N by simp [level, List.map_map, Function.comp_def, paths_paths]]
+    refine scopedMatches_mono _ _ _ (fun x hx => ?_) (scoped_level hsc)
+    rw [mem_scopeAfter]
+    rcases List.mem_append.mp hx with hx | hx
+    · exact Or.inr hx
+    · exact Or.inl (by rw [← names, names_paths]; exact hx)
+  · rcases List.mem_append.mp hm with hm | hm
+    · exact h.2 m hm
+    · obtain ⟨m0, hm0, rfl⟩ := List.mem_map.mp hm
+      obtain ⟨c, hc, hp⟩ := (flatten_rooted N hr).1 m0 hm0
+      obtain ⟨u, cs⟩ := m0
+      exact ⟨c, List.mem_filter.mpr ⟨hc, hp⟩, hp⟩
+
+theorem paths_addLast {c : Condition} (hc : c.isPath = false) :
+    ∀ Q : List Match, (addLast c Q).map Match.paths = Q.map Match.paths
+  | [] => rfl
+  | [.mk u cs] => by simp [addLast, Match.addCondition, Match.paths, List.filter_append, hc]
+  | m :: m' :: ms => by
+    rw [show addLast c (m :: m' :: ms) = m :: addLast c (m' :: ms) from rfl, List.map_cons, paths_addLast hc (m' :: ms)]
+    rfl
+
+theorem hasPath_addLast (c : Condition) : ∀ Q : List Match, (∀ m ∈ Q, HasPath m) → ∀ m ∈ addLast c Q, HasPath m
+  | [], _ => by simp [addLast]
+  | [.mk u cs], h => by
+    intro m hm
+    simp [addLast, Match.addCondition] at hm; subst hm
+    obtain ⟨c', hc', hp⟩ := h _ (List.mem_singleton_self _)
+    exact ⟨c', List.mem_append_left _ hc', hp⟩
+  | m :: m' :: ms, h => by
+    rw [show addLast c (m :: m' :: ms) = m :: addLast c (m' :: ms) from rfl]
+    intro x hx
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact h x (List.mem_cons_self ..)
+    · exact hasPath_addLast c (m' :: ms) (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
+
+theorem Rooted.addLast {G0 : List Name} {Q ns : List Match} (h : Rooted G0 Q) :
+    Rooted G0 (JinagaSpec.addLast (.existential false ns) Q) :=
+  ⟨by rw [paths_addLast rfl]; exact h.1, hasPath_addLast _ Q h.2⟩
+
+theorem scoped_sub {S S' : List Name} {ms : List Match} (h : ScopedMatches S ms) (hs : ∀ x ∈ S, x ∈ S') :
+    ScopedMatches S' ms := scopedMatches_mono _ _ _ hs h
+
+mutual
+  theorem levelFeeds_rooted (G0 : List Name) (k : List Match → List (List Match)) :
+      ∀ (P ms : List Match), Rooted G0 P → ScopedMatches (G0 ++ names P) ms → RootedMatches ms →
+        (∀ Q, Rooted G0 Q → (∀ x ∈ names (P ++ level ms), x ∈ names Q) → ∀ F ∈ k Q, Rooted G0 F) →
+        ∀ F ∈ levelFeeds k P ms, Rooted G0 F
+    | P, [], hP, _, _, hk, F, hF => by
+      rw [levelFeeds] at hF; exact hk P hP (fun x hx => by simpa [level, flatten, flattenMatches] using hx) F hF
+    | P, .mk u cs :: rest, hP, ⟨hcs, hrest⟩, hr, hk, F, hF => by
+      rw [RootedMatches] at hr
+      obtain ⟨hu, hrc, hrr⟩ := hr
+      rw [levelFeeds] at hF
+      have hsc1 : ScopedMatches (G0 ++ names P) [.mk u cs] := ⟨hcs, trivial⟩
+      have hr1 : RootedMatches [.mk u cs] := by rw [RootedMatches]; exact ⟨hu, hrc, by rw [RootedMatches]; trivial⟩
+      refine negFeeds_rooted G0 _ _ _ (hP.append hsc1 hr1)
+        (fun ns hns => ⟨by simpa [names_append, List.append_assoc] using scoped_negativesOf hsc1 hns,
+          negativesOf_rooted hr1 ns hns⟩) (fun Q hQ hg F hF => ?_) F hF
+      refine levelFeeds_rooted G0 k Q rest hQ (scoped_sub hrest fun x hx => ?_) hrr (fun Q' hQ' hg' => hk Q' hQ' ?_) F hF
+      · rcases List.mem_cons.mp hx with rfl | hx
+        · exact List.mem_append_right _ (hg _ (by rw [names_append]; exact List.mem_append_right _ (mem_names_level u cs)))
+        · rcases List.mem_append.mp hx with hx | hx
+          · exact List.mem_append_left _ hx
+          · exact List.mem_append_right _ (hg _ (by rw [names_append]; exact List.mem_append_left _ hx))
+      · intro x hx
+        rw [show Match.mk u cs :: rest = [.mk u cs] ++ rest from rfl, level_append, ← List.append_assoc,
+          names_append, List.mem_append] at hx
+        rcases hx with hx | hx
+        · exact hg' x (by rw [names_append]; exact List.mem_append_left _ (hg x hx))
+        · exact hg' x (by rw [names_append]; exact List.mem_append_right _ hx)
+  termination_by _ ms => (sizeOf ms, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (apply Prod.Lex.left
+         have := maxSize_lt (b := sizeOf (Match.mk u cs :: rest)) (by simp; omega)
+           fun p hp => sizeOf_negativesOf_unit p hp
+         simpa using this)
+      | (apply Prod.Lex.left; omega)
+
+  theorem negFeeds_rooted (G0 : List Name) (k : List Match → List (List Match)) :
+      ∀ (Q : List Match) (negs : List (List Match)), Rooted G0 Q →
+        (∀ ns ∈ negs, ScopedMatches (G0 ++ names Q) ns ∧ RootedMatches ns) →
+        (∀ Q', Rooted G0 Q' → (∀ x ∈ names Q, x ∈ names Q') → ∀ F ∈ k Q', Rooted G0 F) →
+        ∀ F ∈ negFeeds k Q negs, Rooted G0 F
+    | Q, [], hQ, _, hk, F, hF => by rw [negFeeds] at hF; exact hk Q hQ (fun _ h => h) F hF
+    | Q, ns :: rest, hQ, hn, hk, F, hF => by
+      rw [negFeeds] at hF
+      have hns := hn ns (List.mem_cons_self ..)
+      have hrest : ∀ n ∈ rest, ScopedMatches (G0 ++ names Q) n ∧ RootedMatches n :=
+        fun n h => hn n (List.mem_cons_of_mem _ h)
+      have hQl := hQ.append hns.1 hns.2
+      rcases List.mem_cons.mp hF with rfl | hF
+      · exact hQl
+      rcases List.mem_append.mp hF with hF | hF
+      · exact negFeeds_rooted G0 k _ rest hQ.addLast (by rw [names_addLast]; exact hrest)
+          (fun Q' hQ' hg => hk Q' hQ' fun x hx => hg x (by rw [names_addLast]; exact hx)) F hF
+      · obtain ⟨⟨ns', hns'⟩, -, hF⟩ := List.mem_flatMap.mp hF
+        refine levelFeeds_rooted G0 _ _ ns' hQl
+          (by simpa [names_append, List.append_assoc] using scoped_negativesOf hns.1 hns')
+          (negativesOf_rooted hns.2 ns' hns') (fun Q' hQ' hg F hF => ?_) F hF
+        have hgQ : ∀ x ∈ names Q, x ∈ names Q' := fun x hx =>
+          hg x (by simp only [names_append, List.mem_append]; exact Or.inl (Or.inl hx))
+        exact negFeeds_rooted G0 k Q' rest hQ'
+          (fun n h => ⟨scoped_sub (hrest n h).1 fun x hx => by
+            rcases List.mem_append.mp hx with hx | hx
+            · exact List.mem_append_left _ hx
+            · exact List.mem_append_right _ (hgQ x hx), (hrest n h).2⟩)
+          (fun Q'' hQ'' hg'' => hk Q'' hQ'' fun x hx => hg'' x (hgQ x hx)) F hF
+  termination_by _ negs => (maxSize negs, negs.length)
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | exact maxSize_lex _ _
+      | exact Prod.Lex.left _ _ (Nat.lt_of_lt_of_le (sizeOf_negativesOf _ ‹_›) (le_maxSize (List.mem_cons_self ..)))
+end
+
+/-! ## The feeds cover the specification -/
+
+section Top
+variable {g : Graph} {B : List Fact}
+
+/-- Every tuple of every feed of the walk binds facts the replica holds: a feed
+that is kept delivered them, and one that is dropped walks only to
+predecessors of what it starts from. -/
+theorem feeds_settled {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
+    (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
+    (hdel : ∀ id ∈ delivered s (g ++ B) env, Outside B id) :
+    ∀ F ∈ levelFeeds (fun P => [P]) [] s.matchList, ∀ τ ∈ evalMatches (g ++ B) env F, Settled B τ := by
+  intro F hF τ hτ
+  let G0 := s.given.map (·.name)
+  by_cases ht : traversesSuccessors { given := usedGivens s.given F, matchList := F, projection := .composite [] } = true
+  · have hkept : ({ given := usedGivens s.given F, matchList := F, projection := .composite [] } : Specification) ∈
+        buildFeeds s := List.mem_filter.mpr ⟨List.mem_map.mpr ⟨F, hF, rfl⟩, ht⟩
+    intro n id hn
+    by_cases hm : n ∈ names F
+    · exact hdel id (List.mem_flatMap.mpr ⟨_, hkept, List.mem_flatten.mpr
+        ⟨_, List.mem_map.mpr ⟨τ, hτ, rfl⟩, List.mem_filterMap.mpr ⟨n, hm, hn⟩⟩⟩)
+    · exact henv n id (by rw [← evalMatches_frame hτ n hm]; exact hn)
+  · have hroot := levelFeeds_rooted G0 _ [] s.matchList ⟨trivial, by simp⟩ (by simpa [names] using hwf.inScope) hr
+      (fun Q hQ _ F hF => by simp at hF; exact hF ▸ hQ) F hF
+    have hyg : Hygiene G0 [] [s.matchList] :=
+      ⟨by simpa [names, DistinctLabels] using hd,
+       fun x hx => wellNamed_declared _ _ hwf.wellNamed x (by simpa [names] using hx),
+       fun n hn => by simp at hn; subst hn; simpa [names] using hwf.inScope⟩
+    have hw : Within (names F) (declaredMatches s.matchList) := by
+      rcases levelFeeds_split (G := g ++ B) (env := env) G0 _ [] s.matchList hyg F hF with ⟨Q', hQ', hF⟩ | ⟨hw, -⟩
+      · simp at hF; subst hF; simpa [names] using hQ'.within
+      · simpa [names] using hw
+    have hnd := nodup_within hw hd
+    refine dropped_settled hf (F.map Match.paths) G0 env
+      ⟨hroot.1, by rw [names_paths]; exact hnd, fun x hx => wellNamed_declared _ _ hwf.wellNamed x
+        (mem_within hw (by rwa [names_paths] at hx))⟩ (fun m hm => ?_) henv τ (evalMatches_paths hτ)
+    obtain ⟨m0, hm0, rfl⟩ := List.mem_map.mp hm
+    obtain ⟨c, hc, hp⟩ := hroot.2 m0 hm0
+    cases c with
+    | path pc =>
+      refine ⟨pc, ?_, ?_⟩
+      · obtain ⟨u, cs⟩ := m0; exact List.mem_filter.mpr ⟨hc, rfl⟩
+      · simp only [traversesSuccessors, List.any_eq_true, not_exists, not_and, Bool.not_eq_true] at ht
+        simpa using ht m0 hm0 (.path pc) hc
+    | existential => simp [Condition.isPath] at hp
+
+/-- **The feeds cover the specification.** A replica `g` that holds the givens
+and every fact the feeds deliver on the replicator's graph `g ++ B`, where `B`
+is what of that graph the replica does not hold, reads what the replicator
+reads.
+
+`B` is fresh to `g` because a replica saves each fact with its predecessors.
+The specification declares each label once (`DistinctLabels`), so that joining
+a positive condition into its level binds nothing twice, and every match has a
+path condition (`RootedMatches`), so that a feed walking only to predecessors
+reaches nothing the replica does not hold. -/
+theorem feeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
+    (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
+    (hgiv : ∀ l ∈ s.given, g.has env l = true) (hdel : ∀ id ∈ delivered s (g ++ B) env, Outside B id) :
+    ∀ r, r ∈ s.read g env ↔ r ∈ s.read (g ++ B) env := by
+  let G0 := s.given.map (·.name)
+  let ms := s.matchList
+  have hall := feeds_settled hwf hd hr hf henv hdel
+  have hsc : ScopedMatches G0 ms := hwf.inScope
+  have hdis : ∀ x ∈ declaredMatches ms, x ∉ G0 := wellNamed_declared _ _ hwf.wellNamed
+  have hdist : Distinct G0 ms := ⟨hd, hdis⟩
+  have hyg : Hygiene G0 [] [ms] :=
+    ⟨by simpa [names, DistinctLabels] using hd, fun x hx => hdis x (by simpa [names] using hx),
+     fun n hn => by simp at hn; subst hn; simpa [names] using hsc⟩
+  have hR : ReachedL (levelFeeds (fun P => [P]) [] ms) (fun P => [P]) [] ms := fun _ h => h
+  have hε : env ∈ evalMatches (g ++ B) env [] := by simp [evalMatches]
+  -- A valid solution of the level's path conditions on the replicator is delivered.
+  have hset : ∀ σ' ∈ evalMatches (g ++ B) env (level ms), ValidL (g ++ B) σ' ms → Settled B σ' := by
+    intro σ' hσ' hv
+    obtain ⟨Q', τ', c, ag, -⟩ := walk_level (G := g ++ B) (env := env) G0 _ [] ms env σ' hR hyg hε hσ'
+      fun N hN => choosable_of_holds (scoped_negativesOf hsc hN)
+        (by simpa [names] using distinct_of_hygiene hyg hN) (hv N hN)
+    have hτ' := hall Q' (c.reached Q' (List.mem_singleton_self _)) τ' c.mem
+    exact settled_of_on henv hσ' fun x hx id h => hτ' x id (by rw [← ag x hx]; exact h)
+  have hpd : ∀ σ' ∈ evalMatches (g ++ B) env (level ms), ValidL (g ++ B) σ' ms → PD (g ++ B) B σ' ms :=
+    fun σ' hσ' hv => pd_level G0 (declaredMatches ms) hd hdis hall henv (fun P => [P]) [] env []
+      (fun Q' τ' hR' hτ' _ _ _ => hall Q' (hR' Q' (List.mem_singleton_self _)) τ' hτ')
+      [] ms env σ' hR hyg (by simpa [names] using Within.refl (declaredMatches ms)) hε
+      (fun _ h => absurd h List.not_mem_nil) (fun _ h => absurd h List.not_mem_nil) hσ' hv
+  -- The two sides have solutions agreeing on the unknowns.
+  have hagree : (∀ σ ∈ evalMatches g env ms, ∃ σ0 ∈ evalMatches (g ++ B) env ms, Agree (names ms) σ σ0) ∧
+      (∀ σ ∈ evalMatches (g ++ B) env ms, ∃ σ0 ∈ evalMatches g env ms, Agree (names ms) σ0 σ) := by
+    refine ⟨fun σ hσ => ?_, fun σ hσ => ?_⟩
+    · obtain ⟨σ', hσ', hv, ag⟩ := (nf (G := g) hsc hdist env).1 σ hσ
+      have hS := settled_eval hf henv hσ'
+      have hσ'G := evalMatches_paths_mono hf (pathsOnly_paths _) henv hσ'
+      have hvG : ValidL (g ++ B) σ' ms := Classical.byContradiction fun hn =>
+        semB hf ms G0 σ' hsc hdist hS hn (evd_level G0 hall _ [] ms env σ' hR hyg hε hσ'G) hv
+      obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g ++ B) hsc hdist env).2 σ' hσ'G hvG
+      exact ⟨σ0, hσ0, fun x hx => (ag x hx).trans (ag0 x hx).symm⟩
+    · obtain ⟨σ', hσ', hv, ag⟩ := (nf (G := g ++ B) hsc hdist env).1 σ hσ
+      have hS := hset σ' hσ' hv
+      have hσ'g := evalMatches_paths_antitone hf (pathsOnly_paths _).shape (nodup_level hdist) henv hσ' hS
+      have hvg := semA hf ms G0 σ' hsc hdist hS hv (hpd σ' hσ' hv)
+      obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g) hsc hdist env).2 σ' hσ'g hvg
+      exact ⟨σ0, hσ0, fun x hx => (ag0 x hx).trans (ag x hx).symm⟩
+  -- The givens are held on both graphs, so both read the specification.
+  have hgivG : ∀ l ∈ s.given, (g ++ B).has env l = true := fun l hl => (has_settled henv l).symm ▸ hgiv l hl
+  intro r
+  simp only [Specification.read, List.all_eq_true.mpr hgiv, List.all_eq_true.mpr hgivG, ite_true,
+    Specification.evaluate, List.mem_map]
+  -- Solutions that agree on the unknowns project the same row: the projection
+  -- names only givens and unknowns, and neither side rebinds a given.
+  have hrow : ∀ σ σ', σ ∈ evalMatches g env ms → σ' ∈ evalMatches (g ++ B) env ms →
+      Agree (names ms) σ σ' → s.projection.labels.map σ = s.projection.labels.map σ' := by
+    intro σ σ' hσ hσ' hag
+    refine List.map_congr_left fun l hl => ?_
+    by_cases hn : l ∈ names ms
+    · exact hag l hn
+    · rw [evalMatches_frame hσ l hn, evalMatches_frame hσ' l hn]
+  constructor
+  · rintro ⟨σ, hσ, rfl⟩
+    obtain ⟨σ', hσ', hag⟩ := hagree.1 σ hσ
+    exact ⟨σ', hσ', (hrow σ σ' hσ hσ' hag).symm⟩
+  · rintro ⟨σ', hσ', rfl⟩
+    obtain ⟨σ, hσ, hag⟩ := hagree.2 σ' hσ'
+    exact ⟨σ, hσ, hrow σ σ' hσ hσ' hag⟩
+
+end Top
+
 end JinagaSpec
