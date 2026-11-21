@@ -1221,8 +1221,21 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   `projectedLabels` skips specification components. A child specification
   that joins an undefined label, redeclares its parent's label, or projects a
   label it does not declare passes, and only the text parser catches it. The
-  theorems need each descendant `WellFormed`, which the check here gives as
-  `s.descendants.all isWellFormed`.
+  theorems need each descendant `WellFormed`, which `isWellFormedDeep` decides
+  (`isWellFormedDeep_iff`). The vectors `child-redeclares-a-given` and
+  `child-joins-an-undefined-label` show it, and `run-vectors.ts` reports
+  jinaga.js's verdict on them as known.
+
+Review found two places that read a projection's labels and missed a child's.
+`Projection.labels` names only the facts a projection projects. The split's
+`tailGivenAt` used it, so a given only a child specification joins was not
+given to the tail. jinaga.js's `labelsInProjection` includes it (vector
+`given-only-a-child-uses`). `ConditionedSpecification.labels` used it too, so
+the label for conditions on a given could be one a child declares: `given`
+where jinaga.js picks `given2`. Both now use one helper, `Projection.allLabels`,
+which names every label a child specification declares or joins, at any depth.
+The TypeScript reference's `reduceGivenConditions` had the same gap and now
+mirrors it.
 
 No issue was found for any of the three.
 
@@ -1278,9 +1291,15 @@ became 350, with the check included.
 ## Not covered
 
 `field`/`hash`/`time` projections are not modelled. Child specifications in a
-projection are modelled for feeds only. `evaluate`, and so the split, the store
-and the inverses, read a projection's rows. A child specification does not
-change those. In the cascade model: `groupBy`,
+projection are read, with their results, only by feeds (`Specification.Reads`).
+`evaluate`, which the split, the store and the inverses are proved against,
+reads a projection's rows; a child specification adds none. What those
+algorithms do take from a child specification is its labels. The split's tail
+is given the labels a child joins (`tailGivenAt`), and the label for conditions
+on a given avoids every label a child names (`givenConditionsLabel`), both
+through `Projection.allLabels`. Their theorems do not mention a child's
+results: the inverses of a child specification (`invertProjection`) are not
+ported. In the cascade model: `groupBy`,
 `filter` and `flatten` below the root; and the caches of the steps other than
 `groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
 the stream, not for the split. Skeleton canonicity (feed hashes), the stream

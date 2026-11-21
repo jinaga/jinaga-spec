@@ -30,6 +30,8 @@
 //   - an excluding feed is not filtered, since what it would filter out a
 //     restoring feed delivers anyway.
 
+import { isWellFormed } from "./well-formed.ts";
+
 type Label = { name: string; type: string };
 type Role = { name: string; predecessorType: string };
 type PathCondition = { type: "path"; rolesLeft: Role[]; labelRight: string; rolesRight: Role[] };
@@ -138,7 +140,11 @@ function checkLabels(outer: string[], matches: Match[], projection: Projection) 
 }
 
 export function buildFeeds(specification: Specification): Specification[] {
-    checkLabels([], specification.matches, specification.projection);
+    // The theorems assume every descendant is well formed (`isWellFormedDeep`).
+    // jinaga.js's assertWellFormed does not look inside a child specification.
+    if (!isWellFormed(specification as any))
+        throw new Error("The specification is not well formed: a label is out of scope, redeclared, or reserved.");
+    checkLabels(specification.given.map(g => g.label.name), specification.matches, specification.projection);
     return levelFeeds(projectionFeeds(specification.projection), [], specification.matches)
         .map(matches => ({
             given: specification.given

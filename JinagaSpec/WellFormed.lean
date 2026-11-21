@@ -18,6 +18,9 @@ inside the library then needs to check again.
   ordinary, not reserved for the split (`isReserved`). Scope is lexical, so
   sibling existential conditions may reuse a name.
 * **Projected.** The projection names only givens and top-level unknowns.
+
+`isWellFormedDeep` checks a specification's child specifications too, each as
+a specification of its own.
 -/
 namespace JinagaSpec
 
@@ -46,5 +49,10 @@ def isWellFormed (s : Specification) : Bool :=
   givens.all (!isReserved ·) &&
     isWellFormedMatches givens s.matchList &&
     s.projection.labels.all fun label => givens.contains label || (s.matchList.map (·.unknown.name)).contains label
+
+/-- A specification and each of its child specifications, at every depth, are
+well formed: each child as a specification whose matches go on from its
+parent's (`Specification.descendants`). The feeds theorems assume it. -/
+def isWellFormedDeep (s : Specification) : Bool := s.descendants.all isWellFormed
 
 end JinagaSpec

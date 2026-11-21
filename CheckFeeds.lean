@@ -305,7 +305,7 @@ def main (args : List String) : IO UInt32 := do
       | 1 => genChildSpec
       | _ => genSpec false 3 reuse).run gen
     gen := g
-    unless s.descendants.all isWellFormed do
+    unless isWellFormedDeep s do
       throw <| IO.userError s!"the generator made a specification that is not well-formed:\n{describeSpecification s}"
     t := { t with specs := t.specs + 1 }
     let feeds := buildFeeds s

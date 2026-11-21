@@ -9,8 +9,10 @@
 //               (not reserved for the split: it does not begin with `__`)
 //   projected   the projection names only givens and top-level unknowns
 //
-// Not modelled yet, and ignored here: conditions on givens, and the labels
-// declared inside nested specification projections.
+// A child specification in the projection is checked as a specification of its
+// own: the parent's givens, and the parent's matches followed by its own
+// (`isWellFormedDeep`, `Specification.descendants`). Not modelled yet, and
+// ignored here: conditions on givens.
 
 export interface Label { name: string; type: string }
 export interface Role { name: string; predecessorType: string }
@@ -18,7 +20,9 @@ export interface PathCondition { type: "path"; rolesLeft: Role[]; labelRight: st
 export interface ExistentialCondition { type: "existential"; exists: boolean; matches: Match[] }
 export type Condition = PathCondition | ExistentialCondition;
 export interface Match { unknown: Label; conditions: Condition[] }
-export type Component = { type: "specification" } | { type: "fact" | "field" | "hash" | "time"; label: string };
+export type Component =
+    | { type: "specification"; matches: Match[]; projection: Projection }
+    | { type: "fact" | "field" | "hash" | "time"; label: string };
 export type Projection =
     | { type: "composite"; components: Component[] }
     | { type: "fact" | "field" | "hash" | "time"; label: string };
@@ -60,10 +64,17 @@ function projectedLabels(projection: Projection): string[] {
         : [projection.label];
 }
 
-export function isWellFormed(specification: Specification): boolean {
+function isWellFormedNode(specification: Specification): boolean {
     const givens = specification.given.map(g => g.label.name);
     const unknowns = specification.matches.map(m => m.unknown.name);
     return givens.every(name => !isReserved(name)) &&
         isWellFormedMatches(givens, specification.matches) &&
         projectedLabels(specification.projection).every(label => givens.includes(label) || unknowns.includes(label));
+}
+
+/** A specification and each child specification of its projection, at every depth, are well formed. */
+export function isWellFormed(specification: Specification): boolean {
+    return isWellFormedNode(specification) && (specification.projection.type !== "composite" ||
+        specification.projection.components.every(c => c.type !== "specification" ||
+            isWellFormed({ given: specification.given, matches: [...specification.matches, ...c.matches], projection: c.projection })));
 }

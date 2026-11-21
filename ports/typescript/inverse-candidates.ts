@@ -262,6 +262,17 @@ export function reorderInverse(inverse: Specification): Specification {
 
 /* ---------------- Conditions on a given (JinagaSpec/GivenConditions.lean) ---------------- */
 
+/**
+ * Every label a projection names: the facts it projects, and every label a
+ * child specification declares or joins, at any depth (`Projection.allLabels`).
+ */
+function allLabelsOfProjection(projection: any): string[] {
+    return projection.type === "composite"
+        ? projection.components.flatMap((c: any) => c.type === "specification"
+            ? [...labelsIn(c.matches), ...allLabelsOfProjection(c.projection)] : [c.label])
+        : [projection.label];
+}
+
 /** Every label a list of matches declares or names, at any depth. */
 function labelsIn(matches: Match[]): string[] {
     return matches.flatMap(m => [m.unknown.name, ...m.conditions.flatMap(c =>
@@ -284,7 +295,7 @@ export function reduceGivenConditions(specification: Specification): Specificati
         ...specification.given.map(g => g.label.name),
         ...labelsIn(conditions.flatMap(c => c.matches)),
         ...labelsIn(specification.matches),
-        ...projectionLabels(specification.projection)]);
+        ...allLabelsOfProjection(specification.projection)]);
     let k = 1;
     while (used.has(k === 1 ? "given" : `given${k}`)) k++;
     const label = k === 1 ? "given" : `given${k}`;

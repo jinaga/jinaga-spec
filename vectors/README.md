@@ -48,7 +48,9 @@ split does not take conditions on givens yet. Inverse vectors may carry them
 
 ## `well-formed/<name>.json`
 
-The same envelope, for the check `isWellFormed`:
+The same envelope, for the check `isWellFormedDeep`: `isWellFormed` of the
+specification and of each child specification in its projection, each as a
+specification whose matches go on from its parent's:
 
 ```jsonc
 {

@@ -49,13 +49,13 @@ def wellFormedCaseToJson (c : WellFormedCase) : Json :=
     ("specification", specificationToJson c.spec),
     ("text", describeSpecification c.spec),
     ("violates", Json.arr (c.violates.map Json.str).toArray),
-    ("expected", Json.mkObj [("wellFormed", isWellFormed c.spec)])]
+    ("expected", Json.mkObj [("wellFormed", isWellFormedDeep c.spec)])]
 
 /-- The vector's verdict comes from the oracle, but each case states which rules
 a reader expects it to violate, and a disagreement is an error, not a vector. -/
 def checkIntent (c : WellFormedCase) : IO Unit := do
-  if isWellFormed c.spec != c.violates.isEmpty then
-    throw <| IO.userError s!"{c.name}: the oracle says wellFormed={isWellFormed c.spec}, but the case violates {c.violates}"
+  if isWellFormedDeep c.spec != c.violates.isEmpty then
+    throw <| IO.userError s!"{c.name}: the oracle says wellFormed={isWellFormedDeep c.spec}, but the case violates {c.violates}"
 
 def rowToJson (row : Row) : Json :=
   Json.arr (row.map fun | some id => Json.num id | none => Json.null).toArray

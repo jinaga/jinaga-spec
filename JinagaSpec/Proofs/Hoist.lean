@@ -1102,7 +1102,7 @@ theorem hoist_tail_scoped (hwf : WellFormed s) (hs : s.matchList = before ++ piv
     simpa using h
   have hgivenMem : ∀ x, x ∈ (tailGivenAt s (before ++ hm) tailMatches).map (·.name) ↔
       x ∈ (s.given ++ (before ++ hm).map (·.unknown)).map (·.name) ∧
-        x ∈ usedInMatches tailMatches ++ s.projection.labels := by
+        x ∈ usedInMatches tailMatches ++ s.projection.allLabels := by
     intro x
     simp only [tailGivenAt, List.mem_map, List.mem_filter, List.contains_iff_mem]
     constructor
@@ -1127,7 +1127,10 @@ theorem hoist_tail_scoped (hwf : WellFormed s) (hs : s.matchList = before ++ piv
     exact ⟨hMemAll x hxA, by simp [hx]⟩
   · intro x hx
     rcases pivot_scoped hwf hs x hx with hproj | hproj
-    · exact Or.inl (by rw [hgivenMem]; exact ⟨hMemAll x (List.mem_append_left _ hproj), by simp [hx]⟩)
+    · exact Or.inl (by
+        rw [hgivenMem]
+        exact ⟨hMemAll x (List.mem_append_left _ hproj),
+          List.mem_append_right _ (Projection.labels_sub_allLabels _ x hx)⟩)
     · exact Or.inr (hUnk ▸ hproj)
 
 /-- Solving the pivot and everything after it from `e` is the same as

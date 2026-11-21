@@ -85,11 +85,20 @@ console.log(`\n${tailReadsGivenChecked - tailReadsGivenFailed} of ${tailReadsGiv
 let wellFormedFailed = 0;
 const checkers: [string, (specification: any) => boolean][] = [["reference", isWellFormed]];
 if (wellFormedErrors) checkers.push(["jinaga.js", specification => wellFormedErrors(structuredClone(specification)).length === 0]);
+// jinaga.js's wellFormedErrors does not look inside a child specification
+// (docs/findings.md), so it accepts these. Reported, until it does.
+const jinagaWellFormedMisses = new Set(["child-redeclares-a-given", "child-joins-an-undefined-label"]);
 const wellFormedFiles = readdirSync(wellFormedDir).filter(f => f.endsWith(".json")).sort();
 for (const file of wellFormedFiles) {
     const vector = JSON.parse(readFileSync(join(wellFormedDir, file), "utf8"));
-    const failures = checkers.filter(([, check]) => check(vector.specification) !== vector.expected.wellFormed).map(([name]) => name);
-    if (failures.length === 0) {
+    const wrong = checkers.filter(([, check]) => check(vector.specification) !== vector.expected.wellFormed).map(([name]) => name);
+    const failures = wrong.filter(name => !(name === "jinaga.js" && jinagaWellFormedMisses.has(vector.name)));
+    if (jinagaWellFormedMisses.has(vector.name) && wellFormedErrors && !wrong.includes("jinaga.js")) {
+        console.log(`  note  ${vector.name}: jinaga.js now agrees; remove it from jinagaWellFormedMisses`);
+    }
+    if (wrong.length > failures.length) {
+        console.log(`  known ${vector.name}: jinaga.js's wellFormedErrors accepts it`);
+    } else if (failures.length === 0) {
         console.log(`  ok    ${vector.name}`);
     } else {
         wellFormedFailed++;

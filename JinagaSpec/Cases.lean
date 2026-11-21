@@ -144,7 +144,15 @@ def cases : List Case :=
     spec := spec [("p1", "Post"), ("p2", "Jinaga.User")]
       [unknown "u1" "Blog" [path [] "p1" [blog]],
        unknown "u2" "Post" [path [blog] "u1", path [author] "p2"]]
-      (fact "u2") }
+      (fact "u2") },
+  { name := "given-only-a-child-uses"
+    description := "Only a child specification in the projection joins the given. The tail is given it, as jinaga.js's labelsInProjection includes a child's matches."
+    source := "jinaga-spec review of child specifications"
+    spec := spec [("p1", "Item")]
+      [unknown "u1" "Root" [path [] "p1" [role "root" "Root"]],
+       unknown "u2" "Other" [path [role "root" "Root"] "u1"]]
+      (.composite [.fact "o" "u2",
+        .specification "notes" [unknown "n" "Note" [path [item] "p1"]] (fact "n")]) }
   ]
 
 /-- A specification, and the rules a person reading them expects it to violate.
@@ -293,7 +301,22 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Office"
         [path [] "p1" [office], notExists [unknown "e" "Revoked" [path [revoked] "u1"]]]]
       (fact "e")
-    violates := ["projected"] }
+    violates := ["projected"] },
+  { name := "child-redeclares-a-given"
+    description := "A child specification declares a label its parent's given already names. jinaga.js's wellFormedErrors does not look inside a child specification."
+    source := "jinaga-spec review of child specifications"
+    spec := spec [("p1", "Root")]
+      [unknown "u1" "Item" [path [role "root" "Root"] "p1"]]
+      (.composite [.specification "notes" [unknown "p1" "Note" [path [role "item" "Item"] "u1"]] (fact "p1")])
+    violates := ["named"] },
+  { name := "child-joins-an-undefined-label"
+    description := "A child specification's path condition names a label nothing declares. jinaga.js's wellFormedErrors does not look inside a child specification; its parser rejects the text."
+    source := "jinaga-spec review of child specifications"
+    spec := spec [("p1", "Root")]
+      [unknown "u1" "Item" [path [role "root" "Root"] "p1"]]
+      (.composite [.fact "item" "u1",
+        .specification "notes" [unknown "n" "Note" [path [role "item" "Item"] "nosuch"]] (fact "n")])
+    violates := ["scoped"] }
   ]
 
 end JinagaSpec

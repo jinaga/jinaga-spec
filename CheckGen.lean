@@ -300,7 +300,8 @@ def sameResults (a b : List Result) : Bool := sameSet (a.map Result.key) (b.map 
 /-- Each descendant is well formed and declares each label once: the hypotheses
 of the feeds theorems. -/
 def feedReady (s : Specification) : Bool :=
-  s.descendants.all fun d => isWellFormed d && (declaredMatches d.matchList).eraseDups.length == (declaredMatches d.matchList).length
+  isWellFormedDeep s && s.descendants.all fun d =>
+    (declaredMatches d.matchList).eraseDups.length == (declaredMatches d.matchList).length
 
 /-- The facts `ids` name, and all their predecessors. -/
 def closure (g : Graph) (ids : List FactId) : List FactId := Id.run do
