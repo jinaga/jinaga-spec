@@ -1005,8 +1005,8 @@ in. At each negative condition, every feed so far does three things:
 - it **goes on restored**: through the condition's level, then the level of one
   of that level's own negative conditions, walked the same way.
 
-Each rule is forced, and the check has a mutant for each, caught on 34 to 55 of
-610 specifications. Deferral forces the excluding feed to stop. Consistency then
+Each rule is forced, and the check has a mutant for each, caught on 43 to 127 of
+613 specifications over seeds 1 and 2. Deferral forces the excluding feed to stop. Consistency then
 forces both the filter and the restore. The filter is the negative condition's
 level, path conditions only, so append-only holds. A restoring feed must drop
 the restored fact's other negative conditions; it is restored when any one
@@ -1081,7 +1081,7 @@ defects:
 
 `ports/typescript/feed-builder.ts` corrects both and drops the filter inside
 the excluding feed. It matches every vector and sends no fact the vector's
-feeds withhold. `jinaga.js` misses a result on four of the 13 vectors.
+feeds withhold. `jinaga.js` misses a result on four of the 19 vectors.
 
 ### Levels, and why they were set aside
 
@@ -1091,14 +1091,140 @@ conditions only, and no filter at all. It was six lines against the machine's
 22. It met consistency and append-only, but it sends every deleted entity's
 details to every new client, so it fails deferral. The lemmas its proof needed
 survive in `Proofs/Flat.lean`. Its measurements on `check-feeds`' seed 1 are
-kept for comparison. Levels made 1,641 feeds and delivered 8,934 facts. The
-corrected filtered machine made 2,377 feeds and delivered 9,865. The present
-algorithm makes 2,373 feeds and delivers 9,593.
+kept for comparison, from before the check generated child specifications.
+Levels made 1,641 feeds and delivered 8,934 facts. The corrected filtered
+machine made 2,377 feeds and delivered 9,865. The present algorithm made 2,373
+feeds and delivered 9,593.
 
 A specification that reuses a name an existential condition declared, which
 `WellFormed` allows, can give a level two matches with the same label. The
 semantics shadows, but the SQL a feed becomes names its labels by name.
 `DistinctLabels` excludes it.
+
+## Feeds: child specifications
+
+Chapter 12 builds a projection's feeds recursively. First come the feeds of the
+specification without its projection. Then each *positive* one, ordinary or
+restoring, is extended with the feeds of each child specification, and those
+with the feeds of their own children. `jinaga.js`'s `addProjections` does the
+same at the terminal of every even-parity feed. Here it is one continuation,
+`projectionFeeds`. `buildFeeds` hands each feed that completes the
+specification, filtered or restored, to it. An excluding feed stops before, so
+it carries no child's facts. On chapter 12's Entity List (`child-of-excluded`)
+this makes the eleven feeds the book counts: three for servers, four for names
+and four for rates.
+
+### A child specification is a specification
+
+The proofs did not need a second walk. A child specification's matches go on
+from its parent's, so each one *is* a specification: the same givens, the
+parent's matches followed by its own, at every depth
+(`Specification.descendants`, built from `Projection.paths`). The feeds of a
+specification are exactly the flat feeds of its descendants (`mem_buildFeeds`).
+The proof is a lemma about continuations: a walk whose continuation hands a
+partial to any of several continuations makes the feeds of any of those walks
+(`levelFeeds_mem_iff`). Every requirement is then the PR #42 theorem applied to
+each descendant (`Proofs/Children.lean`). The flat theorems are renamed
+`flatFeeds_*` and keep their proofs:
+
+| Requirement | Theorem | From |
+|---|---|---|
+| Consistency | `feeds_cover` | `flatFeeds_cover` of each descendant, and `reads_congr` |
+| Append-only | `buildFeeds_feedShape`, `buildFeeds_nodup` | `flatFeeds_feedShape`, `flatFeeds_nodup` |
+| Deferral | `feeds_defer` | `flatFeeds_defer`, and `levelFeeds_within` |
+| Convergence | `feed_converges` | `feeds_cover` |
+
+The hypotheses are the flat ones for each descendant: `WellFormed`,
+`DistinctLabels` and `RootedMatches`. `DistinctLabels` of each descendant
+forbids a label repeated along a path to a child specification. Sibling child
+specifications may share one, since no feed binds both. Chapter 12's names and
+rates both declare `next`, and the Entity List vector keeps that.
+
+### What a replica reads, at every depth
+
+A result now holds each child specification's results (`Result`). They are
+compared as sets at every depth. `Projection.Reads` says a result is read when
+some solution projects to its row, and each child's list holds, as a set,
+exactly the child's results from that solution. `feeds_cover` concludes
+`∀ r, s.Reads g env r ↔ s.Reads (g ++ B) env r`.
+
+The flat proof had shown that the replica's and the replicator's solutions
+agree on the unknowns. Two solutions from the same environment that agree on
+the unknowns are the same environment (`evalMatches_frame`). So
+`flatFeeds_cover` now says the replica finds *exactly* the replicator's
+solutions, and it no longer needs the givens to be held. A child's results are
+evaluated from its parent's solution. Equal solutions of every descendant's
+matches therefore give equal results at every depth (`reads_congr`, with
+`prefix_iff`). That step does not mention a feed.
+
+### Deferral, restated
+
+The first statement of `feeds_defer` for child specifications kept PR #42's
+form: a feed that binds a label after a top-level match `m` passes `m`'s
+negative conditions. It was proved, and then the check's new mutant broke it:
+an excluding feed extended with the child specifications. That feed binds no
+later top-level match, only the child's, so the statement said nothing about
+it. Yet it sends a terminated server's names to a new client.
+
+The theorem now says where each feed comes from. Every feed is a feed of one
+of the specification's descendants and binds only that descendant's labels.
+For each of the descendant's matches `m`, it carries `m`'s details, the later
+matches and its child specifications', only where `m`'s negative conditions
+pass. With sibling child specifications that share a label, naming the
+descendant is what makes "the details" mean the right facts. `check-feeds`
+checks it in that form.
+
+### What the check and the vectors show
+
+A third of `check-feeds`' specifications have child specifications, two deep at
+most, with negative conditions of their own (`genChildSpec`). Four new mutants
+are each caught:
+
+- no child specification feeds;
+- a restoring feed that does not go on to them;
+- child feeds that drop the parent's filters; and
+- an excluding feed that goes on to them.
+
+They are caught on 6 to 66 of 613 specifications over seeds 1 and 2. The
+restoring mutant needs a restore that delivers a child's result. That is rarer,
+and it is caught on 6 and 9.
+
+There are six new vectors: `child-of-excluded`, `grandchild`,
+`child-uses-a-given` and three `random-children-*`. A vector with child
+specifications carries `expected.nestedResults`. `feed-builder.ts` passes all
+19. On every child vector, `jinaga.js`'s `buildFeeds` covers the results and
+sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
+
+### Where `jinaga.js` and `jinaga-server` diverge
+
+- **The book's own Entity List repeats a label, and jinaga-server cannot serve
+  its feeds.** As printed in chapter 12, `listOfServers` names both the
+  `ServerRehired` inside the server's negative condition and the `ServerRate`
+  of the rates child `sr`. `jinaga.js` accepts it, and its restoring feed
+  extended with rates declares `sr` twice. `MemoryStore` shadows the first and
+  reads it. jinaga-server's `QueryDescriptionBuilder` takes the second `sr` for
+  the first's fact. Building the SQL for both of those feeds throws
+  `Type mismatch: Rate is compared to Rehired`: that was run through
+  `sqlFromFeed` with jinaga 6.16.1, not against a database. So a replica
+  subscribed through jinaga-server would get no rates for a rehired server.
+  `feed-builder.ts` rejects the specification instead (`DistinctLabels`).
+  The vector renames the rate `rt`.
+- **A child feed that joins the givens through separate chains has no SQL.**
+  In `random-children-1`, the parent reaches the given `p2`. The child reaches
+  only `p1`, and a grandchild's positive condition connects the two.
+  `detectDisconnectedSpecification` accepts the specification. But the child's
+  first feeds are a product of two chains, and jinaga-server's `generateJoins`
+  throws `Neither predecessor nor successor fact has been written` for them.
+  It does so for jinaga.js's feeds and for the vector's alike.
+- **`assertWellFormed` does not look inside a child specification.**
+  `wellFormedErrors` checks scope only for the top-level matches, and
+  `projectedLabels` skips specification components. A child specification
+  that joins an undefined label, redeclares its parent's label, or projects a
+  label it does not declare passes, and only the text parser catches it. The
+  theorems need each descendant `WellFormed`, which the check here gives as
+  `s.descendants.all isWellFormed`.
+
+No issue was found for any of the three.
 
 ## Where the proof effort went
 
@@ -1137,7 +1263,8 @@ semantics shadows, but the SQL a feed becomes names its labels by name.
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
 | `Proofs/Feeds.lean` | A feed has only path conditions, so a tuple new to a feed binds a new fact. |
 | `Proofs/Cursor.lean` | Paging by bookmark keeps a replica caught up from the first page to an empty one while the graph grows. |
-| `Proofs/Cover.lean` | A flat level, then any level, agrees on a replica holding what its feeds deliver; every feed is scoped and binds each label once; the feeds cover the specification, and a replica that has paged them all converges. |
+| `Proofs/Cover.lean` | A flat level, then any level, agrees on a replica holding what its feeds deliver; every flat feed is scoped and binds each label once; a replica holding what the flat feeds deliver finds the replicator's solutions. |
+| `Proofs/Children.lean` | The feeds of a specification are the flat feeds of its descendants; so each requirement holds with child specifications, the replica reads their results at every depth, and a replica that has paged every feed converges. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
@@ -1150,8 +1277,10 @@ became 350, with the check included.
 
 ## Not covered
 
-`field`/`hash`/`time` projections and nested specification projections are
-not modelled. In the cascade model: `groupBy`,
+`field`/`hash`/`time` projections are not modelled. Child specifications in a
+projection are modelled for feeds only. `evaluate`, and so the split, the store
+and the inverses, read a projection's rows. A child specification does not
+change those. In the cascade model: `groupBy`,
 `filter` and `flatten` below the root; and the caches of the steps other than
 `groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
 the stream, not for the split. Skeleton canonicity (feed hashes), the stream

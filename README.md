@@ -17,15 +17,20 @@ Two algorithms are covered end to end:
   `exact_stream_correct` proves a stream that applies them exact, when the
   projection names every top-level unknown.
 
-A third is proved for specifications without child projections:
+A third:
 
 - **Feeds** (`buildFeeds`), which a replica pages by bookmark to learn the facts
   a specification reads: chapter 12's ordinary, excluding and restoring feeds,
-  derived from three requirements, each proved. A replica holding what they
-  deliver reads what the replicator reads (`feeds_cover`). A tuple is never
+  each positive one extended with the feeds of the projection's child
+  specifications, derived from three requirements, each proved. A child
+  specification is a specification whose matches go on from its parent's, so
+  every requirement holds of a specification's feeds because it holds of each
+  of its descendants' (`mem_buildFeeds`). A replica holding what they deliver
+  reads what the replicator reads, the child specifications' results included
+  at every depth (`feeds_cover`). A tuple is never
   inserted behind a bookmark (`feed_antitone`). And a new client is not sent
-  the details of an entity whose exclusion nothing has cancelled
-  (`feeds_defer`). Paging by bookmark loses nothing while the graph grows,
+  the details of an entity whose exclusion nothing has cancelled, a child
+  specification's facts about it included (`feeds_defer`). Paging by bookmark loses nothing while the graph grows,
   provided ids increase in commit order (`Cursor.lean`;
   jinaga/jinaga-server#203). So a replica that pages every feed to an empty
   page converges (`feed_converges`).
