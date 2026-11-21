@@ -135,11 +135,17 @@
          "labelRight": "p1"}]}],
      "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]}},
    {"text":
-    "(p1: R) {\n    u1: C [\n        u1->r: R = p1\n        !E {\n            e959: B [\n                e959->r: R = p1\n                e959->c: C = u1\n            ]\n            e960: B [\n                e960->r: R = p1\n            ]\n        }\n    ]\n    e958: A [\n        e958->r: R = p1\n    ]\n}\n",
+    "(p1: R) {\n    u1: C [\n        u1->r: R = p1\n    ]\n    e958: A [\n        e958->r: R = p1\n        !E {\n            e959: B [\n                e959->r: R = p1\n                e959->c: C = u1\n            ]\n            e960: B [\n                e960->r: R = p1\n            ]\n        }\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
      [{"unknown": {"type": "C", "name": "u1"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "A", "name": "e958"},
        "conditions":
        [{"type": "path",
          "rolesRight": [],
@@ -163,13 +169,7 @@
              "rolesRight": [],
              "rolesLeft": [{"predecessorType": "R", "name": "r"}],
              "labelRight": "p1"}]}],
-         "exists": false}]},
-      {"unknown": {"type": "A", "name": "e958"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
-         "labelRight": "p1"}]}],
+         "exists": false}]}],
      "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]}},
    {"text":
     "(p1: R) {\n    u1: C [\n        u1->r: R = p1\n    ]\n    e958: A [\n        e958->r: R = p1\n    ]\n    e959: B [\n        e959->r: R = p1\n        e959->c: C = u1\n    ]\n    e960: B [\n        e960->r: R = p1\n    ]\n    e963: C [\n        e963->b: B = e959\n        e963->b: B = e959\n    ]\n}\n",

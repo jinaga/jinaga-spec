@@ -56,31 +56,34 @@ const paths = (m: Match): Match => ({ unknown: m.unknown, conditions: m.conditio
 /** A negative condition's level: its matches, positives joined, path conditions only. */
 const level = (matches: Match[]): Match[] => flatten(matches).map(paths);
 
-/** Attach a condition to the last match of the feed whose unknown is `label`. */
-function attach(label: string, condition: Condition, feed: Match[]): Match[] {
-    const index = feed.map(m => m.unknown.name).lastIndexOf(label);
-    return feed.map((m, i) => i === index ? { ...m, conditions: [...m.conditions, condition] } : m);
+/** The negative conditions of a level, with its positive conditions joined. */
+const negativesOf = (matches: Match[]): Match[][] => flatten(matches).flatMap(negatives);
+
+/**
+ * Add a condition to the last match of the feed. Every label a filter names is
+ * bound by then.
+ */
+function addLast(condition: Condition, feed: Match[]): Match[] {
+    return feed.map((m, i) => i === feed.length - 1 ? { ...m, conditions: [...m.conditions, condition] } : m);
 }
 
 /** The feeds of a level after the partial feed `P`; completed feeds go to `k`. */
 function levelFeeds(k: Continuation, P: Match[], matches: Match[]): Match[][] {
     if (matches.length === 0) return k(P);
     const [m, ...rest] = matches;
-    const unit = flatten([m]);
-    const negs = unit.flatMap(x => negatives(x).map(ns => [x.unknown.name, ns] as const));
-    return negFeeds(Q => levelFeeds(k, Q, rest), [...P, ...unit.map(paths)], negs);
+    return negFeeds(Q => levelFeeds(k, Q, rest), [...P, ...level([m])], negativesOf([m]));
 }
 
 /** The feeds of the partial feed `Q` with the negative conditions `negs` to walk. */
-function negFeeds(k: Continuation, Q: Match[], negs: (readonly [string, Match[]])[]): Match[][] {
+function negFeeds(k: Continuation, Q: Match[], negs: Match[][]): Match[][] {
     if (negs.length === 0) return k(Q);
-    const [[host, ns], ...rest] = negs;
+    const [ns, ...rest] = negs;
     const lvl = level(ns);
     const filter: Condition = { type: "existential", exists: false, matches: lvl };
     return [
         [...Q, ...lvl],
-        ...negFeeds(k, attach(host, filter, Q), rest),
-        ...flatten(ns).flatMap(negatives).flatMap(canceller =>
+        ...negFeeds(k, addLast(filter, Q), rest),
+        ...negativesOf(ns).flatMap(canceller =>
             levelFeeds(Q2 => negFeeds(k, Q2, rest), [...Q, ...lvl], canceller))
     ];
 }

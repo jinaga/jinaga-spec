@@ -82,6 +82,21 @@ def feedCases : List FeedCase := [
     graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
       ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Undo", [("delete", 2)]⟩, ⟨5, "Revoke", [("undo", 4)]⟩,
       ⟨6, "Name", [("event", 1)]⟩] },
+  { name := "restore-revoked-and-unrevoked"
+    description := "A delete restored, whose restore is revoked twice, one revocation itself undone. The event stays deleted, but the restoring feed through the undone revocation still delivers its name: withholding it would need a nested negative condition, which append-only forbids. Deferral is guaranteed only when no witness of the exclusion has a cancelling fact."
+    source := "feeds_defer"
+    spec := spec [("t", "Tenant")]
+      [unknown "e" "Event" [path [r "tenant" "Tenant"] "t",
+        notExists [unknown "d" "Delete" [path [r "event" "Event"] "e",
+          notExists [unknown "x" "Restore" [path [r "delete" "Delete"] "d",
+            notExists [unknown "v" "Revoke" [path [r "restore" "Restore"] "x",
+              notExists [unknown "z" "Unrevoke" [path [r "revoke" "Revoke"] "v"]]]]]]]]],
+       unknown "n" "Name" [path [r "event" "Event"] "e"]]
+      (fact "n")
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
+      ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Revoke", [("restore", 3)]⟩, ⟨5, "Revoke", [("restore", 3)]⟩,
+      ⟨6, "Unrevoke", [("revoke", 5)]⟩, ⟨7, "Name", [("event", 1)]⟩] },
   { name := "exists-inside-not-exists"
     description := "notExists { exists }: an event with no approved delete. The filter is the delete's level, with the approval joined in. jinaga.js replaces the condition with its positive one, which names a label it does not bind."
     source := "check-feeds"

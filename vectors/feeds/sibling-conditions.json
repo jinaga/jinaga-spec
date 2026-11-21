@@ -84,7 +84,7 @@
          "labelRight": "a"}]}],
      "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]}},
    {"text":
-    "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            f: Freeze [\n                f->account: Account = a\n            ]\n        }\n    ]\n    m: Mirror [\n        m->account: Account = a\n    ]\n    x: Retired [\n        x->mirror: Mirror = m\n    ]\n}\n",
+    "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n    ]\n    m: Mirror [\n        m->account: Account = a\n        !E {\n            f: Freeze [\n                f->account: Account = a\n            ]\n        }\n    ]\n    x: Retired [\n        x->mirror: Mirror = m\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -93,7 +93,13 @@
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
-         "labelRight": "p1"},
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "Mirror", "name": "m"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+         "labelRight": "a"},
         {"type": "existential",
          "matches":
          [{"unknown": {"type": "Freeze", "name": "f"},
@@ -103,12 +109,6 @@
              "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
              "labelRight": "a"}]}],
          "exists": false}]},
-      {"unknown": {"type": "Mirror", "name": "m"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
-         "labelRight": "a"}]},
       {"unknown": {"type": "Retired", "name": "x"},
        "conditions":
        [{"type": "path",
@@ -117,7 +117,7 @@
          "labelRight": "m"}]}],
      "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]}},
    {"text":
-    "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            f: Freeze [\n                f->account: Account = a\n            ]\n        }\n    ]\n    m: Mirror [\n        m->account: Account = a\n        !E {\n            x: Retired [\n                x->mirror: Mirror = m\n            ]\n        }\n    ]\n}\n",
+    "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n    ]\n    m: Mirror [\n        m->account: Account = a\n        !E {\n            f: Freeze [\n                f->account: Account = a\n            ]\n        }\n        !E {\n            x: Retired [\n                x->mirror: Mirror = m\n            ]\n        }\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -126,7 +126,13 @@
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
-         "labelRight": "p1"},
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "Mirror", "name": "m"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+         "labelRight": "a"},
         {"type": "existential",
          "matches":
          [{"unknown": {"type": "Freeze", "name": "f"},
@@ -135,13 +141,7 @@
              "rolesRight": [],
              "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
              "labelRight": "a"}]}],
-         "exists": false}]},
-      {"unknown": {"type": "Mirror", "name": "m"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
-         "labelRight": "a"},
+         "exists": false},
         {"type": "existential",
          "matches":
          [{"unknown": {"type": "Retired", "name": "x"},
@@ -189,7 +189,7 @@
          "labelRight": "m"}]}],
      "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]}},
    {"text":
-    "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n    ]\n    m: Mirror [\n        m->account: Account = a\n        !E {\n            x: Retired [\n                x->mirror: Mirror = m\n            ]\n        }\n    ]\n    f: Freeze [\n        f->account: Account = a\n    ]\n    u: Unfreeze [\n        u->freeze: Freeze = f\n    ]\n}\n",
+    "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n    ]\n    m: Mirror [\n        m->account: Account = a\n    ]\n    f: Freeze [\n        f->account: Account = a\n    ]\n    u: Unfreeze [\n        u->freeze: Freeze = f\n        !E {\n            x: Retired [\n                x->mirror: Mirror = m\n            ]\n        }\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -204,16 +204,7 @@
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
-         "labelRight": "a"},
-        {"type": "existential",
-         "matches":
-         [{"unknown": {"type": "Retired", "name": "x"},
-           "conditions":
-           [{"type": "path",
-             "rolesRight": [],
-             "rolesLeft": [{"predecessorType": "Mirror", "name": "mirror"}],
-             "labelRight": "m"}]}],
-         "exists": false}]},
+         "labelRight": "a"}]},
       {"unknown": {"type": "Freeze", "name": "f"},
        "conditions":
        [{"type": "path",
@@ -225,7 +216,16 @@
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Freeze", "name": "freeze"}],
-         "labelRight": "f"}]}],
+         "labelRight": "f"},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "Retired", "name": "x"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "Mirror", "name": "mirror"}],
+             "labelRight": "m"}]}],
+         "exists": false}]}],
      "given":
      [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]}}],
   "delivered": [1, 2, 3, 4]},

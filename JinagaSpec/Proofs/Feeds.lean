@@ -37,23 +37,19 @@ theorem FeedShape.append {a b : List Match} (ha : FeedShape a) (hb : FeedShape b
 theorem PathsOnly.shape {a : List Match} (h : PathsOnly a) : FeedShape a :=
   fun m hm c hc => Or.inl (h m hm c hc)
 
-theorem attach_shape {l : Name} {ns : List Match} (hns : PathsOnly ns) :
-    ∀ {ms : List Match}, FeedShape ms → FeedShape (attach l (.existential false ns) ms)
-  | [], _ => by simp [attach, FeedShape]
-  | .mk u cs :: rest, h => by
-    have hu : FeedConditions cs := h _ (List.mem_cons_self ..)
-    have hr : FeedShape rest := fun m hm => h m (List.mem_cons_of_mem _ hm)
-    simp only [attach]
-    split
-    · exact FeedShape.append (a := [_]) (fun m hm => by simp at hm; subst hm; exact hu) (attach_shape hns hr)
-    · split
-      · refine FeedShape.append (a := [_]) (fun m hm => ?_) hr
-        simp at hm; subst hm
-        intro c hc
-        rcases List.mem_append.mp hc with hc | hc
-        · exact hu c hc
-        · simp at hc; subst hc; exact Or.inr ⟨ns, rfl, hns⟩
-      · exact h
+theorem addLast_shape {ns : List Match} (hns : PathsOnly ns) :
+    ∀ {ms : List Match}, FeedShape ms → FeedShape (addLast (.existential false ns) ms)
+  | [], _ => by simp [addLast, FeedShape]
+  | [.mk u cs], h => by
+    intro m hm c hc
+    simp [addLast, Match.addCondition] at hm; subst hm
+    rcases List.mem_append.mp hc with hc | hc
+    · exact h _ (List.mem_singleton_self _) c hc
+    · simp at hc; subst hc; exact Or.inr ⟨ns, rfl, hns⟩
+  | m :: m' :: ms, h => by
+    rw [show addLast (.existential false ns) (m :: m' :: ms) = m :: addLast (.existential false ns) (m' :: ms) from rfl]
+    exact FeedShape.append (a := [m]) (fun x hx => h x (by simp_all))
+      (addLast_shape hns fun x hx => h x (List.mem_cons_of_mem _ hx))
 
 mutual
   theorem levelFeeds_shape (k : List Match → List (List Match))
@@ -69,30 +65,29 @@ mutual
     all_goals simp_wf
     all_goals first
       | (apply Prod.Lex.left
-         have := maxSize_lt (b := sizeOf (m :: rest)) (by simp; omega) fun p hp => sizeOf_unitNegatives p hp
+         have := maxSize_lt (b := sizeOf (m :: rest)) (by simp; omega) fun p hp => sizeOf_negativesOf_unit p hp
          simpa using this)
       | (apply Prod.Lex.left; omega)
 
   theorem negFeeds_shape (k : List Match → List (List Match))
       (hk : ∀ Q, FeedShape Q → ∀ F ∈ k Q, FeedShape F) :
-      ∀ (Q : List Match) (negs : List (Name × List Match)), FeedShape Q → ∀ F ∈ negFeeds k Q negs, FeedShape F
+      ∀ (Q : List Match) (negs : List (List Match)), FeedShape Q → ∀ F ∈ negFeeds k Q negs, FeedShape F
     | Q, [], hQ, F, hF => by rw [negFeeds] at hF; exact hk Q hQ F hF
-    | Q, (h, ns) :: rest, hQ, F, hF => by
+    | Q, ns :: rest, hQ, F, hF => by
       rw [negFeeds] at hF
       have hlevel : FeedShape (Q ++ level ns) := hQ.append (pathsOnly_paths _).shape
       rcases List.mem_cons.mp hF with rfl | hF
       · exact hlevel
       rcases List.mem_append.mp hF with hF | hF
-      · exact negFeeds_shape k hk _ rest (attach_shape (pathsOnly_paths _) hQ) F hF
+      · exact negFeeds_shape k hk _ rest (addLast_shape (pathsOnly_paths _) hQ) F hF
       · obtain ⟨⟨ns', hns'⟩, -, hF⟩ := List.mem_flatMap.mp hF
         exact levelFeeds_shape _ (fun Q' hQ' F hF => negFeeds_shape k hk Q' rest hQ' F hF) _ ns' hlevel F hF
   termination_by _ negs => (maxSize negs, negs.length)
   decreasing_by
     all_goals simp_wf
     all_goals first
-      | (simp only [Prod.lex_def]; have := maxSize_cons (h, ns) rest; omega)
-      | (apply Prod.Lex.left
-         exact Nat.lt_of_lt_of_le (sizeOf_cancellers _ hns') (le_maxSize (p := (h, ns)) (List.mem_cons_self ..)))
+      | exact maxSize_lex _ _
+      | exact Prod.Lex.left _ _ (Nat.lt_of_lt_of_le (sizeOf_negativesOf _ ‹_›) (le_maxSize (List.mem_cons_self ..)))
 end
 
 /-- Every feed has one level of negative condition, over matches with only path

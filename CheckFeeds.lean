@@ -56,7 +56,7 @@ mutual
   partial def unitWith (mu : Mutant) (pre : List Match) (m : Match) : List (List Match) × List (List Match) := Id.run do
     let mut pos := [pre ++ (flatten [m]).map Match.paths]
     let mut exc := []
-    for (host, ns) in unitNegatives m do
+    for ns in negativesOf [m] do
       let lvl := level ns
       let chain := if mu.restoringDrops then lvl
         else (flatten ns).map fun | .mk u cs => .mk u (cs.filterMap fun
@@ -67,9 +67,9 @@ mutual
       for P in pos do
         if mu.excludes then
           if mu.excludingStops then exc := exc ++ [P ++ lvl] else next := next ++ [P ++ lvl]
-        next := next ++ [if mu.filters then attach host (.existential false (if mu.filtersLevel then lvl else ns)) P else P]
+        next := next ++ [if mu.filters then addLast (.existential false (if mu.filtersLevel then lvl else ns)) P else P]
         if mu.restores then
-          for ns' in cancellers ns do
+          for ns' in negativesOf ns do
             let (rp, re) := levelWith mu (P ++ chain) ns'
             next := next ++ rp
             exc := exc ++ re
@@ -114,40 +114,36 @@ def levelsDelivered (s : Specification) (g : Graph) (env : Env) : List FactId :=
 
 /-! ## Deferral
 
-A new client must not receive the details of an entity that is excluded and
-whose exclusion nothing has cancelled. Over the top level, joined: for each
-prefix `p` through a match `m`, and each negative condition of `m` whose
-witnesses at `p` all stand, no feed's tuple binds `p` and goes on to a match
-after `m`. -/
+A new client must not receive the details of an entity that is excluded by a
+negative condition, none of whose witnesses has any cancelling fact
+(`feeds_defer`). Over the top level, joined: for each prefix `p` through a
+match `m`, and each negative condition of `m` that is witnessed at `p` and none
+of whose witnesses has a fact of any of its own negative conditions, no feed's
+tuple binds `p` and goes on to a match after `m`. -/
 
 def keyOn (names : List Name) (e : Env) : List (Option FactId) := names.map e
 
-/-- How many excluded, uncontested prefixes some feed carries past their match.
+/-- How many excluded, uncancelled prefixes some feed carries past their match.
 A prefix binds the top-level matches through `m`, each with its positive
 conditions joined: those are part of the entity. Its details are the top-level
-matches after `m`. The negative condition is any one of `m`'s, or of a match a
-positive condition of `m` joins. -/
+matches after `m`. -/
 def deferViolations (s : Specification) (G : Graph) (env : Env) (feeds : List Specification) : Nat := Id.run do
   let tuples := feeds.map fun f => (f, evalMatches G env f.matchList)
   let mut n := 0
   for i in [0:s.matchList.length] do
     let pre := flatten (s.matchList.take (i + 1))
-    let unit := flatten ((s.matchList.drop i).take 1)
     let later := names (flatten (s.matchList.drop (i + 1)))
     for p in evalMatches G env (pre.map Match.paths) do
-      for m in unit do
-        for ns in m.negatives do
-          let level := flatten ns
-          let keys := names pre ++ names level
-          let witnesses := (evalMatches G p (level.map Match.paths)).map (keyOn keys)
-          let standing := (evalMatches G p level).map (keyOn keys)
-          if !witnesses.isEmpty && witnesses.all standing.contains then
-            for (f, ts) in tuples do
-              let fn := names f.matchList
-              if later.any fn.contains then
-                if ts.any fun τ => keyOn (names pre) τ == keyOn (names pre) p &&
-                    later.any fun y => fn.contains y && (τ y).isSome then
-                  n := n + 1
+      for ns in negativesOf ((s.matchList.drop i).take 1) do
+        let witnesses := evalMatches G p (level ns)
+        let uncancelled := witnesses.all fun w => (negativesOf ns).all fun ns' => (evalMatches G w (level ns')).isEmpty
+        if !witnesses.isEmpty && uncancelled then
+          for (f, ts) in tuples do
+            let fn := names f.matchList
+            if later.any fn.contains then
+              if ts.any fun τ => keyOn (names pre) τ == keyOn (names pre) p &&
+                  later.any fun y => fn.contains y && (τ y).isSome then
+                n := n + 1
   return n
 
 /-! ## What a new client downloads

@@ -139,37 +139,34 @@ theorem sizeOf_negatives_flatten {ms : List Match} {m : Match} (h : m ∈ flatte
 every positive condition joined in, keeping only path conditions. -/
 def level (ns : List Match) : List Match := (flatten ns).map Match.paths
 
-/-- The negative conditions of a match, joined with its positive conditions:
-each with the label of the match that holds it. -/
-def unitNegatives (m : Match) : List (Name × List Match) :=
-  (flatten [m]).flatMap fun x => x.negatives.map (x.unknown.name, ·)
+/-- The negative conditions of a level: those of its matches, with every
+positive condition joined in. -/
+def negativesOf (ms : List Match) : List (List Match) := (flatten ms).flatMap Match.negatives
 
-/-- The negative conditions of a negative condition's level: what can cancel
-one of its facts. -/
-def cancellers (ns : List Match) : List (List Match) := (flatten ns).flatMap Match.negatives
+def Match.addCondition (c : Condition) : Match → Match
+  | .mk u cs => .mk u (cs ++ [c])
 
-/-- Attach a condition to the last match of the feed whose unknown is `label`. -/
-def attach (label : Name) (c : Condition) : List Match → List Match
+/-- Add a condition to the last match of a feed. Every label a filter names is
+bound by then, so it is checked once the feed so far is matched. -/
+def addLast (c : Condition) : List Match → List Match
   | [] => []
-  | .mk u cs :: rest =>
-    if (rest.map (·.unknown.name)).contains label then .mk u cs :: attach label c rest
-    else if u.name == label then .mk u (cs ++ [c]) :: rest
-    else .mk u cs :: rest
+  | [m] => [m.addCondition c]
+  | m :: m' :: ms => m :: addLast c (m' :: ms)
 
 /-- The largest of the conditions' sizes. -/
-noncomputable def maxSize (L : List (Name × List Match)) : Nat := (L.map fun p => sizeOf p.2).foldr max 0
+noncomputable def maxSize (L : List (List Match)) : Nat := (L.map sizeOf).foldr max 0
 
-theorem le_maxSize : ∀ {L : List (Name × List Match)} {p : Name × List Match}, p ∈ L → sizeOf p.2 ≤ maxSize L
-  | q :: L, p, h => by
+theorem le_maxSize : ∀ {L : List (List Match)} {ns : List Match}, ns ∈ L → sizeOf ns ≤ maxSize L
+  | q :: L, ns, h => by
     simp only [maxSize, List.map_cons, List.foldr_cons] at *
     rcases List.mem_cons.mp h with rfl | h
     · omega
     · have := le_maxSize (L := L) h; simp only [maxSize] at this; omega
 
-theorem maxSize_cons (p : Name × List Match) (L : List (Name × List Match)) : maxSize L ≤ maxSize (p :: L) := by
+theorem maxSize_cons (ns : List Match) (L : List (List Match)) : maxSize L ≤ maxSize (ns :: L) := by
   simp only [maxSize, List.map_cons, List.foldr_cons]; omega
 
-theorem maxSize_lt {L : List (Name × List Match)} {b : Nat} (hb : 0 < b) (h : ∀ p ∈ L, sizeOf p.2 < b) :
+theorem maxSize_lt {L : List (List Match)} {b : Nat} (hb : 0 < b) (h : ∀ ns ∈ L, sizeOf ns < b) :
     maxSize L < b := by
   induction L with
   | nil => simpa [maxSize]
@@ -179,20 +176,22 @@ theorem maxSize_lt {L : List (Name × List Match)} {b : Nat} (hb : 0 < b) (h : �
     have := ih fun p hp => h p (List.mem_cons_of_mem _ hp)
     omega
 
-theorem sizeOf_unitNegatives {m : Match} {rest : List Match} :
-    ∀ p ∈ unitNegatives m, sizeOf p.2 < sizeOf (m :: rest) := by
-  intro p hp
-  simp only [unitNegatives, List.mem_flatMap, List.mem_map] at hp
-  obtain ⟨x, hx, ns, hns, rfl⟩ := hp
-  have h1 := sizeOf_negatives_flatten hx ns hns
+theorem maxSize_lex (ns : List Match) (rest : List (List Match)) :
+    Prod.Lex (· < ·) (· < ·) (maxSize rest, rest.length) (maxSize (ns :: rest), (ns :: rest).length) := by
+  simp only [Prod.lex_def, List.length_cons]; have := maxSize_cons ns rest; omega
+
+theorem sizeOf_negativesOf {ms : List Match} : ∀ ns ∈ negativesOf ms, sizeOf ns < sizeOf ms := by
+  intro ns h
+  obtain ⟨x, hx, h⟩ := List.mem_flatMap.mp h
+  exact sizeOf_negatives_flatten hx ns h
+
+theorem sizeOf_negativesOf_unit {m : Match} {rest : List Match} :
+    ∀ ns ∈ negativesOf [m], sizeOf ns < sizeOf (m :: rest) := by
+  intro ns h
+  have h1 := sizeOf_negativesOf ns h
   have h2 : sizeOf [m] ≤ sizeOf (m :: rest) := by
     simp only [List.cons.sizeOf_spec, List.nil.sizeOf_spec]; cases rest <;> simp <;> omega
   exact Nat.lt_of_lt_of_le h1 h2
-
-theorem sizeOf_cancellers {ns : List Match} : ∀ ns' ∈ cancellers ns, sizeOf ns' < sizeOf ns := by
-  intro ns' h
-  obtain ⟨x, hx, h⟩ := List.mem_flatMap.mp h
-  exact sizeOf_negatives_flatten hx ns' h
 
 mutual
   /-- The feeds of the level `ms`, after the partial feed `P`. Each match joins
@@ -201,36 +200,33 @@ mutual
   which goes on with whatever encloses the level. -/
   def levelFeeds (k : List Match → List (List Match)) (P : List Match) : List Match → List (List Match)
     | [] => k P
-    | m :: rest =>
-      negFeeds (fun Q => levelFeeds k Q rest) (P ++ (flatten [m]).map Match.paths) (unitNegatives m)
+    | m :: rest => negFeeds (fun Q => levelFeeds k Q rest) (P ++ level [m]) (negativesOf [m])
   termination_by ms => (sizeOf ms, 0)
   decreasing_by
     all_goals simp_wf
     all_goals first
       | (apply Prod.Lex.left
-         have := maxSize_lt (b := sizeOf (m :: rest)) (by simp; omega) fun p hp => sizeOf_unitNegatives p hp
+         have := maxSize_lt (b := sizeOf (m :: rest)) (by simp; omega) fun p hp => sizeOf_negativesOf_unit p hp
          simpa using this)
       | (apply Prod.Lex.left; omega)
 
   /-- The feeds of the partial feed `Q` with the negative conditions `negs` still
   to walk. At each, the feed so far emits an excluding feed, which goes on to
   the condition's level and stops; and it goes on both filtered by the
-  condition and restored, through the condition's level and the level of one of
-  its own negative conditions. -/
-  def negFeeds (k : List Match → List (List Match)) (Q : List Match) :
-      List (Name × List Match) → List (List Match)
+  condition's level and restored, through the condition's level and the level
+  of one of its own negative conditions. -/
+  def negFeeds (k : List Match → List (List Match)) (Q : List Match) : List (List Match) → List (List Match)
     | [] => k Q
-    | (h, ns) :: rest =>
-      (Q ++ level ns) :: (negFeeds k (attach h (.existential false (level ns)) Q) rest ++
-        (cancellers ns).attach.flatMap fun ⟨ns', _hns'⟩ =>
+    | ns :: rest =>
+      (Q ++ level ns) :: (negFeeds k (addLast (.existential false (level ns)) Q) rest ++
+        (negativesOf ns).attach.flatMap fun ⟨ns', _h⟩ =>
           levelFeeds (fun Q' => negFeeds k Q' rest) (Q ++ level ns) ns')
   termination_by negs => (maxSize negs, negs.length)
   decreasing_by
     all_goals simp_wf
     all_goals first
-      | (simp only [Prod.lex_def]; have := maxSize_cons (h, ns) rest; omega)
-      | (apply Prod.Lex.left
-         exact Nat.lt_of_lt_of_le (sizeOf_cancellers _ _hns') (le_maxSize (p := (h, ns)) (List.mem_cons_self ..)))
+      | exact maxSize_lex _ _
+      | exact Prod.Lex.left _ _ (Nat.lt_of_lt_of_le (sizeOf_negativesOf _ ‹_›) (le_maxSize (List.mem_cons_self ..)))
 end
 
 /-- The givens a feed names, in its path conditions or its filters, in the
