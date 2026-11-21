@@ -180,10 +180,9 @@ theorem feeds_defer {s : Specification} (hwf : ∀ d ∈ s.descendants, WellForm
 theorem prefix_unique {G1 G2 : Graph} {env σ1 σ2 τ : Env} {ms X : List Match}
     (h1 : σ1 ∈ evalMatches G1 env ms) (h2 : σ2 ∈ evalMatches G2 env ms)
     (hτ1 : τ ∈ evalMatches G1 σ1 X) (hτ2 : τ ∈ evalMatches G2 σ2 X) (hdis : ∀ x ∈ names ms, x ∉ names X) :
-    σ1 = σ2 := funext fun x => by
-  by_cases hx : x ∈ names ms
-  · rw [← evalMatches_frame hτ1 x (hdis x hx), ← evalMatches_frame hτ2 x (hdis x hx)]
-  · rw [evalMatches_frame h1 x hx, evalMatches_frame h2 x hx]
+    σ1 = σ2 :=
+  eq_of_agree h1 h2 fun x hx => by
+    rw [← evalMatches_frame hτ1 x (hdis x hx), ← evalMatches_frame hτ2 x (hdis x hx)]
 
 /-- Two graphs with the same solutions of `ms ++ X` from `env` have the same
 solutions of `X` from any solution of `ms` they share. -/

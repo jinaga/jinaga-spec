@@ -1166,6 +1166,15 @@ theorem feeds_settled {s : Specification} (hwf : WellFormed s) (hd : DistinctLab
         simpa using ht m0 hm0 (.path pc) hc
     | existential => simp [Condition.isPath] at hp
 
+/-- Two solutions from the same environment that agree on the matches' labels
+are the same. -/
+theorem eq_of_agree {G1 G2 : Graph} {env σ1 σ2 : Env} {ms : List Match}
+    (h1 : σ1 ∈ evalMatches G1 env ms) (h2 : σ2 ∈ evalMatches G2 env ms) (ag : Agree (names ms) σ1 σ2) :
+    σ1 = σ2 := funext fun x => by
+  by_cases hx : x ∈ names ms
+  · exact ag x hx
+  · rw [evalMatches_frame h1 x hx, evalMatches_frame h2 x hx]
+
 /-- **The flat feeds cover the specification.** A replica `g` that holds every
 fact the flat feeds deliver on the replicator's graph `g ++ B`, where `B` is
 what of that graph the replica does not hold, finds the solutions the
@@ -1202,12 +1211,6 @@ theorem flatFeeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctL
       (fun Q' τ' hR' hτ' _ _ _ => hall Q' (hR' Q' (List.mem_singleton_self _)) τ' hτ')
       [] ms env σ' hR hyg (by simpa [names] using Within.refl (declaredMatches ms)) hε
       (fun _ h => absurd h List.not_mem_nil) (fun _ h => absurd h List.not_mem_nil) hσ' hv
-  -- Solutions from `env` that agree on the unknowns are the same solution.
-  have heq : ∀ {σ σ0 : Env} {G G' : Graph}, σ ∈ evalMatches G env ms → σ0 ∈ evalMatches G' env ms →
-      Agree (names ms) σ σ0 → σ = σ0 := fun hσ hσ0 ag => funext fun x => by
-    by_cases hx : x ∈ names ms
-    · exact ag x hx
-    · rw [evalMatches_frame hσ x hx, evalMatches_frame hσ0 x hx]
   intro σ
   constructor
   · intro hσ
@@ -1217,14 +1220,14 @@ theorem flatFeeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctL
     have hvG : ValidL (g ++ B) σ' ms := Classical.byContradiction fun hn =>
       semB hf ms G0 σ' hsc hdist hS hn (evd_level G0 hall _ [] ms env σ' hR hyg hε hσ'G) hv
     obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g ++ B) hsc hdist env).2 σ' hσ'G hvG
-    exact heq hσ hσ0 (fun x hx => (ag x hx).trans (ag0 x hx).symm) ▸ hσ0
+    exact eq_of_agree hσ hσ0 (fun x hx => (ag x hx).trans (ag0 x hx).symm) ▸ hσ0
   · intro hσ
     obtain ⟨σ', hσ', hv, ag⟩ := (nf (G := g ++ B) hsc hdist env).1 σ hσ
     have hS := hset σ' hσ' hv
     have hσ'g := evalMatches_paths_antitone hf (pathsOnly_paths _).shape (nodup_level hdist) henv hσ' hS
     have hvg := semA hf ms G0 σ' hsc hdist hS hv (hpd σ' hσ' hv)
     obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g) hsc hdist env).2 σ' hσ'g hvg
-    exact (heq hσ0 hσ (fun x hx => (ag0 x hx).trans (ag x hx).symm)) ▸ hσ0
+    exact eq_of_agree hσ0 hσ (fun x hx => (ag0 x hx).trans (ag x hx).symm) ▸ hσ0
 
 end Top
 
