@@ -144,7 +144,7 @@ def genSpec (duplicates : Bool := false) (maxDepth : Nat := 2) (reuse : Bool := 
   let labels := (← repeatGen ((← below 2) + 1) (pick scope))
   let projection := match labels with
     | [l] => Projection.fact l
-    | ls => Projection.composite (ls.map fun l => { name := l, label := l })
+    | ls => Projection.composite (ls.map fun l => .fact l l)
   return { given := givens given, matchList := matchList, projection := projection }
 
 /-- A fact of a type the specification names, with a new id, pointing only into
@@ -237,7 +237,33 @@ def genFeedSpec : Gen Specification := do
   return { given := givens given, matchList := matchList,
            projection := match labels with
              | [l] => .fact l
-             | ls => .composite (ls.map fun l => { name := l, label := l }) }
+             | ls => .composite (ls.map fun l => .fact l l) }
+
+instance : Inhabited Projection := ⟨.composite []⟩
+
+/-- A projection of `labels` that also holds up to two child specifications,
+each of one or two matches going on from the labels in `scope`, with negative
+conditions of their own, and at `depth` 0 child specifications of their own. -/
+partial def genChildProjection (scope : List (Name × Name)) (labels : List Name) (depth : Nat) : Gen Projection := do
+  let mut components : List Component := labels.map fun l => .fact l l
+  for _ in [0:(← below 3)] do
+    let mut cscope := scope
+    let mut ms := []
+    for _ in [0:(← below 2) + 1] do
+      let m ← genSuccessor 2 cscope s!"c{← fresh}" 0
+      ms := ms ++ [m]
+      cscope := cscope ++ [(m.unknown.name, m.unknown.type)]
+    let names := ms.map (·.unknown.name)
+    let p ← if depth == 0 then genChildProjection cscope names 1 else pure (.composite (names.map fun l => .fact l l))
+    components := components ++ [.specification s!"k{← fresh}" ms p]
+  return .composite components
+
+/-- A specification from `genFeedSpec` whose projection holds child
+specifications, two deep at most. Every label is new. -/
+def genChildSpec : Gen Specification := do
+  let s ← genFeedSpec
+  let scope := s.given.map (fun l => (l.name, l.type)) ++ s.matchList.map fun m => (m.unknown.name, m.unknown.type)
+  return { s with projection := ← genChildProjection scope (s.matchList.map (·.unknown.name)) 0 }
 
 /-- A graph of the types and roles `genFeedSpec` uses. Each fact points to
 one or two facts saved before it. -/
@@ -252,6 +278,30 @@ def genFeedGraph (s : Specification) (size : Nat) : Gen Graph := do
         preds := (target.type.toLower, target.id) :: preds
     facts := facts ++ [{ id := i, type := type, predecessors := preds }]
   return facts
+
+/-- The results of the projection `p` after the matches `ms`, child
+specifications included (`Projection.Reads`). -/
+partial def resultsOf (g : Graph) (p : Projection) (ms : List Match) (env : Env) : List Result :=
+  (evalMatches g env ms).map fun σ => .mk (p.labels.map σ) (p.children.map fun (cms, q) => resultsOf g q cms σ)
+
+/-- What a replica reads, child specifications included (`Specification.Reads`). -/
+def readsOf (s : Specification) (g : Graph) (env : Env) : List Result :=
+  if s.given.all (g.has env) then resultsOf g s.projection s.matchList env else []
+
+/-- A result, as a string that does not depend on the order of the results of
+its child specifications, or on repeated ones, at any depth. -/
+partial def JinagaSpec.Result.key : Result → String
+  | .mk row cs => s!"({row}" ++ String.join (cs.map fun rs =>
+      ";{" ++ ",".intercalate ((rs.map Result.key).eraseDups.mergeSort (· ≤ ·)) ++ "}") ++ ")"
+
+/-- Results compared as sets, at every depth. -/
+def sameResults (a b : List Result) : Bool := sameSet (a.map Result.key) (b.map Result.key)
+
+/-- Each descendant is well formed and declares each label once: the hypotheses
+of the feeds theorems. -/
+def feedReady (s : Specification) : Bool :=
+  isWellFormedDeep s && s.descendants.all fun d =>
+    (declaredMatches d.matchList).eraseDups.length == (declaredMatches d.matchList).length
 
 /-- The facts `ids` name, and all their predecessors. -/
 def closure (g : Graph) (ids : List FactId) : List FactId := Id.run do

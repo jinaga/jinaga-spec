@@ -328,7 +328,7 @@ def changesWith (adds removes : Specification → List Specification) (s : Speci
 /-- The projection widened to name every top-level unknown. -/
 def widen (s : Specification) : Specification :=
   let labels := (s.projection.labels ++ s.matchList.map (·.unknown.name)).eraseDups
-  { s with projection := .composite (labels.map fun l => { name := l, label := l }) }
+  { s with projection := .composite (labels.map fun l => .fact l l) }
 
 structure ExactTally where
   batches : Nat := 0

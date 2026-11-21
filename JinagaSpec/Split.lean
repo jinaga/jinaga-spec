@@ -70,9 +70,43 @@ structure Split where
   head : Specification
   tail : Option Specification
 
-/-- The tail is given the labels in scope at the pivot that it uses. -/
+mutual
+  /-- Every label a projection names: the facts it projects, and every label a
+  child specification declares or joins, at any depth, as jinaga.js's
+  `labelsInProjection` collects them. -/
+  def Projection.allLabels : Projection → List Name
+    | .fact label => [label]
+    | .composite components => Component.allLabelsList components
+
+  def Component.allLabelsList : List Component → List Name
+    | [] => []
+    | c :: cs => c.allLabels ++ Component.allLabelsList cs
+
+  def Component.allLabels : Component → List Name
+    | .fact _ label => [label]
+    | .specification _ ms p => declaredInMatches ms ++ usedInMatches ms ++ p.allLabels
+end
+
+/-- The labels a projection projects are among those it names. -/
+theorem Projection.labels_sub_allLabels : ∀ (p : Projection), ∀ x ∈ p.labels, x ∈ p.allLabels
+  | .fact _, x, h => by simpa [Projection.labels, Projection.allLabels] using h
+  | .composite cs, x, h => by
+    simp only [Projection.labels, Projection.allLabels, List.mem_flatMap] at h ⊢
+    obtain ⟨c, hc, hx⟩ := h
+    induction cs with
+    | nil => simp at hc
+    | cons d cs ih =>
+      simp only [Component.allLabelsList, List.mem_append]
+      rcases List.mem_cons.mp hc with rfl | hc
+      · cases c with
+        | fact => simp [Component.labels] at hx; simp [Component.allLabels, hx]
+        | specification => simp [Component.labels] at hx
+      · exact Or.inr (ih hc)
+
+/-- The tail is given the labels in scope at the pivot that it uses, in its
+matches or anywhere in the projection, a child specification's included. -/
 def tailGivenAt (s : Specification) (headMatches tailMatches : List Match) : List Label :=
-  let used := usedInMatches tailMatches ++ s.projection.labels
+  let used := usedInMatches tailMatches ++ s.projection.allLabels
   (s.given ++ headMatches.map (·.unknown)).filter fun label => used.contains label.name
 
 /-! ## Evaluating a split -/

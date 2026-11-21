@@ -110,7 +110,7 @@ def inverseCases : List InverseCase := [
       [unknown "t" "Task" [path [r "root" "Root"] "r",
         notExists [unknown "x" "Done" [path [r "task" "Task"] "t"]]],
        unknown "x" "Note" [path [r "root" "Root"] "r"]]
-      (.composite [{ name := "t", label := "t" }, { name := "x", label := "x" }])
+      (.composite [.fact "t" "t", .fact "x" "x"])
     givens := [("r", 0)]
     graph := [⟨0, "Root", []⟩, ⟨1, "Task", [("root", 0)]⟩, ⟨2, "Note", [("root", 0)]⟩]
     batch := [⟨3, "Done", [("task", 1)]⟩] },

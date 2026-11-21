@@ -15,13 +15,15 @@ what the feeds are:
 
 1. **Consistency.** A replica holding what the feeds deliver, with their
    predecessors, and any other facts of the replicator's graph, reads what the
-   replicator reads (`feeds_cover`).
+   replicator reads, the results of its child specifications included, at
+   every depth (`feeds_cover`).
 2. **Append-only.** A tuple is never inserted behind a bookmark. So a feed has
    only path conditions, and negative conditions over matches with only path
    conditions, which can only ever remove a tuple (`feed_antitone`).
 3. **Deferral.** A new client is not sent the details of an entity that is
    excluded by a negative condition none of whose facts has been cancelled: a
-   deleted menu item's names, until it is restored (`feeds_defer`).
+   deleted menu item's names, until it is restored, whether they are later
+   matches or a child specification's (`feeds_defer`).
 
 ## The feeds
 
@@ -42,6 +44,12 @@ negative condition, every feed so far
 
 A feed that walks no successor edge is dropped (`traversesSuccessors`): it
 delivers only predecessors of the givens, which a replica already holds.
+
+A feed that completes the specification, filtered or restored, then goes on to
+each child specification of the projection, walked the same way after it
+(`projectionFeeds`), as chapter 12 extends the ordinary and restoring feeds.
+An excluding feed stops before, so a child's facts are deferred with the rest
+of an excluded entity's details.
 
 These are the ordinary, excluding and restoring feeds of the chapter. The
 requirements settle what the chapter leaves open. An excluding feed stops
@@ -239,12 +247,27 @@ def traversesSuccessors (feed : Specification) : Bool :=
     | .path pc => !pc.rolesLeft.isEmpty
     | .existential .. => false
 
-/-- The feeds of a specification. Its theorems assume `DistinctLabels`: every
-label is declared once, so that a feed binds each of its labels once. A port
-rejects a specification that repeats a label (`ports/typescript/feed-builder.ts`). -/
+/-- The feeds a positive feed `P`, one that completes its level, goes on to:
+itself, and then the feeds of each child specification of the projection,
+walked after it, each going on in turn to the child's own projection. An
+excluding feed never reaches here, so it carries no child's facts. -/
+def projectionFeeds : Projection → List Match → List (List Match)
+  | p, P => P :: p.children.attach.flatMap fun ⟨c, _⟩ => levelFeeds (projectionFeeds c.2) P c.1
+termination_by p => sizeOf p
+decreasing_by exact Projection.sizeOf_children ‹_›
+
+/-- Partial feeds of `s` as feeds: each with the givens it uses, and only those
+that walk a successor edge. -/
+def feedsOf (s : Specification) (Fs : List (List Match)) : List Specification :=
+  (Fs.map fun ms => { given := usedGivens s.given ms, matchList := ms, projection := .composite [] }).filter
+    traversesSuccessors
+
+/-- The feeds of a specification. Its theorems assume `DistinctLabels` of each
+of its descendants: every label on the way to a child specification is
+declared once, so that a feed binds each of its labels once. A port rejects a
+specification that repeats one (`ports/typescript/feed-builder.ts`). -/
 def buildFeeds (s : Specification) : List Specification :=
-  ((levelFeeds (fun P => [P]) [] s.matchList).map fun ms =>
-    { given := usedGivens s.given ms, matchList := ms, projection := .composite [] }).filter traversesSuccessors
+  feedsOf s (levelFeeds (projectionFeeds s.projection) [] s.matchList)
 
 /-- A feed's tuples on `g`: for each solution, the facts it binds to the feed's
 unknowns, in order. These are what a page of the feed names. -/

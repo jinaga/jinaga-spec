@@ -5,7 +5,7 @@ import JinagaSpec.Proofs.Reorder
 /-!
 # Feeds
 
-* `buildFeeds_feedShape`: a feed has path conditions, and negative conditions
+* `flatFeeds_feedShape`: a feed has path conditions, and negative conditions
   over matches with only path conditions.
 * `feed_antitone`: so a tuple that is new to a feed binds a new fact, which is
   what paging by bookmark needs (`Proofs/Cursor.lean`).
@@ -90,9 +90,15 @@ mutual
       | exact Prod.Lex.left _ _ (Nat.lt_of_lt_of_le (sizeOf_negativesOf _ ‹_›) (le_maxSize (List.mem_cons_self ..)))
 end
 
-/-- Every feed has one level of negative condition, over matches with only path
-conditions. -/
-theorem buildFeeds_feedShape (s : Specification) : ∀ f ∈ buildFeeds s, FeedShape f.matchList := by
+/-- The feeds of a specification whose projection holds no child
+specification: what `buildFeeds` makes of each of a specification's
+descendants (`mem_buildFeeds`, `Proofs/Children.lean`). -/
+def flatFeeds (s : Specification) : List Specification :=
+  feedsOf s (levelFeeds (fun P => [P]) [] s.matchList)
+
+/-- Every flat feed has one level of negative condition, over matches with only
+path conditions. -/
+theorem flatFeeds_feedShape (s : Specification) : ∀ f ∈ flatFeeds s, FeedShape f.matchList := by
   intro f hf
   obtain ⟨hf, -⟩ := List.mem_filter.mp hf
   obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hf

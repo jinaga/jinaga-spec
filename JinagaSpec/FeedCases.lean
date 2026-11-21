@@ -8,7 +8,7 @@ Each is a specification, the subscription's givens, and a graph a replicator
 holds. `lake exe vectors` writes one feed vector per case (`vectors/feeds/`):
 the feeds `buildFeeds` makes, the facts they deliver on the graph, and the
 results, which a replica holding those facts and their predecessors reads
-(`feeds_cover`). `check-feeds` checks each. Several are where `jinaga.js`'s
+(`feeds_cover`), child specifications' included. `check-feeds` checks each. Several are where `jinaga.js`'s
 `buildFeeds` misses a result (`docs/findings.md`).
 -/
 namespace JinagaSpec
@@ -32,10 +32,27 @@ private def eventSpec (cancel : List Condition) : Specification :=
     [unknown "e" "Event" [path [r "tenant" "Tenant"] "t",
       notExists [unknown "d" "Delete" ([path [r "event" "Event"] "e"] ++ cancel)]],
      unknown "n" "Name" [path [r "event" "Event"] "e"]]
-    (.composite [{ name := "event", label := "e" }, { name := "name", label := "n" }])
+    (.composite [.fact "event" "e", .fact "name" "n"])
 
 private def restored : Condition := notExists [unknown "x" "Restore" [path [r "delete" "Delete"] "d"]]
 private def undone : Condition := notExists [unknown "u" "Undo" [path [r "delete" "Delete"] "d"]]
+
+/-- A mutable property, the latest of its values: `label` of type `type`, of the
+fact `owner`, with no `next` that replaces it. -/
+private def latest (label type ownerRole ownerType owner : Name) : Match :=
+  unknown label type [path [r ownerRole ownerType] owner,
+    notExists [unknown "next" type [path [r "prior" type] label]]]
+
+/-- Chapter 12's Entity List: a restaurant's servers, unless terminated and not
+rehired, each with its current names and rates. -/
+def serversSpec : Specification :=
+  spec [("r", "Restaurant")]
+    [unknown "s" "Server" [path [r "restaurant" "Restaurant"] "r",
+      notExists [unknown "st" "Terminated" [path [r "server" "Server"] "s",
+        notExists [unknown "sr" "Rehired" [path [r "terminated" "Terminated"] "st"]]]]]]
+    (.composite [.fact "server" "s",
+      .specification "names" [latest "sn" "Name" "server" "Server" "s"] (fact "sn"),
+      .specification "rates" [latest "rt" "Rate" "server" "Server" "s"] (fact "rt")])
 
 def feedCases : List FeedCase := [
   { name := "not-exists-excludes"
@@ -138,7 +155,43 @@ def feedCases : List FeedCase := [
       (fact "m")
     givens := [("p1", 0), ("p2", 1)]
     graph := [⟨0, "User", []⟩, ⟨1, "Channel", []⟩, ⟨2, "Message", [("channel", 1)]⟩,
-      ⟨3, "Message", [("channel", 1)]⟩, ⟨4, "Read", [("message", 2), ("user", 0)]⟩] }]
+      ⟨3, "Message", [("channel", 1)]⟩, ⟨4, "Read", [("message", 2), ("user", 0)]⟩] },
+  { name := "child-of-excluded"
+    description := "Chapter 12's Entity List. A server's names and rates are child specifications, each the latest of a mutable property. The filtered and restoring feeds of the server go on to them; the excluding feed does not, so the name of a terminated server is deferred until it is rehired. The sibling child specifications both declare next, which only one feed at a time binds."
+    source := "The Art of Immutable Architecture, chapter 12, Projections"
+    spec := serversSpec
+    givens := [("r", 0)]
+    graph := [⟨0, "Restaurant", []⟩, ⟨1, "Server", [("restaurant", 0)]⟩, ⟨2, "Name", [("server", 1)]⟩,
+      ⟨3, "Name", [("server", 1), ("prior", 2)]⟩, ⟨4, "Rate", [("server", 1)]⟩,
+      ⟨5, "Server", [("restaurant", 0)]⟩, ⟨6, "Terminated", [("server", 5)]⟩, ⟨7, "Name", [("server", 5)]⟩,
+      ⟨8, "Server", [("restaurant", 0)]⟩, ⟨9, "Terminated", [("server", 8)]⟩, ⟨10, "Rehired", [("terminated", 9)]⟩,
+      ⟨11, "Name", [("server", 8)]⟩, ⟨12, "Rate", [("server", 8)]⟩] },
+  { name := "grandchild"
+    description := "A child specification with a child specification of its own: each event's names, and each name's notes that are not retracted. The grandchild's feeds go on from the child's positive feeds, and its negative condition makes an excluding feed of its own."
+    source := "The Art of Immutable Architecture, chapter 12: recursively produce feeds from the projections of those child specifications"
+    spec := spec [("t", "Tenant")]
+      [unknown "e" "Event" [path [r "tenant" "Tenant"] "t"]]
+      (.composite [.fact "event" "e",
+        .specification "names" [unknown "n" "Name" [path [r "event" "Event"] "e"]]
+          (.composite [.fact "name" "n",
+            .specification "notes" [unknown "x" "Note" [path [r "name" "Name"] "n",
+              notExists [unknown "rx" "Retract" [path [r "note" "Note"] "x"]]]] (fact "x")])])
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Name", [("event", 1)]⟩,
+      ⟨3, "Note", [("name", 2)]⟩, ⟨4, "Note", [("name", 2)]⟩, ⟨5, "Retract", [("note", 4)]⟩,
+      ⟨6, "Name", [("event", 1)]⟩, ⟨7, "Event", [("tenant", 0)]⟩] },
+  { name := "child-uses-a-given"
+    description := "Chapter 12's comments for a user: every post of a blog, and the user's own comments on each. The post feed takes only the blog; the comment feed, a child specification's, takes the blog and the user."
+    source := "The Art of Immutable Architecture, chapter 12, Unused Givens"
+    spec := spec [("b", "Blog"), ("u", "User")]
+      [unknown "p" "Post" [path [r "blog" "Blog"] "b"]]
+      (.composite [.fact "post" "p",
+        .specification "myComments" [unknown "c" "Comment" [path [r "post" "Post"] "p", path [r "author" "User"] "u"]]
+          (fact "c")])
+    givens := [("b", 0), ("u", 1)]
+    graph := [⟨0, "Blog", []⟩, ⟨1, "User", []⟩, ⟨2, "User", []⟩, ⟨3, "Post", [("blog", 0)]⟩,
+      ⟨4, "Comment", [("post", 3), ("author", 1)]⟩, ⟨5, "Comment", [("post", 3), ("author", 2)]⟩,
+      ⟨6, "Post", [("blog", 0)]⟩] }]
 
 def FeedCase.env (c : FeedCase) : Env := c.spec.bindGivens (c.spec.given.map fun l => (c.givens.lookup l.name).getD 0)
 

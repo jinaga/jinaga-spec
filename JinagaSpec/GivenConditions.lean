@@ -69,10 +69,11 @@ def reduceGivenConditions (x : Name) (c : ConditionedSpecification) : Specificat
   | none => c.spec
 
 /-- Every label the specification names: its givens, every label declared or
-named at any depth, and its projection. -/
+named at any depth, and every label its projection names, child
+specifications' included. -/
 def ConditionedSpecification.labels (c : ConditionedSpecification) : List Name :=
   c.given.map (·.1.name) ++ declaredInConditions c.conditions ++ usedInConditions c.conditions ++
-    declaredInMatches c.matchList ++ usedInMatches c.matchList ++ c.projection.labels
+    declaredInMatches c.matchList ++ usedInMatches c.matchList ++ c.projection.allLabels
 
 /-- The label of the match `reduceGivenConditions` adds: the first of `given`,
 `given2`, `given3`, ... that the specification does not name. -/

@@ -13,7 +13,8 @@
 //    src/specification/feed-builder.ts, or from PORT:
 //    a. its feeds equal the vector's, structurally and in order, and
 //    b. a replica holding what its feeds deliver, with their predecessors,
-//       reads the vector's results (`feeds_cover`), and
+//       reads the vector's results, its child specifications' included at
+//       every depth (`feeds_cover`), and
 //    c. they deliver no fact the vector's feeds do not: a new client is not
 //       sent what the specification defers (`feeds_defer`).
 //    With PORT all must pass. Against jinaga.js they are reported: 2b fails on
@@ -87,14 +88,40 @@ async function deliver(v: any, feeds: any[]): Promise<number[]> {
     return [...new Set(ids)].sort((a, b) => a - b);
 }
 
+/**
+ * A result with its child specifications' results, as a key that does not
+ * depend on their order or on repeats, at any depth: results are compared as
+ * sets (`Projection.Reads`).
+ */
+function nestedKey(r: { row: unknown[]; children: any[][] }): string {
+    return JSON.stringify([r.row, r.children.map(rs => [...new Set(rs.map(nestedKey))].sort())]);
+}
+
+/** A result jinaga.js's runner projects, in the vector's form: its row, and each child specification's results. */
+function nested(projection: any, r: any): { row: unknown[]; children: any[][] } {
+    const components: any[] = projection.type === "composite" ? projection.components : [projection];
+    return {
+        row: components.filter(c => c.type !== "specification").map(c => r.tuple[c.label] ? idOf(r.tuple[c.label]) : null),
+        children: components.filter(c => c.type === "specification").map(c => r.result[c.name].map((x: any) => nested(c.projection, x)))
+    };
+}
+
 /** What a replica holding these facts, their predecessors and the givens reads. */
-async function readReplica(v: any, ids: number[]): Promise<unknown[]> {
+async function readReplica(v: any, ids: number[]): Promise<{ rows: unknown[]; nested: string[] }> {
     const givenIds = Object.values(v.givens) as number[];
     const { store, ref } = await storeOf(v, closure(v, [...ids, ...givenIds]));
     const start = v.specification.given.map((g: any) => ref(v.givens[g.label.name]));
     const results = await store.read(start, structuredClone(v.specification));
-    return results.map((r: any) => v.rowLabels.map((l: string) => r.tuple[l] ? idOf(r.tuple[l]) : null));
+    return {
+        rows: results.map((r: any) => v.rowLabels.map((l: string) => r.tuple[l] ? idOf(r.tuple[l]) : null)),
+        nested: results.map((r: any) => nestedKey(nested(v.specification.projection, r)))
+    };
 }
+
+/** The replica reads the vector's results, and its child specifications' results at every depth. */
+const readsExpected = (v: any, read: { rows: unknown[]; nested: string[] }) =>
+    sameSet(read.rows, v.expected.results) &&
+    (v.expected.nestedResults === undefined || sameSet(read.nested, v.expected.nestedResults.map(nestedKey)));
 
 let failures = 0;
 let structural = 0, covered = 0, bounded = 0, total = 0;
@@ -124,14 +151,14 @@ for (const file of readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort
     else if (strict) { failures++; console.log(`FAIL ${v.name}: sends ${JSON.stringify(extra)}, which the vector's feeds withhold`); }
     // A feed the store cannot read covers nothing.
     const results = await deliver(v, feeds).then(ids => readReplica(v, ids), (e: Error) => `an error: ${e.message}`);
-    const covers = Array.isArray(results) && sameSet(results, v.expected.results);
+    const covers = typeof results !== "string" && readsExpected(v, results);
     if (covers) covered++;
     if (strict) {
         if (!same) { failures++; console.log(`FAIL ${v.name}: feeds differ from the vector's`); }
-        if (!covers) { failures++; console.log(`FAIL ${v.name}: a replica reads ${JSON.stringify(results)}, expected ${JSON.stringify(v.expected.results)}`); }
+        if (!covers) { failures++; console.log(`FAIL ${v.name}: a replica reads ${JSON.stringify(results)}, expected ${JSON.stringify(v.expected.nestedResults ?? v.expected.results)}`); }
     } else if (!covers) {
         if (!jinagaMisses.has(v.name)) failures++;
-        report.push(`${jinagaMisses.has(v.name) ? "expected" : "FAIL"} ${v.name}: a replica of jinaga.js's feeds reads ${JSON.stringify(results)}, expected ${JSON.stringify(v.expected.results)}`);
+        report.push(`${jinagaMisses.has(v.name) ? "expected" : "FAIL"} ${v.name}: a replica of jinaga.js's feeds reads ${JSON.stringify(results)}, expected ${JSON.stringify(v.expected.nestedResults ?? v.expected.results)}`);
     } else if (jinagaMisses.has(v.name)) {
         report.push(`${v.name}: jinaga.js's feeds now cover it; remove it from jinagaMisses`);
     }

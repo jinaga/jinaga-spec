@@ -36,12 +36,18 @@ mutual
                   ("matches", Json.arr (ms.map matchToJson).toArray)]
 end
 
-def projectionToJson : Projection → Json
-  | .fact label => Json.mkObj [("type", "fact"), ("label", label)]
-  | .composite components =>
-    Json.mkObj [("type", "composite"),
-      ("components", Json.arr (components.map fun c =>
-        Json.mkObj [("type", "fact"), ("name", c.name), ("label", c.label)]).toArray)]
+mutual
+  partial def projectionToJson : Projection → Json
+    | .fact label => Json.mkObj [("type", "fact"), ("label", label)]
+    | .composite components =>
+      Json.mkObj [("type", "composite"), ("components", Json.arr (components.map componentToJson).toArray)]
+
+  partial def componentToJson : Component → Json
+    | .fact name label => Json.mkObj [("type", "fact"), ("name", name), ("label", label)]
+    | .specification name ms p =>
+      Json.mkObj [("type", "specification"), ("name", name),
+        ("matches", Json.arr (ms.map matchToJson).toArray), ("projection", projectionToJson p)]
+end
 
 def conditionedToJson (c : ConditionedSpecification) : Json :=
   Json.mkObj [

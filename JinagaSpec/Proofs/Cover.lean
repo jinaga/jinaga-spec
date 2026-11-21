@@ -2,11 +2,11 @@ import JinagaSpec.Proofs.Defer
 import JinagaSpec.Proofs.Cursor
 
 /-!
-# The feeds cover the specification
+# The flat feeds cover the specification
 
-`feeds_cover`: a replica that holds the givens and every fact the feeds
-deliver on the replicator's graph, with their predecessors, reads what the
-replicator reads. The replica is `g`, and what of the replicator's graph it
+`flatFeeds_cover`: a replica that holds every fact the flat feeds deliver on
+the replicator's graph, with their predecessors, finds the solutions the
+replicator finds. The replica is `g`, and what of the replicator's graph it
 does not hold is `B`: a fresh batch to it, since a replica saves each fact with
 its predecessors (`Fresh`, as for the stream).
 
@@ -22,6 +22,7 @@ its predecessors (`Fresh`, as for the stream).
    delivers its witnesses (`evd_level`). A dropped feed walks only to
    predecessors (`feeds_settled`).
 
+`feeds_cover` (`Proofs/Children.lean`) lifts this to child specifications, and
 `feed_converges` adds paging by bookmark (`Proofs/Cursor.lean`).
 -/
 namespace JinagaSpec
@@ -1123,10 +1124,9 @@ theorem levelFeeds_within {s : Specification} (hwf : WellFormed s) (hd : Distinc
   · simp at hF; subst hF; simpa [names] using hQ'.within
   · simpa [names] using hw
 
-/-- Every feed binds each of its labels once, none of them a given: what
-`feed_grow` needs, with `buildFeeds_feedShape`, to page it by bookmark. -/
-theorem buildFeeds_nodup {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s) :
-    ∀ f ∈ buildFeeds s, (names f.matchList).Nodup := by
+/-- Every flat feed binds each of its labels once. -/
+theorem flatFeeds_nodup {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s) :
+    ∀ f ∈ flatFeeds s, (names f.matchList).Nodup := by
   intro f hf
   obtain ⟨hf, -⟩ := List.mem_filter.mp hf
   obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hf
@@ -1137,17 +1137,17 @@ that is kept delivered them, and one that is dropped walks only to
 predecessors of what it starts from. -/
 theorem feeds_settled {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
     (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
-    (hdel : ∀ id ∈ delivered s (g ++ B) env, Outside B id) :
+    (hdel : ∀ f ∈ flatFeeds s, ∀ id ∈ (f.tuples (g ++ B) env).flatten, Outside B id) :
     ∀ F ∈ levelFeeds (fun P => [P]) [] s.matchList, ∀ τ ∈ evalMatches (g ++ B) env F, Settled B τ := by
   intro F hF τ hτ
   let G0 := s.given.map (·.name)
   by_cases ht : traversesSuccessors { given := usedGivens s.given F, matchList := F, projection := .composite [] } = true
   · have hkept : ({ given := usedGivens s.given F, matchList := F, projection := .composite [] } : Specification) ∈
-        buildFeeds s := List.mem_filter.mpr ⟨List.mem_map.mpr ⟨F, hF, rfl⟩, ht⟩
+        flatFeeds s := List.mem_filter.mpr ⟨List.mem_map.mpr ⟨F, hF, rfl⟩, ht⟩
     intro n id hn
     by_cases hm : n ∈ names F
-    · exact hdel id (List.mem_flatMap.mpr ⟨_, hkept, List.mem_flatten.mpr
-        ⟨_, List.mem_map.mpr ⟨τ, hτ, rfl⟩, List.mem_filterMap.mpr ⟨n, hm, hn⟩⟩⟩)
+    · exact hdel _ hkept id (List.mem_flatten.mpr
+        ⟨_, List.mem_map.mpr ⟨τ, hτ, rfl⟩, List.mem_filterMap.mpr ⟨n, hm, hn⟩⟩)
     · exact henv n id (by rw [← evalMatches_frame hτ n hm]; exact hn)
   · have hroot := levelFeeds_rooted G0 _ [] s.matchList ⟨trivial, by simp⟩ (by simpa [names] using hwf.inScope) hr
       (fun Q hQ _ F hF => by simp at hF; exact hF ▸ hQ) F hF
@@ -1166,20 +1166,29 @@ theorem feeds_settled {s : Specification} (hwf : WellFormed s) (hd : DistinctLab
         simpa using ht m0 hm0 (.path pc) hc
     | existential => simp [Condition.isPath] at hp
 
-/-- **The feeds cover the specification.** A replica `g` that holds the givens
-and every fact the feeds deliver on the replicator's graph `g ++ B`, where `B`
-is what of that graph the replica does not hold, reads what the replicator
-reads.
+/-- Two solutions from the same environment that agree on the matches' labels
+are the same. -/
+theorem eq_of_agree {G1 G2 : Graph} {env σ1 σ2 : Env} {ms : List Match}
+    (h1 : σ1 ∈ evalMatches G1 env ms) (h2 : σ2 ∈ evalMatches G2 env ms) (ag : Agree (names ms) σ1 σ2) :
+    σ1 = σ2 := funext fun x => by
+  by_cases hx : x ∈ names ms
+  · exact ag x hx
+  · rw [evalMatches_frame h1 x hx, evalMatches_frame h2 x hx]
+
+/-- **The flat feeds cover the specification.** A replica `g` that holds every
+fact the flat feeds deliver on the replicator's graph `g ++ B`, where `B` is
+what of that graph the replica does not hold, finds the solutions the
+replicator finds.
 
 `B` is fresh to `g` because a replica saves each fact with its predecessors.
 The specification declares each label once (`DistinctLabels`), so that joining
 a positive condition into its level binds nothing twice, and every match has a
 path condition (`RootedMatches`), so that a feed walking only to predecessors
 reaches nothing the replica does not hold. -/
-theorem feeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
+theorem flatFeeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
     (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
-    (hgiv : ∀ l ∈ s.given, g.has env l = true) (hdel : ∀ id ∈ delivered s (g ++ B) env, Outside B id) :
-    ∀ r, r ∈ s.read g env ↔ r ∈ s.read (g ++ B) env := by
+    (hdel : ∀ f ∈ flatFeeds s, ∀ id ∈ (f.tuples (g ++ B) env).flatten, Outside B id) :
+    ∀ σ, σ ∈ evalMatches g env s.matchList ↔ σ ∈ evalMatches (g ++ B) env s.matchList := by
   let G0 := s.given.map (·.name)
   let ms := s.matchList
   have hall := feeds_settled hwf hd hr hf henv hdel
@@ -1202,65 +1211,23 @@ theorem feeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctLabel
       (fun Q' τ' hR' hτ' _ _ _ => hall Q' (hR' Q' (List.mem_singleton_self _)) τ' hτ')
       [] ms env σ' hR hyg (by simpa [names] using Within.refl (declaredMatches ms)) hε
       (fun _ h => absurd h List.not_mem_nil) (fun _ h => absurd h List.not_mem_nil) hσ' hv
-  -- The two sides have solutions agreeing on the unknowns.
-  have hagree : (∀ σ ∈ evalMatches g env ms, ∃ σ0 ∈ evalMatches (g ++ B) env ms, Agree (names ms) σ σ0) ∧
-      (∀ σ ∈ evalMatches (g ++ B) env ms, ∃ σ0 ∈ evalMatches g env ms, Agree (names ms) σ0 σ) := by
-    refine ⟨fun σ hσ => ?_, fun σ hσ => ?_⟩
-    · obtain ⟨σ', hσ', hv, ag⟩ := (nf (G := g) hsc hdist env).1 σ hσ
-      have hS := settled_eval hf henv hσ'
-      have hσ'G := evalMatches_paths_mono hf (pathsOnly_paths _) henv hσ'
-      have hvG : ValidL (g ++ B) σ' ms := Classical.byContradiction fun hn =>
-        semB hf ms G0 σ' hsc hdist hS hn (evd_level G0 hall _ [] ms env σ' hR hyg hε hσ'G) hv
-      obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g ++ B) hsc hdist env).2 σ' hσ'G hvG
-      exact ⟨σ0, hσ0, fun x hx => (ag x hx).trans (ag0 x hx).symm⟩
-    · obtain ⟨σ', hσ', hv, ag⟩ := (nf (G := g ++ B) hsc hdist env).1 σ hσ
-      have hS := hset σ' hσ' hv
-      have hσ'g := evalMatches_paths_antitone hf (pathsOnly_paths _).shape (nodup_level hdist) henv hσ' hS
-      have hvg := semA hf ms G0 σ' hsc hdist hS hv (hpd σ' hσ' hv)
-      obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g) hsc hdist env).2 σ' hσ'g hvg
-      exact ⟨σ0, hσ0, fun x hx => (ag0 x hx).trans (ag x hx).symm⟩
-  -- The givens are held on both graphs, so both read the specification.
-  have hgivG : ∀ l ∈ s.given, (g ++ B).has env l = true := fun l hl => (has_settled henv l).symm ▸ hgiv l hl
-  intro r
-  simp only [Specification.read, List.all_eq_true.mpr hgiv, List.all_eq_true.mpr hgivG, ite_true,
-    Specification.evaluate, List.mem_map]
-  -- Solutions that agree on the unknowns project the same row: the projection
-  -- names only givens and unknowns, and neither side rebinds a given.
-  have hrow : ∀ σ σ', σ ∈ evalMatches g env ms → σ' ∈ evalMatches (g ++ B) env ms →
-      Agree (names ms) σ σ' → s.projection.labels.map σ = s.projection.labels.map σ' := by
-    intro σ σ' hσ hσ' hag
-    refine List.map_congr_left fun l hl => ?_
-    by_cases hn : l ∈ names ms
-    · exact hag l hn
-    · rw [evalMatches_frame hσ l hn, evalMatches_frame hσ' l hn]
+  intro σ
   constructor
-  · rintro ⟨σ, hσ, rfl⟩
-    obtain ⟨σ', hσ', hag⟩ := hagree.1 σ hσ
-    exact ⟨σ', hσ', (hrow σ σ' hσ hσ' hag).symm⟩
-  · rintro ⟨σ', hσ', rfl⟩
-    obtain ⟨σ, hσ, hag⟩ := hagree.2 σ' hσ'
-    exact ⟨σ, hσ, hrow σ σ' hσ hσ' hag⟩
-
-/-- **Eventual consistency.** A replica that has paged every feed of `s` until a
-page came back empty, and holds what the pages delivered with its
-predecessors, reads what the replicator reads.
-
-The replica is `g`; what of the replicator's graph it does not hold is `B`.
-`caught_start`, `caught_page` and `feed_grow` keep each feed `Caught` from the
-first page to the last while the replicator's graph grows; this theorem takes
-the last step, from `caught_sync` and `feeds_cover`. -/
-theorem feed_converges {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
-    (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
-    (hgiv : ∀ l ∈ s.given, g.has env l = true)
-    (bookmark : Specification → List Nat) (D : List FactId)
-    (hcaught : ∀ f ∈ buildFeeds s, Caught (f.tuples (g ++ B) env) (bookmark f) D)
-    (hsync : ∀ f ∈ buildFeeds s, IsPage (f.tuples (g ++ B) env) [] (bookmark f))
-    (hheld : ∀ id ∈ D, Outside B id) :
-    ∀ r, r ∈ s.read g env ↔ r ∈ s.read (g ++ B) env :=
-  feeds_cover hwf hd hr hf henv hgiv fun id hid => by
-    obtain ⟨f, hf, hid⟩ := List.mem_flatMap.mp hid
-    obtain ⟨t, ht, hid⟩ := List.mem_flatten.mp hid
-    exact hheld id (caught_sync (hcaught f hf) (hsync f hf) t ht id hid)
+  · intro hσ
+    obtain ⟨σ', hσ', hv, ag⟩ := (nf (G := g) hsc hdist env).1 σ hσ
+    have hS := settled_eval hf henv hσ'
+    have hσ'G := evalMatches_paths_mono hf (pathsOnly_paths _) henv hσ'
+    have hvG : ValidL (g ++ B) σ' ms := Classical.byContradiction fun hn =>
+      semB hf ms G0 σ' hsc hdist hS hn (evd_level G0 hall _ [] ms env σ' hR hyg hε hσ'G) hv
+    obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g ++ B) hsc hdist env).2 σ' hσ'G hvG
+    exact eq_of_agree hσ hσ0 (fun x hx => (ag x hx).trans (ag0 x hx).symm) ▸ hσ0
+  · intro hσ
+    obtain ⟨σ', hσ', hv, ag⟩ := (nf (G := g ++ B) hsc hdist env).1 σ hσ
+    have hS := hset σ' hσ' hv
+    have hσ'g := evalMatches_paths_antitone hf (pathsOnly_paths _).shape (nodup_level hdist) henv hσ' hS
+    have hvg := semA hf ms G0 σ' hsc hdist hS hv (hpd σ' hσ' hv)
+    obtain ⟨σ0, hσ0, ag0⟩ := (nf (G := g) hsc hdist env).2 σ' hσ'g hvg
+    exact eq_of_agree hσ0 hσ (fun x hx => (ag0 x hx).trans (ag x hx).symm) ▸ hσ0
 
 end Top
 

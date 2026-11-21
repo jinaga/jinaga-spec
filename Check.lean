@@ -221,7 +221,7 @@ def hoistAtGen (nextPos : Bool → Bool → Bool) (s : Specification) (before : 
   let headMatches := before ++ headExtra
   let tailGiven := tailGivenAt s headMatches tailMatches
   { head := { given := s.given, matchList := headMatches,
-              projection := .composite (tailGiven.map fun l => { name := l.name, label := l.name }) },
+              projection := .composite (tailGiven.map fun l => .fact l.name l.name) },
     tail := some { given := tailGiven, matchList := tailMatches, projection := s.projection } }
 
 def hoistGen (nextPos : Bool → Bool → Bool) (s : Specification) : Split :=

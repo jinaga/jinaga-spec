@@ -56,6 +56,12 @@ theorem isWellFormed_iff (s : Specification) : isWellFormed s = true ↔ WellFor
       obtain ⟨g, hg, rfl⟩ := List.mem_map.mp hx
       exact h1 g hg, h2, h3⟩, h4⟩
 
+/-- The deep check decides `WellFormed` of every descendant, the hypothesis of
+the feeds theorems. -/
+theorem isWellFormedDeep_iff (s : Specification) :
+    isWellFormedDeep s = true ↔ ∀ d ∈ s.descendants, WellFormed d := by
+  simp [isWellFormedDeep, isWellFormed_iff]
+
 /-- A specification that passes the check is split correctly. -/
 theorem split_correct_of_check (s : Specification) (hcheck : isWellFormed s = true)
     (g : Graph) (env : Env) (r : List (Option FactId)) :

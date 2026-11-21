@@ -40,12 +40,23 @@ mutual
         s!"{indentOf depth}}\n"
 end
 
-def describeProjection (depth : Nat) : Projection → String
-  | .fact label => label
-  | .composite components =>
-    let sorted := components.mergeSort fun a b => a.name ≤ b.name
-    "{\n" ++ String.join (sorted.map fun c => s!"    {indentOf depth}{c.name} = {c.label}\n") ++
-      s!"{indentOf depth}}"
+mutual
+  partial def describeProjection (depth : Nat) : Projection → String
+    | .fact label => label
+    | .composite components =>
+      let sorted := components.mergeSort fun a b => a.name ≤ b.name
+      "{\n" ++ String.join (sorted.map fun c => s!"    {indentOf depth}{c.name} = {describeComponent (depth + 1) c}\n") ++
+        s!"{indentOf depth}}"
+
+  /-- A child specification prints as its matches, then its projection. -/
+  partial def describeComponent (depth : Nat) : Component → String
+    | .fact _ label => label
+    | .specification _ ms p =>
+      let projection := match p with
+        | .composite [] => ""
+        | p => " => " ++ describeProjection depth p
+      "{\n" ++ describeMatches (depth + 1) ms ++ s!"{indentOf depth}}{projection}"
+end
 
 /-- A given, and its conditions in brackets if it has any. -/
 def describeGiven (depth : Nat) : Label × List GivenCondition → String

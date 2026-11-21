@@ -17,6 +17,11 @@
 //   - goes on restored: through the condition's level, then the level of one of
 //     that level's own negative conditions, walked the same way.
 //
+// A feed that completes the specification, filtered or restored, then goes on
+// to each child specification of the projection, walked the same way after it.
+// An excluding feed stops before, so a child's facts are deferred with the rest
+// of an excluded entity's details.
+//
 // It differs from jinaga.js's buildFeeds in three places, each a vector:
 //   - a restoring feed drops the negative conditions of the fact it restores
 //     (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`);
@@ -25,6 +30,8 @@
 //   - an excluding feed is not filtered, since what it would filter out a
 //     restoring feed delivers anyway.
 
+import { isWellFormed } from "./well-formed.ts";
+
 type Label = { name: string; type: string };
 type Role = { name: string; predecessorType: string };
 type PathCondition = { type: "path"; rolesLeft: Role[]; labelRight: string; rolesRight: Role[] };
@@ -32,7 +39,10 @@ type ExistentialCondition = { type: "existential"; exists: boolean; matches: Mat
 type Condition = PathCondition | ExistentialCondition;
 type Match = { unknown: Label; conditions: Condition[] };
 type Given = { label: Label; conditions: unknown[] };
-type Specification = { given: Given[]; matches: Match[]; projection: unknown };
+type Component = { type: "specification"; name: string; matches: Match[]; projection: Projection } |
+    { type: "fact" | "field" | "hash" | "time"; name: string; label: string };
+type Projection = { type: "composite"; components: Component[] } | { type: "fact" | "field" | "hash" | "time"; label: string };
+type Specification = { given: Given[]; matches: Match[]; projection: Projection };
 type Continuation = (feed: Match[]) => Match[][];
 
 const isPath = (c: Condition): c is PathCondition => c.type === "path";
@@ -100,14 +110,42 @@ const named = (matches: Match[]): string[] => matches.flatMap(m => m.conditions.
 const declared = (matches: Match[]): string[] => matches.flatMap(m => [m.unknown.name,
     ...m.conditions.flatMap(c => isPath(c) ? [] : declared(c.matches))]);
 
-export function buildFeeds(specification: Specification): Specification[] {
-    // Joining positive conditions into one level would bind a label that two
-    // sibling conditions both declare twice (`DistinctLabels`, JinagaSpec/Feeds.lean).
-    const labels = declared(specification.matches);
+/** A projection's child specifications. */
+const children = (projection: Projection): { matches: Match[]; projection: Projection }[] =>
+    projection.type === "composite"
+        ? projection.components.flatMap(c => c.type === "specification" ? [{ matches: c.matches, projection: c.projection }] : [])
+        : [];
+
+/**
+ * A positive feed, one that completes its level, then the feeds of each child
+ * specification walked after it, each going on to the child's own projection.
+ * An excluding feed never reaches here, so it carries no child's facts.
+ */
+const projectionFeeds = (projection: Projection): Continuation => P =>
+    [P, ...children(projection).flatMap(c => levelFeeds(projectionFeeds(c.projection), P, c.matches))];
+
+/**
+ * Joining positive conditions into one level would bind a label that two
+ * sibling conditions both declare twice, and a child specification's feeds
+ * bind its parent's labels too (`DistinctLabels` of each descendant,
+ * JinagaSpec/Feeds.lean). Sibling child specifications may share a label: no
+ * feed binds both.
+ */
+function checkLabels(outer: string[], matches: Match[], projection: Projection) {
+    const labels = [...outer, ...declared(matches)];
     const repeated = labels.find((l, i) => labels.indexOf(l) !== i);
     if (repeated !== undefined)
         throw new Error(`Rename the label "${repeated}": feeds need every label to be declared once.`);
-    return levelFeeds(feed => [feed], [], specification.matches)
+    for (const child of children(projection)) checkLabels(labels, child.matches, child.projection);
+}
+
+export function buildFeeds(specification: Specification): Specification[] {
+    // The theorems assume every descendant is well formed (`isWellFormedDeep`).
+    // jinaga.js's assertWellFormed does not look inside a child specification.
+    if (!isWellFormed(specification as any))
+        throw new Error("The specification is not well formed: a label is out of scope, redeclared, or reserved.");
+    checkLabels(specification.given.map(g => g.label.name), specification.matches, specification.projection);
+    return levelFeeds(projectionFeeds(specification.projection), [], specification.matches)
         .map(matches => ({
             given: specification.given
                 .filter(g => named(matches).includes(g.label.name))

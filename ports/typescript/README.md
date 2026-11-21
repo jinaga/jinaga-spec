@@ -36,7 +36,8 @@ JINAGA_JS=/path/to/jinaga.js PORT=./feed-builder.ts npm run feeds
 Reads each `vectors/feeds/` vector's feeds with jinaga.js's `MemoryStore`, as
 the replicator serves them, and checks they deliver the vector's facts. Then
 checks a `buildFeeds` three ways: its feeds equal the vector's; a replica
-holding what they deliver reads the vector's results; and they deliver no fact
+holding what they deliver reads the vector's results, child specifications'
+at every depth; and they deliver no fact
 the vector's feeds withhold, which is deferral. `feed-builder.ts` is the
 reference implementation, and must pass all three. Against jinaga.js's own
 `buildFeeds` all three are reported. Its feeds differ from the vector's, and on

@@ -48,7 +48,9 @@ split does not take conditions on givens yet. Inverse vectors may carry them
 
 ## `well-formed/<name>.json`
 
-The same envelope, for the check `isWellFormed`:
+The same envelope, for the check `isWellFormedDeep`: `isWellFormed` of the
+specification and of each child specification in its projection, each as a
+specification whose matches go on from its parent's:
 
 ```jsonc
 {
@@ -170,11 +172,12 @@ vector:
 ## `feeds/<name>.json`
 
 The feeds `buildFeeds` makes of a specification (`JinagaSpec/Feeds.lean`):
-chapter 12's ordinary, excluding and restoring feeds. Also what they deliver on
-a graph a replicator holds. Generated from
-`JinagaSpec/FeedCases.lean` (named cases) and a fixed random seed (`random-<n>`:
-specifications shaped like an application's, with at least three feeds, on
-graphs where each delivers a fact).
+chapter 12's ordinary, excluding and restoring feeds, each positive one going on
+to the projection's child specifications. Also what they deliver on a graph a
+replicator holds. Generated from `JinagaSpec/FeedCases.lean` (named cases) and
+fixed random seeds (`random-<n>`: specifications shaped like an application's,
+with at least three feeds, on graphs where each delivers a fact;
+`random-children-<n>`: the same with child specifications, two deep at most).
 
 ```jsonc
 {
@@ -187,7 +190,10 @@ graphs where each delivers a fact).
   "expected": {
     "feeds": [ { "specification": { ... }, "text": "..." } ],  // in order
     "delivered": [1, 2, 3, 4, 5],     // every fact a tuple of a feed binds to one of its unknowns
-    "results": [ [1, 5] ]             // the specification read on `graph`
+    "results": [ [1, 5] ],            // the specification read on `graph`: rows of its projection's facts
+    "nestedResults": [                // only with child specifications: each result, with its
+      { "row": [1], "children": [     //   children's results, one list per child specification
+        [ { "row": [5], "children": [] } ] ] } ]
   }
 }
 ```
@@ -200,8 +206,8 @@ reads `GET /feeds/{hash}`. `delivered` does not list the givens.
 
 A port of `buildFeeds` passes a vector when its feeds equal `expected.feeds`,
 and, whatever its feeds, when a replica holding the givens, what its feeds
-deliver on `graph`, and the predecessors of each, reads `expected.results`
-(`feeds_cover`). The second is what eventual consistency needs; the first pins
+deliver on `graph`, and the predecessors of each, reads `expected.results`, and
+`expected.nestedResults` compared as sets at every depth (`feeds_cover`). The second is what eventual consistency needs; the first pins
 the algorithm. The TypeScript runner also checks that a port's feeds deliver no
 fact `expected.delivered` leaves out (`feeds_defer`). `lake exe vectors` refuses to write a vector whose results the
 reference's own feeds do not cover.

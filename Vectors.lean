@@ -49,13 +49,13 @@ def wellFormedCaseToJson (c : WellFormedCase) : Json :=
     ("specification", specificationToJson c.spec),
     ("text", describeSpecification c.spec),
     ("violates", Json.arr (c.violates.map Json.str).toArray),
-    ("expected", Json.mkObj [("wellFormed", isWellFormed c.spec)])]
+    ("expected", Json.mkObj [("wellFormed", isWellFormedDeep c.spec)])]
 
 /-- The vector's verdict comes from the oracle, but each case states which rules
 a reader expects it to violate, and a disagreement is an error, not a vector. -/
 def checkIntent (c : WellFormedCase) : IO Unit := do
-  if isWellFormed c.spec != c.violates.isEmpty then
-    throw <| IO.userError s!"{c.name}: the oracle says wellFormed={isWellFormed c.spec}, but the case violates {c.violates}"
+  if isWellFormedDeep c.spec != c.violates.isEmpty then
+    throw <| IO.userError s!"{c.name}: the oracle says wellFormed={isWellFormedDeep c.spec}, but the case violates {c.violates}"
 
 def rowToJson (row : Row) : Json :=
   Json.arr (row.map fun | some id => Json.num id | none => Json.null).toArray
@@ -169,8 +169,18 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
 
 /-! ## Feed vectors -/
 
+/-- Results with child specifications', as sets at every depth: each result's
+child results sorted by `Result.key`, without repeats, and so the results. -/
+partial def resultsToJson (rs : List Result) : Json :=
+  let sorted := (rs.map fun r => (r.key, r)).mergeSort (fun a b => a.1 ≤ b.1)
+  let unique := sorted.foldr (fun x acc => if acc.any (·.1 == x.1) then acc else x :: acc) []
+  Json.arr (unique.map fun (_, .mk row cs) =>
+    Json.mkObj [("row", rowToJson row), ("children", Json.arr (cs.map resultsToJson).toArray)]).toArray
+
 def feedVector (c : FeedCase) : Json :=
   let env := c.env
+  let nested := if c.spec.projection.children.isEmpty then []
+    else [("nestedResults", resultsToJson (readsOf c.spec c.graph env))]
   Json.mkObj [
     ("name", c.name),
     ("description", c.description),
@@ -180,33 +190,34 @@ def feedVector (c : FeedCase) : Json :=
     ("rowLabels", Json.arr (c.spec.projection.labels.map Json.str).toArray),
     ("givens", Json.mkObj (c.givens.map fun (n, id) => (n, Json.num id))),
     ("graph", Json.arr (c.graph.map factToJson).toArray),
-    ("expected", Json.mkObj [
+    ("expected", Json.mkObj ([
       ("feeds", Json.arr ((buildFeeds c.spec).map inverseToJson).toArray),
       ("delivered", Json.arr (((delivered c.spec c.graph env).eraseDups.mergeSort (· ≤ ·)).map fun (id : FactId) => Json.num id).toArray),
-      ("results", rowsToJson (c.spec.read c.graph env))])]
+      ("results", rowsToJson (c.spec.read c.graph env))] ++ nested))]
 
 /-- Random specifications shaped like an application's, each with a graph on
 which every one of at least three levels delivers a fact, from a fixed seed. -/
-def randomFeedCases (count : Nat) : List FeedCase := Id.run do
-  let mut gen : StdGen × Nat := (mkStdGen 11, 0)
+def randomFeedCases (count : Nat) (gen : Gen Specification := genFeedSpec) (seed : Nat := 11)
+    (pfx : String := "random") : List FeedCase := Id.run do
+  let mut st : StdGen × Nat := (mkStdGen seed, 0)
   let mut out : List FeedCase := []
   for _ in [0:4000] do
     if out.length ≥ count then break
-    let (s, g) := genFeedSpec.run gen
-    gen := g
+    let (s, g) := gen.run st
+    st := g
     let ((G, env), g) := (do
       let G ← genFeedGraph s 8
-      return (G, ← genEnv s G) : Gen (Graph × Env)).run gen
-    gen := g
+      return (G, ← genEnv s G) : Gen (Graph × Env)).run st
+    st := g
     -- Every level delivers something: the results, the facts that exclude
     -- some, and the facts that cancel those.
     let results := s.read G env
     let feeds := buildFeeds s
     let missed := feeds.length ≥ 3 && feeds.all fun f => !(f.tuples G env).isEmpty
     if !results.isEmpty && missed then
-      out := out ++ [{ name := s!"random-{out.length + 1}"
+      out := out ++ [{ name := s!"{pfx}-{out.length + 1}"
                        description := "A random specification shaped like an application's, and a graph on which each of its levels delivers a fact."
-                       source := "lake exe vectors, seed 11"
+                       source := s!"lake exe vectors, seed {seed}"
                        spec := s, givens := s.given.map fun l => (l.name, (env l.name).getD 0), graph := G }]
   return out
 
@@ -219,7 +230,16 @@ def feedCoverage : List (String × (FeedCase → Bool)) := [
     fun c => anyConditionIn (fun | .existential false ms => anyConditionIn (fun | .existential true _ => true | _ => false) ms | _ => false) c.spec.matchList),
   ("several givens", fun c => c.spec.given.length > 1),
   ("a composite projection", fun c => match c.spec.projection with | .composite _ => true | _ => false),
-  ("a feed that is dropped", fun c => (buildFeeds c.spec).isEmpty)]
+  ("a feed that is dropped", fun c => (buildFeeds c.spec).isEmpty),
+  ("a child specification", fun c => !c.spec.projection.children.isEmpty),
+  ("a child specification of a child specification",
+    fun c => c.spec.projection.children.any fun (_, q) => !q.children.isEmpty),
+  ("a notExists condition inside a child specification",
+    fun c => c.spec.projection.children.any fun (ms, _) =>
+      anyConditionIn (fun | .existential false _ => true | _ => false) ms),
+  ("a child specification of an entity a notExists excludes",
+    fun c => !c.spec.projection.children.isEmpty &&
+      anyConditionIn (fun | .existential false _ => true | _ => false) c.spec.matchList)]
 
 
 /-! ## Cascade vectors -/
@@ -584,16 +604,17 @@ def main (args : List String) : IO Unit := do
   for c in wellFormedCases do
     checkIntent c
     IO.FS.writeFile (wfDir / s!"{c.name}.json") ((wellFormedCaseToJson c).pretty ++ "\n")
-  let feedAll := feedCases ++ randomFeedCases 6
+  let feedAll := feedCases ++ randomFeedCases 6 ++ randomFeedCases 3 genChildSpec 12 "random-children"
   for (shape, shows) in feedCoverage do
     unless feedAll.any shows do
       throw <| IO.userError s!"no feed vector shows {shape}"
   for c in feedAll do
-    unless isWellFormed c.spec do
-      throw <| IO.userError s!"feed case {c.name} is not well-formed"
+    unless feedReady c.spec do
+      throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
     -- The vector's results are what a replica holding what the feeds deliver
-    -- reads (`FeedsCover`).
-    unless sameSet (c.spec.read (replica c.spec c.graph c.env (delivered c.spec c.graph c.env) []) c.env) (c.spec.read c.graph c.env) do
+    -- reads (`feeds_cover`), child specifications' included.
+    unless sameResults (readsOf c.spec (replica c.spec c.graph c.env (delivered c.spec c.graph c.env) []) c.env)
+        (readsOf c.spec c.graph c.env) do
       throw <| IO.userError s!"feed case {c.name}: a replica holding what the feeds deliver reads something else"
     IO.FS.writeFile (feedsDir / s!"{c.name}.json") ((feedVector c).pretty ++ "\n")
   CascadeVectors.checkMutants
