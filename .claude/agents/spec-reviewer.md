@@ -1,6 +1,6 @@
 ---
 name: spec-reviewer
-description: Reviews a jinaga-spec branch or PR before a human does, for two kinds of problem. First, a hypothesis the theorems assume that the spec and its ports never enforce or state, so a well-formed input gets output no theorem covers. Second, a fact proved or restated in more than one place. Use after spec-prover finishes, or on any change to JinagaSpec/, ports/ or vectors/. Read-only: it reports, it doesn't fix.
+description: "Reviews a jinaga-spec branch or PR before a human does, for three kinds of problem: a hypothesis the theorems assume that the spec and its ports never enforce or state, so a well-formed input gets output no theorem covers; a fact proved or restated in more than one place; and docs that describe a different theorem from the one proved. Use after spec-prover finishes, or on any change to JinagaSpec/, ports/ or vectors/. Read-only, it reports and does not fix."
 tools: Bash, Read, Grep, Glob
 ---
 

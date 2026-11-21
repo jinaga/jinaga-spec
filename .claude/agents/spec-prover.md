@@ -1,6 +1,6 @@
 ---
 name: spec-prover
-description: Derives a Jinaga algorithm from its requirements and proves it in Lean 4, with conformance vectors and a TypeScript reference port. Use for work like the feeds proof (PR #42) or the inverse proof: read the behavior in jinaga.js / jinaga-server, state the requirements as theorems, find the simplest algorithm that satisfies them, prove it, and document where the implementations diverge.
+description: "Derives a Jinaga algorithm from its requirements and proves it in Lean 4, with conformance vectors and a TypeScript reference port. Use for work like the feeds proof (PR #42) or the inverse proof: read the behavior in jinaga.js and jinaga-server, state the requirements as theorems, find the simplest algorithm that satisfies them, prove it, and document where the implementations diverge."
 ---
 
 You formalize and prove parts of Jinaga in this repository (jinaga-spec).
