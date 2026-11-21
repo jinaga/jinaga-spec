@@ -1,4 +1,5 @@
 import JinagaSpec.Proofs.Defer
+import JinagaSpec.Proofs.Cursor
 
 /-!
 # The feeds cover the specification
@@ -1267,6 +1268,30 @@ end
 section Top
 variable {g : Graph} {B : List Fact}
 
+theorem hygiene_top {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s) :
+    Hygiene (s.given.map (·.name)) [] [s.matchList] :=
+  ⟨by simpa [names, DistinctLabels] using hd,
+   fun x hx => wellNamed_declared _ _ hwf.wellNamed x (by simpa [names] using hx),
+   fun n hn => by simp at hn; subst hn; simpa [names] using hwf.inScope⟩
+
+/-- A feed binds each label the specification declares at most once. -/
+theorem levelFeeds_within {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s) :
+    ∀ F ∈ levelFeeds (fun P => [P]) [] s.matchList, Within (names F) (declaredMatches s.matchList) := by
+  intro F hF
+  rcases levelFeeds_split (G := []) (env := fun _ => none) _ _ [] s.matchList (hygiene_top hwf hd) F hF with
+    ⟨Q', hQ', hF⟩ | ⟨hw, -⟩
+  · simp at hF; subst hF; simpa [names] using hQ'.within
+  · simpa [names] using hw
+
+/-- Every feed binds each of its labels once, none of them a given: what
+`feed_grow` needs, with `buildFeeds_feedShape`, to page it by bookmark. -/
+theorem buildFeeds_nodup {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s) :
+    ∀ f ∈ buildFeeds s, (names f.matchList).Nodup := by
+  intro f hf
+  obtain ⟨hf, -⟩ := List.mem_filter.mp hf
+  obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hf
+  exact nodup_within (levelFeeds_within hwf hd F hF) hd
+
 /-- Every tuple of every feed of the walk binds facts the replica holds: a feed
 that is kept delivered them, and one that is dropped walks only to
 predecessors of what it starts from. -/
@@ -1286,14 +1311,7 @@ theorem feeds_settled {s : Specification} (hwf : WellFormed s) (hd : DistinctLab
     · exact henv n id (by rw [← evalMatches_frame hτ n hm]; exact hn)
   · have hroot := levelFeeds_rooted G0 _ [] s.matchList ⟨trivial, by simp⟩ (by simpa [names] using hwf.inScope) hr
       (fun Q hQ _ F hF => by simp at hF; exact hF ▸ hQ) F hF
-    have hyg : Hygiene G0 [] [s.matchList] :=
-      ⟨by simpa [names, DistinctLabels] using hd,
-       fun x hx => wellNamed_declared _ _ hwf.wellNamed x (by simpa [names] using hx),
-       fun n hn => by simp at hn; subst hn; simpa [names] using hwf.inScope⟩
-    have hw : Within (names F) (declaredMatches s.matchList) := by
-      rcases levelFeeds_split (G := g ++ B) (env := env) G0 _ [] s.matchList hyg F hF with ⟨Q', hQ', hF⟩ | ⟨hw, -⟩
-      · simp at hF; subst hF; simpa [names] using hQ'.within
-      · simpa [names] using hw
+    have hw := levelFeeds_within hwf hd F hF
     have hnd := nodup_within hw hd
     refine dropped_settled hf (F.map Match.paths) G0 env
       ⟨hroot.1, by rw [names_paths]; exact hnd, fun x hx => wellNamed_declared _ _ hwf.wellNamed x
@@ -1328,9 +1346,7 @@ theorem feeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctLabel
   have hsc : ScopedMatches G0 ms := hwf.inScope
   have hdis : ∀ x ∈ declaredMatches ms, x ∉ G0 := wellNamed_declared _ _ hwf.wellNamed
   have hdist : Distinct G0 ms := ⟨hd, hdis⟩
-  have hyg : Hygiene G0 [] [ms] :=
-    ⟨by simpa [names, DistinctLabels] using hd, fun x hx => hdis x (by simpa [names] using hx),
-     fun n hn => by simp at hn; subst hn; simpa [names] using hsc⟩
+  have hyg := hygiene_top hwf hd
   have hR : ReachedL (levelFeeds (fun P => [P]) [] ms) (fun P => [P]) [] ms := fun _ h => h
   have hε : env ∈ evalMatches (g ++ B) env [] := by simp [evalMatches]
   -- A valid solution of the level's path conditions on the replicator is delivered.
@@ -1384,6 +1400,27 @@ theorem feeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctLabel
   · rintro ⟨σ', hσ', rfl⟩
     obtain ⟨σ, hσ, hag⟩ := hagree.2 σ' hσ'
     exact ⟨σ, hσ, hrow σ σ' hσ hσ' hag⟩
+
+/-- **Eventual consistency.** A replica that has paged every feed of `s` until a
+page came back empty, and holds what the pages delivered with its
+predecessors, reads what the replicator reads.
+
+The replica is `g`; what of the replicator's graph it does not hold is `B`.
+`caught_start`, `caught_page` and `feed_grow` keep each feed `Caught` from the
+first page to the last while the replicator's graph grows; this theorem takes
+the last step, from `caught_sync` and `feeds_cover`. -/
+theorem feed_converges {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
+    (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
+    (hgiv : ∀ l ∈ s.given, g.has env l = true)
+    (bookmark : Specification → List Nat) (D : List FactId)
+    (hcaught : ∀ f ∈ buildFeeds s, Caught (f.tuples (g ++ B) env) (bookmark f) D)
+    (hsync : ∀ f ∈ buildFeeds s, IsPage (f.tuples (g ++ B) env) [] (bookmark f))
+    (hheld : ∀ id ∈ D, Outside B id) :
+    ∀ r, r ∈ s.read g env ↔ r ∈ s.read (g ++ B) env :=
+  feeds_cover hwf hd hr hf henv hgiv fun id hid => by
+    obtain ⟨f, hf, hid⟩ := List.mem_flatMap.mp hid
+    obtain ⟨t, ht, hid⟩ := List.mem_flatten.mp hid
+    exact hheld id (caught_sync (hcaught f hf) (hsync f hf) t ht id hid)
 
 end Top
 
