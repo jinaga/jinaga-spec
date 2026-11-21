@@ -32,18 +32,6 @@
  {"results": [[3]],
   "feeds":
   [{"text":
-    "(p1: Root) {\n    t: Task [\n        t->root: Root = p1\n    ]\n}\n",
-    "specification":
-    {"projection": {"type": "composite", "components": []},
-     "matches":
-     [{"unknown": {"type": "Task", "name": "t"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Root", "name": "root"}],
-         "labelRight": "p1"}]}],
-     "given": [{"label": {"type": "Root", "name": "p1"}, "conditions": []}]}},
-   {"text":
     "(p1: Root) {\n    t: Task [\n        t->root: Root = p1\n    ]\n    d: Done [\n        d->task: Task = t\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
@@ -60,7 +48,28 @@
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Task", "name": "task"}],
          "labelRight": "t"}]}],
+     "given": [{"label": {"type": "Root", "name": "p1"}, "conditions": []}]}},
+   {"text":
+    "(p1: Root) {\n    t: Task [\n        t->root: Root = p1\n        !E {\n            d: Done [\n                d->task: Task = t\n            ]\n        }\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "Task", "name": "t"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Root", "name": "root"}],
+         "labelRight": "p1"},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "Done", "name": "d"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "Task", "name": "task"}],
+             "labelRight": "t"}]}],
+         "exists": false}]}],
      "given": [{"label": {"type": "Root", "name": "p1"}, "conditions": []}]}}],
   "delivered": [1, 2, 3]},
  "description":
- "One notExists. The condition's level delivers the Done that removes a task."}
+ "One notExists. The ordinary feed is filtered by it; the excluding feed delivers the Done that removes a task, and stops."}

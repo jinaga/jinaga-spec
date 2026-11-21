@@ -4,14 +4,26 @@
 //
 //   PORT=./feed-builder.ts npm run --silent feeds
 //
-// A specification's levels are its matches and the matches of each negative
-// existential condition, at any depth. Each level is one feed: its matches,
-// with every positive condition's matches joined in after the match they
-// qualify, keeping only path conditions, after the matches of the levels that
-// enclose it. A feed that walks no successor edge is dropped.
+// These are chapter 12's ordinary, excluding and restoring feeds, derived from
+// its requirements: a replica reads what the replicator reads; tuples are never
+// inserted behind a bookmark, so a feed has one level of negative condition; and
+// a new client is not sent the details of an entity whose exclusion nothing has
+// cancelled.
 //
-// It replaces jinaga.js's excluding and restoring feeds. No feed filters by a
-// negative condition, so none has to restore what a filter wrongly excluded.
+// Walk a level's matches, each joined with its positive conditions. At each
+// negative condition, every feed so far
+//   - emits an excluding feed: itself, then the condition's level, and stops;
+//   - goes on filtered by the condition's level; and
+//   - goes on restored: through the condition's level, then the level of one of
+//     that level's own negative conditions, walked the same way.
+//
+// It differs from jinaga.js's buildFeeds in three places, each a vector:
+//   - a restoring feed drops the negative conditions of the fact it restores
+//     (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`);
+//   - a positive condition inside a negative one joins its level
+//     (`exists-inside-not-exists`); and
+//   - an excluding feed is not filtered, since what it would filter out a
+//     restoring feed delivers anyway.
 
 type Label = { name: string; type: string };
 type Role = { name: string; predecessorType: string };
@@ -21,8 +33,11 @@ type Condition = PathCondition | ExistentialCondition;
 type Match = { unknown: Label; conditions: Condition[] };
 type Given = { label: Label; conditions: unknown[] };
 type Specification = { given: Given[]; matches: Match[]; projection: unknown };
+type Continuation = (feed: Match[]) => Match[][];
 
 const isPath = (c: Condition): c is PathCondition => c.type === "path";
+const negatives = (m: Match): Match[][] =>
+    m.conditions.flatMap(c => c.type === "existential" && !c.exists ? [c.matches] : []);
 
 /**
  * Join every positive condition's matches into the level, right after the
@@ -38,23 +53,51 @@ function flatten(matches: Match[]): Match[] {
 
 const paths = (m: Match): Match => ({ unknown: m.unknown, conditions: m.conditions.filter(isPath) });
 
-/** The level's own feed, after `pre`, then the feeds of its negative conditions. */
-function levelFeeds(pre: Match[], matches: Match[]): Match[][] {
-    const level = flatten(matches);
-    const here = [...pre, ...level.map(paths)];
-    return [here, ...level.flatMap(m => m.conditions.flatMap(c =>
-        c.type === "existential" && !c.exists ? levelFeeds(here, c.matches) : []))];
+/** A negative condition's level: its matches, positives joined, path conditions only. */
+const level = (matches: Match[]): Match[] => flatten(matches).map(paths);
+
+/** Attach a condition to the last match of the feed whose unknown is `label`. */
+function attach(label: string, condition: Condition, feed: Match[]): Match[] {
+    const index = feed.map(m => m.unknown.name).lastIndexOf(label);
+    return feed.map((m, i) => i === index ? { ...m, conditions: [...m.conditions, condition] } : m);
+}
+
+/** The feeds of a level after the partial feed `P`; completed feeds go to `k`. */
+function levelFeeds(k: Continuation, P: Match[], matches: Match[]): Match[][] {
+    if (matches.length === 0) return k(P);
+    const [m, ...rest] = matches;
+    const unit = flatten([m]);
+    const negs = unit.flatMap(x => negatives(x).map(ns => [x.unknown.name, ns] as const));
+    return negFeeds(Q => levelFeeds(k, Q, rest), [...P, ...unit.map(paths)], negs);
+}
+
+/** The feeds of the partial feed `Q` with the negative conditions `negs` to walk. */
+function negFeeds(k: Continuation, Q: Match[], negs: (readonly [string, Match[]])[]): Match[][] {
+    if (negs.length === 0) return k(Q);
+    const [[host, ns], ...rest] = negs;
+    const lvl = level(ns);
+    const filter: Condition = { type: "existential", exists: false, matches: lvl };
+    return [
+        [...Q, ...lvl],
+        ...negFeeds(k, attach(host, filter, Q), rest),
+        ...flatten(ns).flatMap(negatives).flatMap(canceller =>
+            levelFeeds(Q2 => negFeeds(k, Q2, rest), [...Q, ...lvl], canceller))
+    ];
 }
 
 /** A feed that walks no successor edge delivers only what a replica already holds. */
 const traversesSuccessors = (feed: Specification) =>
     feed.matches.some(m => m.conditions.some(c => isPath(c) && c.rolesLeft.length > 0));
 
+/** The labels a feed's path conditions name, in its matches or its filters. */
+const named = (matches: Match[]): string[] => matches.flatMap(m => m.conditions.flatMap(c =>
+    isPath(c) ? [c.labelRight] : named(c.matches)));
+
 export function buildFeeds(specification: Specification): Specification[] {
-    return levelFeeds([], specification.matches)
+    return levelFeeds(feed => [feed], [], specification.matches)
         .map(matches => ({
             given: specification.given
-                .filter(g => matches.some(m => m.conditions.some(c => isPath(c) && c.labelRight === g.label.name)))
+                .filter(g => named(matches).includes(g.label.name))
                 .map(g => ({ label: g.label, conditions: [] })),
             matches,
             projection: { type: "composite", components: [] }

@@ -41,19 +41,6 @@
  {"results": [[3]],
   "feeds":
   [{"text":
-    "(p2: Channel) {\n    m: Message [\n        m->channel: Channel = p2\n    ]\n}\n",
-    "specification":
-    {"projection": {"type": "composite", "components": []},
-     "matches":
-     [{"unknown": {"type": "Message", "name": "m"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Channel", "name": "channel"}],
-         "labelRight": "p2"}]}],
-     "given":
-     [{"label": {"type": "Channel", "name": "p2"}, "conditions": []}]}},
-   {"text":
     "(p1: User, p2: Channel) {\n    m: Message [\n        m->channel: Channel = p2\n    ]\n    rd: Read [\n        rd->message: Message = m\n        rd->user: User = p1\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
@@ -76,7 +63,34 @@
          "labelRight": "p1"}]}],
      "given":
      [{"label": {"type": "User", "name": "p1"}, "conditions": []},
+      {"label": {"type": "Channel", "name": "p2"}, "conditions": []}]}},
+   {"text":
+    "(p1: User, p2: Channel) {\n    m: Message [\n        m->channel: Channel = p2\n        !E {\n            rd: Read [\n                rd->message: Message = m\n                rd->user: User = p1\n            ]\n        }\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "Message", "name": "m"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Channel", "name": "channel"}],
+         "labelRight": "p2"},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "Read", "name": "rd"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "Message", "name": "message"}],
+             "labelRight": "m"},
+            {"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "User", "name": "user"}],
+             "labelRight": "p1"}]}],
+         "exists": false}]}],
+     "given":
+     [{"label": {"type": "User", "name": "p1"}, "conditions": []},
       {"label": {"type": "Channel", "name": "p2"}, "conditions": []}]}}],
   "delivered": [2, 3, 4]},
  "description":
- "Messages in a channel that a user has not read. The read's level takes both givens."}
+ "Messages in a channel that a user has not read. The excluding feed takes both givens."}

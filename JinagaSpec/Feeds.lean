@@ -6,45 +6,50 @@ import JinagaSpec.Reorder
 A replica does not run a specification on the replicator. It asks for the
 specification's *feeds* (`POST /feeds`), reads each one page by page
 (`GET /feeds/{hash}`), loads the facts the pages name together with their
-predecessors (`/load`), and runs the specification on what it then holds.
+predecessors (`/load`), and runs the specification on what it then holds. This
+is chapter 12 of *The Art of Immutable Architecture*.
 
-A feed is a specification with no projection, and only path conditions. What
-it delivers is the facts its tuples bind to its unknowns
-(`Specification.tuples`). With only path conditions, a tuple that is new to a
-feed binds a new fact, which lets a replicator page a feed by a bookmark
-(`feed_antitone`, `Proofs/Feeds.lean`).
+A feed is a specification with no projection. What it delivers is the facts its
+tuples bind to its unknowns (`Specification.tuples`). Three requirements decide
+what the feeds are:
 
-## Levels
+1. **Consistency.** A replica holding what the feeds deliver, with their
+   predecessors, and any other facts of the replicator's graph, reads what the
+   replicator reads (`feeds_cover`).
+2. **Append-only.** A tuple is never inserted behind a bookmark. So a feed has
+   only path conditions, and negative conditions over matches with only path
+   conditions, which can only ever remove a tuple (`feed_antitone`).
+3. **Deferral.** A new client is not sent the details of an entity that is
+   excluded by a negative condition none of whose facts has been cancelled: a
+   deleted menu item's names, until it is restored (`feeds_defer`).
 
-A specification's *levels* are its matches, and the matches of each of its
-negative existential conditions, at any depth. Each level is one feed:
+## The feeds
 
-* A positive condition's matches join the level of the match it qualifies, as
-  the inverse algorithm flattens them (`flattenMatches`, `Reorder.lean`).
-  A feed never delivers what a positive condition rules out, which is what
-  lets a distribution rule's positive conditions authorize.
-* The feed of a level is its matches, so joined, with their path conditions,
-  after the matches of the levels that enclose it: those name the labels the
-  level's own path conditions join to.
-* A negative condition is not a filter. Its level is a feed of its own, which
-  delivers the facts that exclude a result, and the facts that cancel them, at
-  the next level down.
+Walk the specification's matches, each joined with its positive conditions (as
+the inverse algorithm flattens them: `flattenMatches`, `Reorder.lean`). At each
+negative condition, every feed so far
 
-So a specification has one feed for its matches and one for each negative
-condition. A feed that walks no successor edge is dropped
-(`traversesSuccessors`): it delivers only predecessors of the givens, which a
-replica already holds.
+* emits an **excluding** feed: itself, then the condition's *level* (its matches,
+  positive conditions joined, path conditions only), and stops, since an
+  excluded entity's details are deferred;
+* goes on **filtered** by the condition's level, which removes an entity once a
+  fact excludes it, and never brings it back; and
+* goes on **restored**: through the condition's level and then the level of one
+  of that level's own negative conditions, walked the same way. This is the
+  feed that delivers an entity, and its details, once what excluded it is
+  cancelled. It asks nothing more of the excluded fact: any one of its negative
+  conditions cancels it.
 
-## What this replaces
+A feed that walks no successor edge is dropped (`traversesSuccessors`): it
+delivers only predecessors of the givens, which a replica already holds.
 
-`jinaga.js`'s `buildFeeds` filters each feed by the negative conditions it
-passes, stripped of the negative conditions inside them, and so must add a
-*restoring* feed for every result a stripped condition wrongly excludes, which
-goes on to match the rest of the specification. Getting that bookkeeping right
-took two fixes there (jinaga/jinaga.js#368 and the one before it), and checking
-it here found two more defects (`docs/findings.md`). Levels need none of it: a
-feed is a conjunctive query, and what a negative condition excludes, the
-replica works out from the facts the condition's own feed delivers.
+These are the ordinary, excluding and restoring feeds of the chapter. The
+requirements settle what the chapter leaves open. An excluding feed stops
+(deferral). A restoring feed drops the other negative conditions of the fact it
+restores, and a positive condition inside a negative one joins its level
+(consistency); `jinaga.js` does neither (`docs/findings.md`). And an excluding
+feed is not itself filtered, since what a filter would remove from it a
+restoring feed delivers anyway.
 -/
 namespace JinagaSpec
 
@@ -130,20 +135,108 @@ theorem sizeOf_negatives_flatten {ms : List Match} {m : Match} (h : m ∈ flatte
     ∀ ns ∈ m.negatives, sizeOf ns < sizeOf ms :=
   sizeOf_negatives_flattenMatches _ h
 
-/-- The feeds of the level `ms`, after the matches `pre` of the levels that
-enclose it: the level's own feed, then the feeds of its negative conditions. -/
-def levelFeeds (pre ms : List Match) : List (List Match) :=
-  let here := pre ++ (flatten ms).map Match.paths
-  here :: ((flatten ms).attach.flatMap fun ⟨m, hm⟩ => m.negatives.attach.flatMap fun ⟨ns, hns⟩ =>
-    have := sizeOf_negatives_flatten hm ns hns
-    levelFeeds here ns)
-termination_by sizeOf ms
+/-- A negative condition's level, as a feed continues with it: its matches with
+every positive condition joined in, keeping only path conditions. -/
+def level (ns : List Match) : List Match := (flatten ns).map Match.paths
 
-/-- The givens a feed's path conditions name, in the specification's order. -/
+/-- The negative conditions of a match, joined with its positive conditions:
+each with the label of the match that holds it. -/
+def unitNegatives (m : Match) : List (Name × List Match) :=
+  (flatten [m]).flatMap fun x => x.negatives.map (x.unknown.name, ·)
+
+/-- The negative conditions of a negative condition's level: what can cancel
+one of its facts. -/
+def cancellers (ns : List Match) : List (List Match) := (flatten ns).flatMap Match.negatives
+
+/-- Attach a condition to the last match of the feed whose unknown is `label`. -/
+def attach (label : Name) (c : Condition) : List Match → List Match
+  | [] => []
+  | .mk u cs :: rest =>
+    if (rest.map (·.unknown.name)).contains label then .mk u cs :: attach label c rest
+    else if u.name == label then .mk u (cs ++ [c]) :: rest
+    else .mk u cs :: rest
+
+/-- The largest of the conditions' sizes. -/
+noncomputable def maxSize (L : List (Name × List Match)) : Nat := (L.map fun p => sizeOf p.2).foldr max 0
+
+theorem le_maxSize : ∀ {L : List (Name × List Match)} {p : Name × List Match}, p ∈ L → sizeOf p.2 ≤ maxSize L
+  | q :: L, p, h => by
+    simp only [maxSize, List.map_cons, List.foldr_cons] at *
+    rcases List.mem_cons.mp h with rfl | h
+    · omega
+    · have := le_maxSize (L := L) h; simp only [maxSize] at this; omega
+
+theorem maxSize_cons (p : Name × List Match) (L : List (Name × List Match)) : maxSize L ≤ maxSize (p :: L) := by
+  simp only [maxSize, List.map_cons, List.foldr_cons]; omega
+
+theorem maxSize_lt {L : List (Name × List Match)} {b : Nat} (hb : 0 < b) (h : ∀ p ∈ L, sizeOf p.2 < b) :
+    maxSize L < b := by
+  induction L with
+  | nil => simpa [maxSize]
+  | cons q L ih =>
+    simp only [maxSize, List.map_cons, List.foldr_cons] at ih ⊢
+    have := h q (List.mem_cons_self ..)
+    have := ih fun p hp => h p (List.mem_cons_of_mem _ hp)
+    omega
+
+theorem sizeOf_unitNegatives {m : Match} {rest : List Match} :
+    ∀ p ∈ unitNegatives m, sizeOf p.2 < sizeOf (m :: rest) := by
+  intro p hp
+  simp only [unitNegatives, List.mem_flatMap, List.mem_map] at hp
+  obtain ⟨x, hx, ns, hns, rfl⟩ := hp
+  have h1 := sizeOf_negatives_flatten hx ns hns
+  have h2 : sizeOf [m] ≤ sizeOf (m :: rest) := by
+    simp only [List.cons.sizeOf_spec, List.nil.sizeOf_spec]; cases rest <;> simp <;> omega
+  exact Nat.lt_of_lt_of_le h1 h2
+
+theorem sizeOf_cancellers {ns : List Match} : ∀ ns' ∈ cancellers ns, sizeOf ns' < sizeOf ns := by
+  intro ns' h
+  obtain ⟨x, hx, h⟩ := List.mem_flatMap.mp h
+  exact sizeOf_negatives_flatten hx ns' h
+
+mutual
+  /-- The feeds of the level `ms`, after the partial feed `P`. Each match joins
+  the feed with its positive conditions; then each of its negative conditions
+  is walked (`negFeeds`). Each feed that completes the level is handed to `k`,
+  which goes on with whatever encloses the level. -/
+  def levelFeeds (k : List Match → List (List Match)) (P : List Match) : List Match → List (List Match)
+    | [] => k P
+    | m :: rest =>
+      negFeeds (fun Q => levelFeeds k Q rest) (P ++ (flatten [m]).map Match.paths) (unitNegatives m)
+  termination_by ms => (sizeOf ms, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (apply Prod.Lex.left
+         have := maxSize_lt (b := sizeOf (m :: rest)) (by simp; omega) fun p hp => sizeOf_unitNegatives p hp
+         simpa using this)
+      | (apply Prod.Lex.left; omega)
+
+  /-- The feeds of the partial feed `Q` with the negative conditions `negs` still
+  to walk. At each, the feed so far emits an excluding feed, which goes on to
+  the condition's level and stops; and it goes on both filtered by the
+  condition and restored, through the condition's level and the level of one of
+  its own negative conditions. -/
+  def negFeeds (k : List Match → List (List Match)) (Q : List Match) :
+      List (Name × List Match) → List (List Match)
+    | [] => k Q
+    | (h, ns) :: rest =>
+      (Q ++ level ns) :: (negFeeds k (attach h (.existential false (level ns)) Q) rest ++
+        (cancellers ns).attach.flatMap fun ⟨ns', _hns'⟩ =>
+          levelFeeds (fun Q' => negFeeds k Q' rest) (Q ++ level ns) ns')
+  termination_by negs => (maxSize negs, negs.length)
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (simp only [Prod.lex_def]; have := maxSize_cons (h, ns) rest; omega)
+      | (apply Prod.Lex.left
+         exact Nat.lt_of_lt_of_le (sizeOf_cancellers _ _hns') (le_maxSize (p := (h, ns)) (List.mem_cons_self ..)))
+end
+
+/-- The givens a feed names, in its path conditions or its filters, in the
+specification's order. -/
 def usedGivens (givens : List Label) (ms : List Match) : List Label :=
-  givens.filter fun l => ms.any fun m => m.conditions.any fun
-    | .path pc => pc.labelRight == l.name
-    | .existential .. => false
+  givens.filter fun l => (freeInMatches [] ms).contains l.name
 
 /-- A feed walks at least one successor edge: some path condition of its
 matches walks from the unknown. -/
@@ -154,7 +247,7 @@ def traversesSuccessors (feed : Specification) : Bool :=
 
 /-- The feeds of a specification. -/
 def buildFeeds (s : Specification) : List Specification :=
-  ((levelFeeds [] s.matchList).map fun ms =>
+  ((levelFeeds (fun P => [P]) [] s.matchList).map fun ms =>
     { given := usedGivens s.given ms, matchList := ms, projection := .composite [] }).filter traversesSuccessors
 
 /-- A feed's tuples on `g`: for each solution, the facts it binds to the feed's

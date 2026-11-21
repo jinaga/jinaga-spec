@@ -13,11 +13,12 @@
 //    src/specification/feed-builder.ts, or from PORT:
 //    a. its feeds equal the vector's, structurally and in order, and
 //    b. a replica holding what its feeds deliver, with their predecessors,
-//       reads the vector's results (`feeds_cover`).
-//    With PORT both must pass. Against jinaga.js they are reported: its
-//    feeds are not levels, so 2a fails on every vector with a negative
-//    condition, and 2b on the vectors named in `jinagaMisses`, until jinaga.js
-//    builds levels as feed-builder.ts does.
+//       reads the vector's results (`feeds_cover`), and
+//    c. they deliver no fact the vector's feeds do not: a new client is not
+//       sent what the specification defers (`feeds_defer`).
+//    With PORT all must pass. Against jinaga.js they are reported: 2b fails on
+//    the vectors named in `jinagaMisses`, until jinaga.js builds its feeds as
+//    feed-builder.ts does.
 import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -37,7 +38,7 @@ const implementation = strict
     : await load("src/specification/feed-builder.ts");
 
 /** The vectors jinaga.js's `buildFeeds` is expected to miss a result on. */
-const jinagaMisses = new Set(["not-exists-cancelled-twice", "not-exists-cancelled-by-second", "exists-inside-not-exists", "random-4", "random-6"]);
+const jinagaMisses = new Set(["not-exists-cancelled-twice", "not-exists-cancelled-by-second", "exists-inside-not-exists", "random-2"]);
 
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
 const key = (row: unknown) => JSON.stringify(row);
@@ -96,7 +97,7 @@ async function readReplica(v: any, ids: number[]): Promise<unknown[]> {
 }
 
 let failures = 0;
-let structural = 0, covered = 0, total = 0;
+let structural = 0, covered = 0, bounded = 0, total = 0;
 const report: string[] = [];
 for (const file of readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort()) {
     const v = JSON.parse(readFileSync(join(vectorsDir, file), "utf8"));
@@ -116,6 +117,11 @@ for (const file of readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort
     let same = true;
     try { deepStrictEqual(feeds, normalize(expectedFeeds)); } catch { same = false; }
     if (same) structural++;
+    // Deferral: a new client is sent nothing the vector's feeds do not send.
+    const sent = await deliver(v, feeds).catch(() => [] as number[]);
+    const extra = sent.filter(id => !givenIds.has(id) && !v.expected.delivered.includes(id));
+    if (extra.length === 0) bounded++;
+    else if (strict) { failures++; console.log(`FAIL ${v.name}: sends ${JSON.stringify(extra)}, which the vector's feeds withhold`); }
     // A feed the store cannot read covers nothing.
     const results = await deliver(v, feeds).then(ids => readReplica(v, ids), (e: Error) => `an error: ${e.message}`);
     const covers = Array.isArray(results) && sameSet(results, v.expected.results);
@@ -131,5 +137,5 @@ for (const file of readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort
     }
 }
 for (const line of report) console.log(line);
-console.log(`${total} feed vectors: ${structural} with the vector's feeds, ${covered} covered (${strict ? process.env.PORT : "jinaga.js"})`);
+console.log(`${total} feed vectors: ${structural} with the vector's feeds, ${covered} covered, ${bounded} sending no more than the vector's (${strict ? process.env.PORT : "jinaga.js"})`);
 process.exit(failures === 0 ? 0 : 1);

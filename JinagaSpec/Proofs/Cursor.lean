@@ -118,7 +118,7 @@ theorem caught_grow {g : Graph} {B : List Fact} {T T' : List (List FactId)} {b :
 /-- Facts arriving at the replicator keep a replica that pages a feed caught up,
 provided their ids are larger than every id it has seen. -/
 theorem feed_grow {g : Graph} {B : List Fact} (hf : Fresh g B) (hinc : IdsIncrease g B)
-    {f : Specification} (hs : PathsOnly f.matchList) (hnd : (names f.matchList).Nodup)
+    {f : Specification} (hs : FeedShape f.matchList) (hnd : (names f.matchList).Nodup)
     {env : Env} (henv : Settled B env) {b : List Nat} {D : List FactId}
     (hc : Caught (f.tuples g env) b D) (hb : g.Bounds b) : Caught (f.tuples (g ++ B) env) b D :=
   caught_grow hc hb hinc fun _ ht hout => feed_antitone hf hs hnd henv ht hout

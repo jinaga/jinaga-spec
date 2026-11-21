@@ -19,7 +19,7 @@ import JinagaSpec.FeedCases
 import JinagaSpec.Cursor
 import JinagaSpec.Proofs.Feeds
 import JinagaSpec.Proofs.Cursor
-import JinagaSpec.Proofs.Cover
+import JinagaSpec.Proofs.Flat
 import JinagaSpec.Proofs.Scoped
 import JinagaSpec.Proofs.Basic
 import JinagaSpec.Proofs.Locality

@@ -2,23 +2,19 @@ import JinagaSpec.Proofs.Cursor
 import JinagaSpec.Proofs.Derivation
 
 /-!
-# The feeds cover the specification
+# Flat levels
+
+What every feed algorithm here relies on: a level with every positive condition
+joined into it (`flatten`), its scoping and its labels; a flat level agreeing
+on a replica and the replicator's graph when its solutions are delivered
+(`flat_agree`); and a feed that walks only to predecessors delivering only what
+the replica holds (`dropped_settled`).
 
 `feeds_cover`: a replica that holds the givens and every fact the feeds
 deliver on the replicator's graph, with their predecessors, reads what the
 replicator reads. The replica is `g`, and what of the replicator's graph it does
 not hold is `B`: a fresh batch to it, because it holds every fact's
 predecessors (`Fresh`, as for the stream).
-
-1. A *flat* level, whose matches carry only path conditions and negative ones,
-   agrees on both graphs (`flat_agree`). Through a candidate fact, either the
-   rest of the level has no solution of its path conditions, and then neither
-   graph has a solution through it, or it has one, `τ`. Then a negative
-   condition reads the same at the candidate as at `τ` (`holds_agree`), and at
-   `τ` its own level is a feed's: it agrees by induction.
-2. Any level agrees, through its flattening (`flatten_correct`).
-3. A feed that is dropped delivers only predecessors of facts the replica
-   holds (`dropped_settled`).
 -/
 namespace JinagaSpec
 
@@ -323,53 +319,6 @@ theorem flat_agree (hf : Fresh g B) : ∀ (L : List Match) (S : List Name) (e : 
       exact (flat_agree hf L _ _ (fun m hm => hfl m (List.mem_cons_of_mem _ hm)) hL hnd'.2 hdis' (he.bind hout)
         hrest σ).mpr hr
 
-/-! ## Any level agrees -/
-
-theorem mem_levelFeeds_nested {pre ms : List Match} {m : Match} (hm : m ∈ flatten ms) {ns : List Match}
-    (hns : ns ∈ m.negatives) {F : List Match} (hF : F ∈ levelFeeds (pre ++ (flatten ms).map Match.paths) ns) :
-    F ∈ levelFeeds pre ms := by
-  rw [levelFeeds]
-  exact List.mem_cons_of_mem _ (List.mem_flatMap.mpr ⟨⟨m, hm⟩, List.mem_attach .., List.mem_flatMap.mpr
-    ⟨⟨ns, hns⟩, List.mem_attach .., hF⟩⟩)
-
-theorem level_mem_levelFeeds (pre ms : List Match) : pre ++ (flatten ms).map Match.paths ∈ levelFeeds pre ms := by
-  rw [levelFeeds]; exact List.mem_cons_self ..
-
-/-- **A level agrees.** When every tuple of every feed of the level `ms`, read
-on the replicator's graph after the matches `pre` of the levels that enclose
-it, binds facts the replica holds, then from any tuple `e` of `pre` the level
-has, on both graphs, solutions that agree on its unknowns. -/
-theorem level_agree (hf : Fresh g B) (env : Env) : ∀ (ms pre : List Match) (e : Env) (S : List Name),
-    ScopedMatches S ms → Distinct S ms → Settled B e → e ∈ evalMatches (g ++ B) env pre →
-    (∀ F ∈ levelFeeds pre ms, ∀ τ ∈ evalMatches (g ++ B) env F, Settled B τ) →
-    (∀ σ ∈ evalMatches g e ms, ∃ σ' ∈ evalMatches (g ++ B) e ms, Agree (names ms) σ σ') ∧
-    (∀ σ' ∈ evalMatches (g ++ B) e ms, ∃ σ ∈ evalMatches g e ms, Agree (names ms) σ σ') := by
-  intro ms pre e S hsc hd he hpre hfeeds
-  obtain ⟨hnd, hdis, hneg⟩ := hd.flat
-  have hfg := flatten_correct (G := g) (lift := fun _ => true) ms S e hsc hnd hdis
-  have hfG := flatten_correct (G := g ++ B) (lift := fun _ => true) ms S e hsc hnd hdis
-  have hflat := flat_agree hf (flatten ms) S e (flatten_flat ms) (flatten_scoped ms S hsc) hnd hdis he
-    fun τ hτ => by
-      have hhere : τ ∈ evalMatches (g ++ B) env (pre ++ (flatten ms).map Match.paths) :=
-        mem_evalMatches_append.mpr ⟨e, hpre, hτ⟩
-      have hset := hfeeds _ (level_mem_levelFeeds pre ms) τ hhere
-      refine ⟨hset, fun m hm ns hns S' hS' hsc' => ?_⟩
-      have := sizeOf_negatives_flatten hm ns hns
-      have ih := level_agree hf env ns _ τ S' hsc' (hneg m hm ns hns S' hS') hset hhere
-        fun F hF => hfeeds F (mem_levelFeeds_nested hm hns hF)
-      exact ⟨fun ⟨σ, h⟩ => let ⟨σ', h', _⟩ := ih.1 σ h; ⟨σ', h'⟩,
-        fun ⟨σ', h'⟩ => let ⟨σ, h, _⟩ := ih.2 σ' h'; ⟨σ, h⟩⟩
-  constructor
-  · intro σ h
-    obtain ⟨σ1, h1, a1⟩ := hfg.1 σ h
-    obtain ⟨σ2, h2, a2⟩ := hfG.2 σ1 ((hflat σ1).mp h1)
-    exact ⟨σ2, h2, fun x hx => (a1 x hx).trans (a2 x hx).symm⟩
-  · intro σ' h
-    obtain ⟨σ1, h1, a1⟩ := hfG.1 σ' h
-    obtain ⟨σ2, h2, a2⟩ := hfg.2 σ1 ((hflat σ1).mpr h1)
-    exact ⟨σ2, h2, fun x hx => (a2 x hx).trans (a1 x hx).symm⟩
-termination_by ms => sizeOf ms
-
 /-! ## Every feed is scoped and binds each label once -/
 
 /-- A feed that a replicator can read from the givens `S`: its path conditions
@@ -400,47 +349,6 @@ theorem scoped_negatives : ∀ {T : List Name} {L : List Match}, ScopedMatches T
       show ScopedMatches (scopeAfter (u.name :: T) L) ns
       exact scopedMatches_mono _ _ _ (fun x hx => mem_scopeAfter.mpr (Or.inr hx)) hsc
     · exact scoped_negatives hL m hm ns hns
-
-theorem levelFeeds_scoped (S : List Name) : ∀ (pre ms : List Match), ScopedMatches S pre →
-    ScopedMatches (scopeAfter S pre) ms → (names pre ++ declaredMatches ms).Nodup →
-    (∀ x ∈ names pre ++ declaredMatches ms, x ∉ S) → ∀ F ∈ levelFeeds pre ms, FeedScoped S F := by
-  intro pre ms
-  induction pre, ms using levelFeeds.induct with
-  | case1 pre ms here ih =>
-    intro hpre hms hnd hdis F hF
-    have hc := flatten_declared ms
-    -- The level's names, and the labels its negative conditions declare, are among the level's.
-    have hcount : ∀ x, (names here ++ negativeLabels (flatten ms)).count x ≤ (names pre ++ declaredMatches ms).count x := by
-      intro x
-      have := hc x
-      simp only [here, names_append, names_paths, List.count_append] at this ⊢
-      omega
-    have hndh := nodup_of_count_le hcount hnd
-    have hscoped : ScopedMatches S here :=
-      scopedMatches_append.mpr ⟨hpre, scoped_paths (flatten_scoped ms _ hms)⟩
-    rw [levelFeeds] at hF
-    rcases List.mem_cons.mp hF with rfl | hF
-    · exact ⟨hscoped, (List.nodup_append.mp hndh).1,
-        fun x hx => hdis x (mem_of_count_le hcount (List.mem_append_left _ hx))⟩
-    · simp only [List.mem_flatMap] at hF
-      obtain ⟨⟨m, hm⟩, -, ⟨ns, hns⟩, -, hF⟩ := hF
-      have hsub : ∀ x, (names here ++ declaredMatches ns).count x ≤ (names pre ++ declaredMatches ms).count x := by
-        intro x
-        have h1 := count_le_flatMap declaredMatches x (List.mem_flatMap.mpr ⟨m, hm, hns⟩)
-        have h2 := hcount x
-        simp only [negativeLabels, List.count_append] at h1 h2 ⊢
-        omega
-      refine ih m hm ns hns hscoped ?_ (nodup_of_count_le hsub hnd)
-        (fun x hx => hdis x (mem_of_count_le hsub hx)) F hF
-      refine scopedMatches_mono _ _ _ (fun x hx => ?_) (scoped_negatives (flatten_scoped ms _ hms) m hm ns hns)
-      show x ∈ scopeAfter S (pre ++ (flatten ms).map Match.paths)
-      have := names_paths (flatten ms)
-      simp only [names] at this
-      simp only [mem_scopeAfter, List.map_append, List.mem_append, this] at hx ⊢
-      rcases hx with h | h | h
-      · exact Or.inl (Or.inr h)
-      · exact Or.inl (Or.inl h)
-      · exact Or.inr h
 
 /-! ## A dropped feed delivers what the replica holds -/
 
@@ -552,28 +460,6 @@ mutual
             all_goals first | exact f2 m hm | exact l2 m hm
 end
 
-theorem levelFeeds_rooted : ∀ (pre ms : List Match), (∀ m ∈ pre, HasPath m) → RootedMatches ms →
-    ∀ F ∈ levelFeeds pre ms, ∀ m ∈ F, HasPath m := by
-  intro pre ms
-  induction pre, ms using levelFeeds.induct with
-  | case1 pre ms here ih =>
-    intro hpre hms
-    obtain ⟨h1, h2⟩ := flatten_rooted ms hms
-    have hhere : ∀ m ∈ here, HasPath m := by
-      intro m hm
-      rcases List.mem_append.mp hm with hm | hm
-      · exact hpre m hm
-      · obtain ⟨⟨u, cs⟩, hm', rfl⟩ := List.mem_map.mp hm
-        obtain ⟨c, hc, hp⟩ := h1 _ hm'
-        exact ⟨c, List.mem_filter.mpr ⟨hc, hp⟩, hp⟩
-    intro F hF
-    rw [levelFeeds] at hF
-    rcases List.mem_cons.mp hF with rfl | hF
-    · exact hhere
-    · simp only [List.mem_flatMap] at hF
-      obtain ⟨⟨m, hm⟩, -, ⟨ns, hns⟩, -, hF⟩ := hF
-      exact ih m hm ns hns hhere (h2 m hm ns hns) F hF
-
 mutual
   theorem wellNamed_declared : ∀ (S : List Name) (ms : List Match), WellNamedMatches S ms →
       ∀ x ∈ declaredMatches ms, x ∉ S
@@ -595,7 +481,7 @@ mutual
       all_goals first | exact wellNamed_declared S ms hms x hx | exact wellNamed_declaredConditions S cs hcs x hx
 end
 
-/-! ## The feeds cover the specification -/
+/-! ## Givens -/
 
 theorem has_settled {env : Env} (henv : Settled B env) (l : Label) :
     (g ++ B).has env l = g.has env l := by
@@ -603,106 +489,5 @@ theorem has_settled {env : Env} (henv : Settled B env) (l : Label) :
   split
   · rename_i id h; rw [factOf_append_outside (henv _ id h)]
   · rfl
-
-/-- **The feeds cover the specification.** A replica `g` that holds the givens
-and every fact the feeds deliver on the replicator's graph `g ++ B`, where `B`
-is what of that graph the replica does not hold, reads what the replicator
-reads.
-
-`B` is fresh to `g` because a replica saves each fact with its predecessors.
-The specification declares each label once (`DistinctLabels`), so that joining
-a positive condition into its level binds nothing twice, and every match has a
-path condition (`RootedMatches`), so that a feed walking only to predecessors
-reaches nothing the replica does not hold. -/
-theorem feeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
-    (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
-    (hgiv : ∀ l ∈ s.given, g.has env l = true) (hdel : ∀ id ∈ delivered s (g ++ B) env, Outside B id) :
-    ∀ r, r ∈ s.read g env ↔ r ∈ s.read (g ++ B) env := by
-  have hdis : ∀ x ∈ declaredMatches s.matchList, x ∉ s.given.map (·.name) :=
-    wellNamed_declared _ _ hwf.wellNamed
-  -- Every tuple of every level's feed binds facts the replica holds: a feed
-  -- that is kept delivered them, and one that is dropped walks only to
-  -- predecessors of what it starts from.
-  have hall : ∀ F ∈ levelFeeds [] s.matchList, ∀ τ ∈ evalMatches (g ++ B) env F, Settled B τ := by
-    intro F hF τ hτ
-    by_cases ht : traversesSuccessors { given := usedGivens s.given F, matchList := F, projection := .composite [] } = true
-    · have hkept : ({ given := usedGivens s.given F, matchList := F, projection := .composite [] } : Specification) ∈
-          buildFeeds s := List.mem_filter.mpr ⟨List.mem_map.mpr ⟨F, hF, rfl⟩, ht⟩
-      intro n id hn
-      by_cases hm : n ∈ names F
-      · exact hdel id (List.mem_flatMap.mpr ⟨_, hkept, List.mem_flatten.mpr
-          ⟨_, List.mem_map.mpr ⟨τ, hτ, rfl⟩, List.mem_filterMap.mpr ⟨n, hm, hn⟩⟩⟩)
-      · exact henv n id (by rw [← evalMatches_frame hτ n hm]; exact hn)
-    · have hsc := levelFeeds_scoped (s.given.map (·.name)) [] s.matchList trivial
-        (show ScopedMatches (scopeAfter (s.given.map (·.name)) []) s.matchList from hwf.inScope)
-        (by simpa [names, DistinctLabels] using hd) (fun x hx => hdis x (by simpa [names] using hx)) F hF
-      have hroot := levelFeeds_rooted [] s.matchList (by simp) hr F hF
-      refine dropped_settled hf F _ env hsc (fun m hm => ?_) henv τ hτ
-      obtain ⟨c, hc, hp⟩ := hroot m hm
-      cases c with
-      | path pc =>
-        refine ⟨pc, hc, ?_⟩
-        simp only [traversesSuccessors, List.any_eq_true, not_exists, not_and, Bool.not_eq_true] at ht
-        have := ht m hm (.path pc) hc
-        simpa using this
-      | existential => simp [Condition.isPath] at hp
-  have hagree := level_agree hf env s.matchList [] env (s.given.map (·.name)) hwf.inScope ⟨hd, hdis⟩ henv
-    (by simp [evalMatches]) hall
-  -- The givens are held on both graphs, so both read the specification.
-  have hgivG : ∀ l ∈ s.given, (g ++ B).has env l = true := fun l hl => (has_settled henv l).symm ▸ hgiv l hl
-  intro r
-  simp only [Specification.read, List.all_eq_true.mpr hgiv, List.all_eq_true.mpr hgivG, ite_true,
-    Specification.evaluate, List.mem_map]
-  -- Solutions that agree on the unknowns project the same row: the projection
-  -- names only givens and unknowns, and neither side rebinds a given.
-  have hrow : ∀ σ σ', σ ∈ evalMatches g env s.matchList → σ' ∈ evalMatches (g ++ B) env s.matchList →
-      Agree (names s.matchList) σ σ' → s.projection.labels.map σ = s.projection.labels.map σ' := by
-    intro σ σ' hσ hσ' hag
-    refine List.map_congr_left fun l hl => ?_
-    by_cases hn : l ∈ names s.matchList
-    · exact hag l hn
-    · rw [evalMatches_frame hσ l hn, evalMatches_frame hσ' l hn]
-  constructor
-  · rintro ⟨σ, hσ, rfl⟩
-    obtain ⟨σ', hσ', hag⟩ := hagree.1 σ hσ
-    exact ⟨σ', hσ', (hrow σ σ' hσ hσ' hag).symm⟩
-  · rintro ⟨σ', hσ', rfl⟩
-    obtain ⟨σ, hσ, hag⟩ := hagree.2 σ' hσ'
-    exact ⟨σ, hσ, hrow σ σ' hσ hσ' hag⟩
-
-/-- **What a feed is.** Every feed has only path conditions, names in them only
-labels bound before them, and binds each label once, none of them a given:
-what `feed_grow` needs to page it by bookmark. -/
-theorem buildFeeds_shape {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s) :
-    ∀ f ∈ buildFeeds s, PathsOnly f.matchList ∧ FeedScoped (s.given.map (·.name)) f.matchList := by
-  intro f hf
-  refine ⟨buildFeeds_paths s f hf, ?_⟩
-  obtain ⟨hf, -⟩ := List.mem_filter.mp hf
-  obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hf
-  exact levelFeeds_scoped _ [] s.matchList trivial
-    (show ScopedMatches (scopeAfter (s.given.map (·.name)) []) s.matchList from hwf.inScope)
-    (by simpa [names, DistinctLabels] using hd)
-    (fun x hx => wellNamed_declared _ _ hwf.wellNamed x (by simpa [names] using hx)) F hF
-
-/-- **Eventual consistency.** A replica that has paged every feed of `s` until a
-page came back empty, and holds what the pages delivered with its
-predecessors, reads what the replicator reads.
-
-The replica is `g`; what of the replicator's graph it does not hold is `B`.
-`caught_start`, `caught_page` and `feed_grow` keep each feed `Caught` from the
-first page to the last while the replicator's graph grows; this theorem takes
-the last step, from `caught_sync` and `feeds_cover`. -/
-theorem feed_converges {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
-    (hr : RootedMatches s.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
-    (hgiv : ∀ l ∈ s.given, g.has env l = true)
-    (bookmark : Specification → List Nat) (D : List FactId)
-    (hcaught : ∀ f ∈ buildFeeds s, Caught (f.tuples (g ++ B) env) (bookmark f) D)
-    (hsync : ∀ f ∈ buildFeeds s, IsPage (f.tuples (g ++ B) env) [] (bookmark f))
-    (hheld : ∀ id ∈ D, Outside B id) :
-    ∀ r, r ∈ s.read g env ↔ r ∈ s.read (g ++ B) env :=
-  feeds_cover hwf hd hr hf henv hgiv fun id hid => by
-    obtain ⟨f, hf, hid⟩ := List.mem_flatMap.mp hid
-    obtain ⟨t, ht, hid⟩ := List.mem_flatten.mp hid
-    exact hheld id (caught_sync (hcaught f hf) (hsync f hf) t ht id hid)
 
 end JinagaSpec

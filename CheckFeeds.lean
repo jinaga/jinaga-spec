@@ -6,208 +6,111 @@ import JinagaSpec.FeedCases
 # Randomized check of feeds
 
 `lake exe check-feeds [seed] [reuse]` checks, on random well-formed
-specifications and graphs:
+specifications and graphs, the requirements of chapter 12:
 
-* **shape** — every feed has only path conditions (`buildFeeds_paths`), and
-  binds each of its labels once.
+* **shape** — every feed has path conditions, and negative conditions over
+  matches with only path conditions (`buildFeeds_feedShape`), and binds each of
+  its labels once.
 * **antitone** — a tuple a feed finds after a fresh batch arrives, all of whose
-  facts were there before, was a tuple before (`feed_antitone`). This is what
-  lets a replicator page a feed by a bookmark.
+  facts were there before, was a tuple before (`feed_antitone`): tuples are
+  never inserted behind a bookmark.
 * **cover** — a replica that holds the givens and every fact the feeds deliver,
   with their predecessors, and any other facts of the graph it likes, reads
-  what the replicator reads (`feeds_cover`).
+  what the replicator reads.
+* **deferral** — a new client is not sent the details of an entity that is
+  excluded and whose exclusion nothing has cancelled.
 
-Each mutant changes one rule of `levelFeeds`. Every one must be caught by one
+Each mutant changes one rule of `buildFeeds`. Every one must be caught by one
 of the checks, or the check is not testing that rule. The mutants are one
-builder, `levelFeedsWith`, parameterized over the rule that varies;
-`levelFeeds` itself stays as the specification reads.
+builder, `buildFeedsWith`, parameterized over the rule that varies;
+`buildFeeds` itself stays as the specification reads, and is checked to make the
+same feeds as the mutant family with no rule changed.
 -/
 open JinagaSpec Build
 
-/-- Which rule of `levelFeeds` a mutant changes. -/
+/-- Which rule of `buildFeeds` a mutant changes. -/
 structure Mutant where
-  /-- Which positive conditions join their level. -/
-  lift : List Match → Bool := fun _ => true
-  /-- A negative condition's feed starts after the levels that enclose it. -/
-  keepsPrefix : Bool := true
-  /-- Negative conditions inside negative ones have feeds. -/
-  nested : Bool := true
-  /-- A feed keeps its negative conditions as filters. -/
-  filters : Bool := false
+  /-- Each negative condition emits an excluding feed. -/
+  excludes : Bool := true
+  /-- An excluding feed stops at its condition's level. -/
+  excludingStops : Bool := true
+  /-- A feed is filtered by each negative condition. -/
+  filters : Bool := true
+  /-- A filter is the condition's level, rather than the whole condition. -/
+  filtersLevel : Bool := true
+  /-- Each negative condition is restored through a canceller's level. -/
+  restores : Bool := true
+  /-- A restoring feed drops the negative conditions of the fact it restores. -/
+  restoringDrops : Bool := true
   /-- Which feeds are kept. -/
   keep : Specification → Bool := traversesSuccessors
 
-partial def levelFeedsWith (mu : Mutant) (depth : Nat) (pre ms : List Match) : List (List Match) :=
-  let flat := flattenMatches mu.lift ms
-  let here := pre ++ if mu.filters then flat else flat.map Match.paths
-  here :: if !mu.nested && depth > 0 then [] else
-    (flat.flatMap Match.negatives).flatMap (levelFeedsWith mu (depth + 1) (if mu.keepsPrefix then here else []))
-
-def buildFeedsWith (mu : Mutant) (s : Specification) : List Specification :=
-  ((levelFeedsWith mu 0 [] s.matchList).map fun ms =>
-    { given := usedGivens s.given ms, matchList := ms, projection := .composite [] }).filter mu.keep
-
-def deliveredWith (mu : Mutant) (s : Specification) (g : Graph) (env : Env) : List FactId :=
-  (buildFeedsWith mu s).flatMap fun f => (f.tuples g env).flatten
-
-def mutants : List (String × Mutant) := [
-  ("a negative condition's feed loses the levels that enclose it", { keepsPrefix := false }),
-  ("negative conditions inside negative ones have no feed", { nested := false }),
-  ("positive conditions stay conditions, so no negative condition inside one has a feed", { lift := fun _ => false }),
-  ("a feed keeps its negative conditions as filters", { filters := true }),
-  ("only feeds whose first match walks to a successor are kept",
-    { keep := fun f => match f.matchList with
-        | m :: _ => m.conditions.any fun | .path pc => !pc.rolesLeft.isEmpty | _ => false
-        | [] => false })]
-
-/-! ## The filtered algorithm, for comparison
-
-The corrected ordinary, excluding and restoring feeds of chapter 12, as the
-first port wrote them (commit 374bd83). Kept here to check the deferral
-requirement against while the specification's own definition is redesigned. -/
-
-namespace Filtered
-inductive Work where
-  /-- Matches to add to the feed, in order. -/
-  | matches (ms : List Match)
-  /-- Conditions still waiting on the match whose unknown is `label`, which the
-  feed already holds. -/
-  | conditions (label : Name) (cs : List Condition)
-  /-- The end of an excluding branch of this parity. -/
-  | stop (parity : Nat)
-
 mutual
-  /-- The matches of a negative condition as a feed applies it: each match with
-  only its path conditions, followed by the matches of every positive condition
-  inside it, at any depth. Negative conditions inside it are dropped. -/
-  def stripped : List Match → List Match
-    | [] => []
-    | .mk u cs :: rest => .mk u (cs.filter (·.isPath)) :: (strippedPositives cs ++ stripped rest)
-
-  def strippedPositives : List Condition → List Match
-    | [] => []
-    | .existential true ms :: cs => stripped ms ++ strippedPositives cs
-    | _ :: cs => strippedPositives cs
-end
-
-/-- Add to the feed's givens each of the specification's givens that one of
-these path conditions names and the feed does not have yet, in order. -/
-def useGivens (givens : List Label) (feed : List Label) (cs : List Condition) : List Label :=
-  cs.foldl (fun feed c => match c with
-    | .path pc => match givens.find? (·.name == pc.labelRight) with
-      | some l => if feed.contains l then feed else feed ++ [l]
-      | none => feed
-    | .existential .. => feed) feed
-
-/-- Add a match to the feed, with only its path conditions. -/
-def withMatch (givens : List Label) (feed : Specification) : Match → Specification
-  | .mk u cs =>
-    let paths := cs.filter (·.isPath)
-    { feed with given := useGivens givens feed.given paths, matchList := feed.matchList ++ [.mk u paths] }
-
-/-- Attach a condition to the last match of the feed whose unknown is `label`. -/
-def attach (label : Name) (c : Condition) : List Match → List Match
-  | [] => []
-  | .mk u cs :: rest =>
-    if (rest.map (·.unknown.name)).contains label then .mk u cs :: attach label c rest
-    else if u.name == label then .mk u (cs ++ [c]) :: rest
-    else .mk u cs :: rest
-
-/-- Attach a negative condition, stripped, to the match whose unknown is `label`. -/
-def withCondition (givens : List Label) (feed : Specification) (label : Name) (ms : List Match) : Specification :=
-  let ms := stripped ms
-  { feed with
-    given := useGivens givens feed.given (ms.flatMap (·.conditions))
-    matchList := attach label (.existential false ms) feed.matchList }
-
-/-- What follows the end of the excluding branch of parity `p`. -/
-def afterStop (p : Nat) : List Work → List Work
-  | [] => []
-  | .stop q :: w => if q == p then w else afterStop p w
-  | _ :: w => afterStop p w
-
-/-- The feed with the negative conditions of its matches from `base` on
-removed: those an excluding branch attached to the matches it added. -/
-def unattach (base : Nat) (feed : Specification) : Specification :=
-  { feed with matchList := feed.matchList.take base ++ (feed.matchList.drop base).map Match.paths }
-
-/-- The feeds that start from `feed`, at nesting depth `parity`, with `work`
-still to match. In an excluding feed, `base` counts the matches it began with:
-those before the condition it follows. -/
-partial def run (givens : List Label) (feed : Specification) (parity base : Nat) : List Work → List Specification
-  | [] => [feed]
-  | .stop p :: w => if p == parity then [feed] else run givens feed parity base w
-  | .matches [] :: w => run givens feed parity base w
-  | .matches (.mk u cs :: ms) :: w =>
-    run givens (withMatch givens feed (.mk u cs)) parity base (.conditions u.name cs :: .matches ms :: w)
-  | .conditions _ [] :: w => run givens feed parity base w
-  | .conditions l (.path _ :: cs) :: w => run givens feed parity base (.conditions l cs :: w)
-  | .conditions l (.existential true ms :: cs) :: w =>
-    run givens feed parity base (.matches ms :: .conditions l cs :: w)
-  | .conditions l (.existential false ms :: cs) :: w =>
-    let rest := .conditions l cs :: w
-    -- An excluding branch follows the condition's matches and stops at their
-    -- end. A restoring branch shows that the fact its excluding feed follows
-    -- is cancelled, which any one of that fact's negative conditions does. So
-    -- it drops the conditions the excluding feed attached, and skips the rest
-    -- of the excluded condition, going on with what follows it.
-    let branch := if parity % 2 == 0
-      then run givens feed (parity + 1) feed.matchList.length (.matches ms :: .stop (parity + 1) :: rest)
-      else run givens (unattach base feed) (parity + 1) base (.matches ms :: afterStop parity rest)
-    branch ++ run givens (withCondition givens feed l ms) parity base rest
-
-def buildFeeds (s : Specification) : List Specification :=
-  (run s.given { given := [], matchList := [], projection := .composite [] } 0 0 [.matches s.matchList]).filter
-    traversesSuccessors
-
-def delivered (s : Specification) (g : Graph) (env : Env) : List FactId :=
-  (buildFeeds s).flatMap fun f => (f.tuples g env).flatten
-
-end Filtered
-
-/-! ## Feeds derived from the requirements
-
-Walk a level's matches, each joined with its positive conditions. At each
-negative condition, every feed so far emits an excluding feed (itself, then the
-condition's level), and continues both filtered by the condition and restored
-through the condition's level and the level of one of its negative conditions.
-Returns the positive feeds and the excluding feeds. -/
-
-mutual
-  partial def derivedLevel (pre : List Match) : List Match → List (List Match) × List (List Match)
+  partial def levelWith (mu : Mutant) (pre : List Match) : List Match → List (List Match) × List (List Match)
     | [] => ([pre], [])
     | m :: rest =>
-      let (units, exc) := derivedUnit pre m
-      let rs := units.map (derivedLevel · rest)
+      let (units, exc) := unitWith mu pre m
+      let rs := units.map (levelWith mu · rest)
       (rs.flatMap (·.1), exc ++ rs.flatMap (·.2))
 
-  partial def derivedUnit (pre : List Match) (m : Match) : List (List Match) × List (List Match) := Id.run do
-    let unit := flatten [m]
-    let negs := unit.flatMap fun x => x.negatives.map fun ns => (x.unknown.name, ns)
-    let mut pos := [pre ++ unit.map Match.paths]
+  partial def unitWith (mu : Mutant) (pre : List Match) (m : Match) : List (List Match) × List (List Match) := Id.run do
+    let mut pos := [pre ++ (flatten [m]).map Match.paths]
     let mut exc := []
-    for (host, ns) in negs do
-      let level := (flatten ns).map Match.paths
+    for (host, ns) in unitNegatives m do
+      let lvl := level ns
+      let chain := if mu.restoringDrops then lvl
+        else (flatten ns).map fun | .mk u cs => .mk u (cs.filterMap fun
+          | .path pc => some (.path pc)
+          | .existential false ms => some (.existential false (level ms))
+          | _ => none)
       let mut next := []
       for P in pos do
-        exc := exc ++ [P ++ level]
-        next := next ++ [Filtered.attach host (.existential false level) P]
-        for x in flatten ns do
-          for ns' in x.negatives do
-            let (rp, re) := derivedLevel (P ++ level) ns'
+        if mu.excludes then
+          if mu.excludingStops then exc := exc ++ [P ++ lvl] else next := next ++ [P ++ lvl]
+        next := next ++ [if mu.filters then attach host (.existential false (if mu.filtersLevel then lvl else ns)) P else P]
+        if mu.restores then
+          for ns' in cancellers ns do
+            let (rp, re) := levelWith mu (P ++ chain) ns'
             next := next ++ rp
             exc := exc ++ re
       pos := next
     return (pos, exc)
 end
 
-def derivedFeeds (s : Specification) : List Specification :=
-  let (pos, exc) := derivedLevel [] s.matchList
-  ((pos ++ exc).map fun ms => { given := usedGivens s.given ms, matchList := ms, projection := .composite [] }).filter
-    traversesSuccessors
+def toFeeds (s : Specification) (keep : Specification → Bool) (Fs : List (List Match)) : List Specification :=
+  (Fs.map fun ms => ({ given := usedGivens s.given ms, matchList := ms, projection := .composite [] } : Specification)).filter keep
 
-def derivedDelivered (s : Specification) (g : Graph) (env : Env) : List FactId :=
-  (derivedFeeds s).flatMap fun f => (f.tuples g env).flatten
+def buildFeedsWith (mu : Mutant) (s : Specification) : List Specification :=
+  let (pos, exc) := levelWith mu [] s.matchList
+  toFeeds s mu.keep (pos ++ exc)
+
+def deliveredWith (mu : Mutant) (s : Specification) (g : Graph) (env : Env) : List FactId :=
+  (buildFeedsWith mu s).flatMap fun f => (f.tuples g env).flatten
+
+def mutants : List (String × Mutant) := [
+  ("no excluding feeds", { excludes := false }),
+  ("an excluding feed goes on with the rest of the level", { excludingStops := false }),
+  ("no filters", { filters := false }),
+  ("a filter is the whole condition", { filtersLevel := false }),
+  ("no restoring feeds", { restores := false }),
+  ("a restoring feed keeps the negative conditions of the fact it restores", { restoringDrops := false }),
+  ("only feeds whose first match walks to a successor are kept",
+    { keep := fun f => match f.matchList with
+        | m :: _ => m.conditions.any fun | .path pc => !pc.rolesLeft.isEmpty | _ => false
+        | [] => false })]
+
+/-! ## Levels, for comparison
+
+The feeds of 13daae9: one per level, with no filters. They cover the
+specification, but a new client downloads the details of every excluded entity. -/
+
+partial def levels (pre ms : List Match) : List (List Match) :=
+  let flat := flatten ms
+  let here := pre ++ flat.map Match.paths
+  here :: (flat.flatMap Match.negatives).flatMap (levels here)
+
+def levelsDelivered (s : Specification) (g : Graph) (env : Env) : List FactId :=
+  (toFeeds s traversesSuccessors (levels [] s.matchList)).flatMap fun f => (f.tuples g env).flatten
 
 /-! ## Deferral
 
@@ -287,15 +190,19 @@ def newClientFacts (s : Specification) (g : Graph) (env : Env) (D : List FactId)
 def measureDownload : IO Unit := do
   let g := eventsGraph 50 10
   let env := eventsSpec.bindGivens [0]
-  let levels := newClientFacts eventsSpec g env (delivered eventsSpec g env)
-  let filtered := newClientFacts eventsSpec g env (Filtered.delivered eventsSpec g env)
-  let derived := newClientFacts eventsSpec g env (derivedDelivered eventsSpec g env)
+  let levels := newClientFacts eventsSpec g env (levelsDelivered eventsSpec g env)
+  let feeds := newClientFacts eventsSpec g env (delivered eventsSpec g env)
   let results := (eventsSpec.read g env).length
-  IO.println s!"new client, 50 events of 10 names, 30 deleted, 10 of those restored: graph {g.length} facts, {results} results; levels download {levels}, filtered {filtered}, derived {derived}"
+  IO.println s!"new client, 50 events of 10 names, 30 deleted, 10 of those restored: graph {g.length} facts, {results} results; levels download {levels}, feeds {feeds}"
+
 
 /-! ## The checks -/
 
-def pathsOnly (ms : List Match) : Bool := ms.all (·.conditions.all (·.isPath))
+def feedShape (ms : List Match) : Bool :=
+  ms.all fun m => m.conditions.all fun
+    | .path _ => true
+    | .existential false ns => ns.all (·.conditions.all (·.isPath))
+    | .existential true _ => false
 
 def coverHolds (s : Specification) (g : Graph) (env : Env) (D extra : List FactId) : Bool :=
   sameSet (s.read (replica s g env D extra) env) (s.read g env)
@@ -310,24 +217,23 @@ structure Tally where
   graphs : Nat := 0
   feeds : Nat := 0
   facts : Nat := 0
-  tuples : Nat := 0
   shape : Nat := 0
   antitone : Nat := 0
   cover : Nat := 0
-  coverFiltered : Nat := 0
-  deferLevels : Nat := 0
-  deferFiltered : Nat := 0
-  deferDerived : Nat := 0
-  coverDerived : Nat := 0
-  antitoneDerived : Nat := 0
-  derivedFeedCount : Nat := 0
-  filteredFeedCount : Nat := 0
-  firstDefer : Option String := none
+  defer : Nat := 0
   first : Option String := none
 
 def report (s : Specification) (g : Graph) (env : Env) (what : String) : String :=
   s!"{what}\n{describeSpecification s}\ngraph: {g.map fun f => (f.id, f.type, f.predecessors)}\n" ++
     s!"givens: {s.given.map fun l => (l.name, env l.name)}"
+
+/-- A mutant is caught on a graph when a replica of its feeds reads something
+else, a tuple of one of its feeds appears behind a bookmark, or it sends a new
+client the details of an excluded entity. -/
+def caughtOn (mu : Mutant) (s : Specification) (G : Graph) (env : Env) (B : List Fact) (extra : List FactId) : Bool :=
+  !coverHolds s G env (deliveredWith mu s G env) extra ||
+    (buildFeedsWith mu s).any (fun f => !antitoneHolds f G B env) ||
+    deferViolations s G env (buildFeedsWith mu s) > 0
 
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
@@ -335,23 +241,22 @@ def main (args : List String) : IO UInt32 := do
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
   let mut t : Tally := {}
   let mut caught : List Nat := mutants.map fun _ => 0
-  -- The production builder is the mutant family with no rule changed.
-  for c in feedCases do
-    unless levelFeedsWith {} 0 [] c.spec.matchList == levelFeeds [] c.spec.matchList do
-      throw <| IO.userError s!"levelFeedsWith differs from levelFeeds on {c.name}"
-  -- The named cases: each holds on its own graph, with and without every other
-  -- fact of the graph held as well.
   for c in feedCases do
     unless isWellFormed c.spec do
       throw <| IO.userError s!"feed case {c.name} is not well-formed"
+    -- The production builder makes the mutant family's feeds, with no rule changed.
+    unless sameSet ((buildFeeds c.spec).map (·.matchList)) ((buildFeedsWith {} c.spec).map (·.matchList)) do
+      throw <| IO.userError s!"buildFeeds differs from the mutant family on {c.name}"
     let all := c.graph.map (·.id)
     for extra in [[], all] do
       unless coverHolds c.spec c.graph c.env (delivered c.spec c.graph c.env) extra do
         t := { t with cover := t.cover + 1 }
         if t.first.isNone then t := { t with first := some (report c.spec c.graph c.env s!"cover, case {c.name}, extra {extra}") }
+    if deferViolations c.spec c.graph c.env (buildFeeds c.spec) > 0 then
+      t := { t with defer := t.defer + 1 }
+      if t.first.isNone then t := { t with first := some (report c.spec c.graph c.env s!"deferral, case {c.name}") }
     caught := (caught.zip mutants).map fun (n, (_, mu)) =>
-      if [[], all].any (fun extra => !coverHolds c.spec c.graph c.env (deliveredWith mu c.spec c.graph c.env) extra)
-      then n + 1 else n
+      if [[], all].any (fun extra => caughtOn mu c.spec c.graph c.env [] extra) then n + 1 else n
   for _ in [0:600] do
     let (s, g) := (if t.specs % 2 == 0 then genFeedSpec else genSpec false 3 reuse).run gen
     gen := g
@@ -359,10 +264,12 @@ def main (args : List String) : IO UInt32 := do
       throw <| IO.userError s!"the generator made a specification that is not well-formed:\n{describeSpecification s}"
     t := { t with specs := t.specs + 1 }
     let feeds := buildFeeds s
+    unless sameSet (feeds.map (·.matchList)) ((buildFeedsWith {} s).map (·.matchList)) do
+      throw <| IO.userError s!"buildFeeds differs from the mutant family:\n{describeSpecification s}"
     t := { t with feeds := t.feeds + feeds.length }
     for f in feeds do
       let names := f.matchList.map (·.unknown.name)
-      unless pathsOnly f.matchList && (reuse || names.eraseDups.length == names.length) do
+      unless feedShape f.matchList && (reuse || names.eraseDups.length == names.length) do
         t := { t with shape := t.shape + 1 }
         if t.first.isNone then t := { t with first := some s!"shape\n{describeSpecification s}\nfeed:\n{describeSpecification f}" }
     let mut found := mutants.map fun _ => false
@@ -377,44 +284,27 @@ def main (args : List String) : IO UInt32 := do
       t := { t with graphs := t.graphs + 1 }
       let D := delivered s G env
       t := { t with facts := t.facts + D.eraseDups.length }
-      t := { t with tuples := t.tuples + (feeds.map fun f => (f.tuples G env).length).sum }
       for f in feeds do
         unless antitoneHolds f G B env do
           t := { t with antitone := t.antitone + 1 }
           if t.first.isNone then t := { t with first := some (report s G env s!"antitone, batch {B.map fun f => (f.id, f.type, f.predecessors)}") }
-      t := { t with deferLevels := t.deferLevels + deferViolations s G env feeds }
-      let dv := deferViolations s G env (Filtered.buildFeeds s)
-      t := { t with deferFiltered := t.deferFiltered + dv }
-      if dv > 0 && t.firstDefer.isNone then
-        t := { t with firstDefer := some (report s G env "deferral (filtered)" ++ "\nfeeds:\n" ++
-          String.intercalate "\n" ((Filtered.buildFeeds s).map describeSpecification)) }
-      t := { t with deferDerived := t.deferDerived + deferViolations s G env (derivedFeeds s) }
-      t := { t with derivedFeedCount := t.derivedFeedCount + (derivedFeeds s).length,
-                    filteredFeedCount := t.filteredFeedCount + (Filtered.buildFeeds s).length }
-      unless coverHolds s G env (derivedDelivered s G env) extra do
-        t := { t with coverDerived := t.coverDerived + 1 }
-      for f in derivedFeeds s do
-        unless antitoneHolds f G B env do
-          t := { t with antitoneDerived := t.antitoneDerived + 1 }
-      unless coverHolds s G env (Filtered.delivered s G env) extra do
-        t := { t with coverFiltered := t.coverFiltered + 1 }
       unless coverHolds s G env D extra do
         t := { t with cover := t.cover + 1 }
         if t.first.isNone then t := { t with first := some (report s G env s!"cover, extra {extra}") }
-      found := (found.zip mutants).map fun (was, (_, mu)) =>
-        was || !coverHolds s G env (deliveredWith mu s G env) extra ||
-          (buildFeedsWith mu s).any fun f => !antitoneHolds f G B env
+      unless reuse do
+        if deferViolations s G env feeds > 0 then
+          t := { t with defer := t.defer + 1 }
+          if t.first.isNone then t := { t with first := some (report s G env "deferral") }
+      found := (found.zip mutants).map fun (was, (_, mu)) => was || caughtOn mu s G env B extra
     caught := (caught.zip found).map fun (n, b) => if b then n + 1 else n
   measureDownload
-  IO.println s!"specifications {t.specs}, graphs {t.graphs}, feeds {t.feeds}, facts delivered {t.facts}, tuples {t.tuples}"
+  IO.println s!"specifications {t.specs}, graphs {t.graphs}, feeds {t.feeds}, facts delivered {t.facts}"
   IO.println s!"shape: {t.shape} feeds wrong"
   IO.println s!"antitone: {t.antitone} wrong"
   IO.println s!"cover: {t.cover} wrong"
-  IO.println s!"filtered: cover {t.coverFiltered} wrong; deferral violations: levels {t.deferLevels}, filtered {t.deferFiltered}"
-  IO.println s!"derived: cover {t.coverDerived} wrong, antitone {t.antitoneDerived} wrong, deferral {t.deferDerived} violations; feeds {t.derivedFeedCount / 30} vs filtered {t.filteredFeedCount / 30}"
+  IO.println s!"deferral: {t.defer} wrong"
   for ((label, _), n) in mutants.zip caught do
     IO.println s!"  mutant \"{label}\": caught on {n} of {t.specs + feedCases.length} specifications"
-  if let some r := t.firstDefer then IO.println s!"\nFIRST DEFERRAL VIOLATION\n{r}"
   match t.first with
   | none => return (if caught.any (· == 0) then 1 else 0)
   | some r => IO.println s!"\nFIRST FAILURE\n{r}"; return 1

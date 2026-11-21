@@ -62,7 +62,7 @@
  {"results": [[1, 5]],
   "feeds":
   [{"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -72,30 +72,6 @@
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
          "labelRight": "t"}]},
-      {"unknown": {"type": "Name", "name": "n"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]}],
-     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
-   {"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n}\n",
-    "specification":
-    {"projection": {"type": "composite", "components": []},
-     "matches":
-     [{"unknown": {"type": "Event", "name": "e"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
-         "labelRight": "t"}]},
-      {"unknown": {"type": "Name", "name": "n"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]},
       {"unknown": {"type": "Delete", "name": "d"},
        "conditions":
        [{"type": "path",
@@ -104,7 +80,34 @@
          "labelRight": "e"}]}],
      "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
    {"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    x: Restore [\n        x->delete: Delete = d\n    ]\n}\n",
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n        !E {\n            d: Delete [\n                d->event: Event = e\n            ]\n        }\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "Event", "name": "e"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+         "labelRight": "t"},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "Delete", "name": "d"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+             "labelRight": "e"}]}],
+         "exists": false}]},
+      {"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]}],
+     "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
+   {"text":
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    x: Restore [\n        x->delete: Delete = d\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -114,12 +117,6 @@
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
          "labelRight": "t"}]},
-      {"unknown": {"type": "Name", "name": "n"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]},
       {"unknown": {"type": "Delete", "name": "d"},
        "conditions":
        [{"type": "path",
@@ -131,10 +128,16 @@
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Delete", "name": "delete"}],
-         "labelRight": "d"}]}],
+         "labelRight": "d"}]},
+      {"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]}],
      "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}},
    {"text":
-    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    u: Undo [\n        u->delete: Delete = d\n    ]\n}\n",
+    "(t: Tenant) {\n    e: Event [\n        e->tenant: Tenant = t\n    ]\n    d: Delete [\n        d->event: Event = e\n    ]\n    u: Undo [\n        u->delete: Delete = d\n    ]\n    n: Name [\n        n->event: Event = e\n    ]\n}\n",
     "specification":
     {"projection": {"type": "composite", "components": []},
      "matches":
@@ -144,12 +147,6 @@
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
          "labelRight": "t"}]},
-      {"unknown": {"type": "Name", "name": "n"},
-       "conditions":
-       [{"type": "path",
-         "rolesRight": [],
-         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
-         "labelRight": "e"}]},
       {"unknown": {"type": "Delete", "name": "d"},
        "conditions":
        [{"type": "path",
@@ -161,8 +158,14 @@
        [{"type": "path",
          "rolesRight": [],
          "rolesLeft": [{"predecessorType": "Delete", "name": "delete"}],
-         "labelRight": "d"}]}],
+         "labelRight": "d"}]},
+      {"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Event", "name": "event"}],
+         "labelRight": "e"}]}],
      "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}}],
   "delivered": [1, 2, 3, 4, 5]},
  "description":
- "A delete that is both restored and undone. jinaga.js's restoring feed for the restore also asks the delete to have no undo, and the one for the undo no restore, so neither delivers the name."}
+ "A delete that is both restored and undone. A restoring feed drops the other negative conditions of the delete it restores. jinaga.js's restoring feed for the restore also asks the delete to have no undo, and the one for the undo no restore, so neither delivers the name."}
