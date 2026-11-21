@@ -1093,7 +1093,7 @@ that. The two-level case is not separately proved.
 The second withholds the name once every revocation is undone. The third
 defers exactly with a nested negative condition, and a tuple of it appears,
 binding no new fact, when the last unrevoke arrives. The check fails if any
-feed set is all three. The proof is about 390 lines, and renaming ids
+feed set is all three. The proof is about 400 lines, and renaming ids
 (`Proofs/Rename.lean`, which holds for any specification) about 95 more. The
 count is about 60 lines, and swapping two revokes about 70. The rest
 evaluates `contested` on a graph with a variable number of revokes, one level

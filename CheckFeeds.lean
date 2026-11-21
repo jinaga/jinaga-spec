@@ -304,7 +304,9 @@ def exactOn (Fs : List Specification) (N : Nat) : Bool × Bool × Bool := Id.run
   let all := List.range N
   let full := Contested.graph N all ++ [Contested.name]
   let mut consistent := coverHolds contested full env (deliver Fs full env) []
-  let mut appendOnly := Fs.all fun f => antitoneHolds f (Contested.graph N all) [Contested.name] env
+  -- Only batches whose ids increase, as `AppendOnly` requires: the name (id 4)
+  -- arriving after the full graph would not be one.
+  let mut appendOnly := true
   let mut exact := true
   for i in all do
     let G := Contested.graph N (all.erase i) ++ [Contested.name]
