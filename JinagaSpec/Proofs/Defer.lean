@@ -552,9 +552,9 @@ nothing has tried to cancel: the names of a deleted menu item, while no restore
 of its delete exists. Exactness is not possible: `restore-revoked-and-unrevoked`
 (`FeedCases.lean`) is an entity still excluded whose details a feed must carry,
 because telling it apart needs a nested negative condition. -/
-theorem feeds_defer {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
+theorem flatFeeds_defer {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
     {a b : List Match} {m : Match} (hs : s.matchList = a ++ m :: b) (G : Graph) (env : Env) :
-    ∀ f ∈ buildFeeds s, (∃ y ∈ names (flatten b), y ∈ names f.matchList) →
+    ∀ f ∈ flatFeeds s, (∃ y ∈ names (flatten b), y ∈ names f.matchList) →
       ∀ τ ∈ evalMatches G env f.matchList, ∀ ns ∈ negativesOf [m], Passes G τ ns := by
   intro f hf ⟨y, hyb, hyf⟩ τ hτ ns hns
   obtain ⟨hf, -⟩ := List.mem_filter.mp hf

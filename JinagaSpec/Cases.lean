@@ -189,7 +189,7 @@ def wellFormedCases : List WellFormedCase :=
     description := "A composite projection names a given and a top-level unknown."
     source := "the baseline"
     spec := spec [("p1", "Employee")] simple
-      (.composite [{ name := "employee", label := "p1" }, { name := "office", label := "u1" }])
+      (.composite [.fact "employee" "p1", .fact "office" "u1"])
     violates := [] },
   { name := "path-joins-an-undefined-label"
     description := "A path condition joins a label nothing declares."
@@ -284,7 +284,7 @@ def wellFormedCases : List WellFormedCase :=
     description := "One component of a composite projection names a label nothing declares."
     source := "docs/contracts.md: the gap"
     spec := spec [("p1", "Employee")] simple
-      (.composite [{ name := "office", label := "u1" }, { name := "other", label := "nosuch" }])
+      (.composite [.fact "office" "u1", .fact "other" "nosuch"])
     violates := ["projected"] },
   { name := "projection-names-a-nested-unknown"
     description := "The projection names a match declared inside an existential condition, which is not in scope outside it."

@@ -32,7 +32,7 @@ private def eventSpec (cancel : List Condition) : Specification :=
     [unknown "e" "Event" [path [r "tenant" "Tenant"] "t",
       notExists [unknown "d" "Delete" ([path [r "event" "Event"] "e"] ++ cancel)]],
      unknown "n" "Name" [path [r "event" "Event"] "e"]]
-    (.composite [{ name := "event", label := "e" }, { name := "name", label := "n" }])
+    (.composite [.fact "event" "e", .fact "name" "n"])
 
 private def restored : Condition := notExists [unknown "x" "Restore" [path [r "delete" "Delete"] "d"]]
 private def undone : Condition := notExists [unknown "u" "Undo" [path [r "delete" "Delete"] "d"]]

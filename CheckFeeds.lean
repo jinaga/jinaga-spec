@@ -157,7 +157,7 @@ def eventsSpec : Specification :=
       notExists [unknown "d" "Delete" [path [role "event" "Event"] "e",
         notExists [unknown "x" "Restore" [path [role "delete" "Delete"] "d"]]]]],
      unknown "n" "Name" [path [role "event" "Event"] "e"]]
-    (.composite [{ name := "event", label := "e" }, { name := "name", label := "n" }])
+    (.composite [.fact "event" "e", .fact "name" "n"])
 
 /-- `events` events with `history` names each; event `i` is deleted when
 `i % 5 < 3`, and its delete restored when `i % 5 = 0`. -/

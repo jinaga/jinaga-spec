@@ -76,15 +76,22 @@ def Condition.isPath : Condition → Bool
 @[simp] theorem Match.conditions_mk (unknown : Label) (conditions : List Condition) :
     (Match.mk unknown conditions).conditions = conditions := rfl
 
-structure Component where
-  name : Name
-  label : Name
-deriving Repr, DecidableEq
+mutual
+  /-- A projection names a fact, or composes named components. -/
+  inductive Projection where
+    | fact (label : Name)
+    | composite (components : List Component)
 
-inductive Projection where
-  | fact (label : Name)
-  | composite (components : List Component)
-deriving Repr, DecidableEq
+  /-- A component names a fact, or holds a child specification: matches that
+  go on from the parent's, with a projection of their own. -/
+  inductive Component where
+    | fact (name : Name) (label : Name)
+    | specification (name : Name) (matchList : List Match) (projection : Projection)
+end
+
+def Component.name : Component → Name
+  | .fact name _ => name
+  | .specification name .. => name
 
 structure Specification where
   given : List Label

@@ -83,14 +83,55 @@ mutual
     | .existential e ms => e == !(evalMatches g env ms).isEmpty
 end
 
+def Component.labels : Component → List Name
+  | .fact _ label => [label]
+  | .specification .. => []
+
+/-- The labels whose facts a projection names. A child specification names its
+own, in its own results. -/
 def Projection.labels : Projection → List Name
   | .fact label => [label]
-  | .composite components => components.map (·.label)
+  | .composite components => components.flatMap Component.labels
+
+/-- A projection's child specifications: each one's matches and projection. -/
+def Projection.children : Projection → List (List Match × Projection)
+  | .fact _ => []
+  | .composite components => components.filterMap fun
+    | .specification _ ms p => some (ms, p)
+    | .fact .. => none
+
+theorem Projection.sizeOf_children {p : Projection} {c : List Match × Projection} (h : c ∈ p.children) :
+    sizeOf c.2 < sizeOf p := by
+  cases p with
+  | fact => simp [Projection.children] at h
+  | composite cs =>
+    simp only [Projection.children, List.mem_filterMap] at h
+    obtain ⟨x, hx, hc⟩ := h
+    have := List.sizeOf_lt_of_mem hx
+    cases x with
+    | fact => simp at hc
+    | specification n ms q => simp at hc; subst hc; simp at this ⊢; omega
 
 /-- The results of a specification: for each solution, the facts its
 projection names. Results are compared as sets. -/
 def Specification.evaluate (s : Specification) (g : Graph) (env : Env) : List (List (Option FactId)) :=
   (evalMatches g env s.matchList).map fun e => s.projection.labels.map e
+
+/-- A result of a specification with child specifications: the facts its
+projection names, and, for each child specification, its results. -/
+inductive Result where
+  | mk (row : List (Option FactId)) (children : List (List Result))
+
+/-- `r` is a result of the matches `ms` with the projection `p`, read on `g`
+from `env`: some solution projects to its row, and each child specification's
+results are, as a set, exactly those read from that solution. So results are
+compared as sets at every depth. -/
+def Projection.Reads (g : Graph) : Projection → List Match → Env → Result → Prop
+  | p, ms, env, .mk row cs => ∃ σ ∈ evalMatches g env ms, row = p.labels.map σ ∧
+      cs.length = p.children.length ∧
+      ∀ x ∈ p.children.attach.zip cs, ∀ r, r ∈ x.2 ↔ x.1.1.2.Reads g x.1.1.1 σ r
+termination_by p => sizeOf p
+decreasing_by exact Projection.sizeOf_children x.1.2
 
 /-- The label is bound to a fact of `g` of the label's type. -/
 def Graph.has (g : Graph) (env : Env) (l : Label) : Bool :=
@@ -104,6 +145,25 @@ binds a given whether or not its fact is stored, so before the given arrives
 it can find results that a replica would not. -/
 def Specification.read (s : Specification) (g : Graph) (env : Env) : List (List (Option FactId)) :=
   if s.given.all (g.has env) then s.evaluate g env else []
+
+/-- What a replica reads, child specifications included: nothing until every
+given is a fact it holds, as for `read`. -/
+def Specification.Reads (s : Specification) (g : Graph) (env : Env) (r : Result) : Prop :=
+  s.given.all (g.has env) = true ∧ s.projection.Reads g s.matchList env r
+
+/-- The paths from a projection to each of its child specifications, at every
+depth, and to itself: the matches on the way, and the projection reached. -/
+def Projection.paths : Projection → List (List Match × Projection)
+  | p => ([], p) :: p.children.attach.flatMap fun ⟨c, _⟩ => c.2.paths.map fun x => (c.1 ++ x.1, x.2)
+termination_by p => sizeOf p
+decreasing_by exact Projection.sizeOf_children ‹_›
+
+/-- A specification and its child specifications at every depth, each as a
+specification. A child's matches go on from its parent's, so a child
+specification is one with the same givens whose matches are its parent's
+followed by its own. -/
+def Specification.descendants (s : Specification) : List Specification :=
+  s.projection.paths.map fun x => { given := s.given, matchList := s.matchList ++ x.1, projection := x.2 }
 
 /-- Bind the givens, in order, to the facts a caller supplies. -/
 def Specification.bindGivens (s : Specification) (facts : List FactId) : Env :=

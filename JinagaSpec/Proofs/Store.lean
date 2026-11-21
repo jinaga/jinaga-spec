@@ -696,7 +696,7 @@ theorem store_correct (hwf : WellFormed s) (hg : s.given = [g0]) (hord : Ordinar
     have hhead_eq : (hoistAt s before pivot after).head =
         { given := s.given, matchList := before ++ hm,
           projection := .composite ((tailGivenAt s (before ++ hm) tailMatches).map
-            fun l => { name := l.name, label := l.name }) } := by
+            fun l => .fact l.name l.name) } := by
       unfold hoistAt
       simp only [hgenM]
     let tailGiven := tailGivenAt s (before ++ hm) tailMatches

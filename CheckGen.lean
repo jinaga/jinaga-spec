@@ -144,7 +144,7 @@ def genSpec (duplicates : Bool := false) (maxDepth : Nat := 2) (reuse : Bool := 
   let labels := (← repeatGen ((← below 2) + 1) (pick scope))
   let projection := match labels with
     | [l] => Projection.fact l
-    | ls => Projection.composite (ls.map fun l => { name := l, label := l })
+    | ls => Projection.composite (ls.map fun l => .fact l l)
   return { given := givens given, matchList := matchList, projection := projection }
 
 /-- A fact of a type the specification names, with a new id, pointing only into
@@ -237,7 +237,7 @@ def genFeedSpec : Gen Specification := do
   return { given := givens given, matchList := matchList,
            projection := match labels with
              | [l] => .fact l
-             | ls => .composite (ls.map fun l => { name := l, label := l }) }
+             | ls => .composite (ls.map fun l => .fact l l) }
 
 /-- A graph of the types and roles `genFeedSpec` uses. Each fact points to
 one or two facts saved before it. -/
