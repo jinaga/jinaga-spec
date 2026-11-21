@@ -1083,6 +1083,14 @@ defects:
 the excluding feed. It matches every vector and sends no fact the vector's
 feeds withhold. `jinaga.js` misses a result on four of the 19 vectors.
 
+Both are fixed in `jinaga.js`: jinaga/jinaga.js#429 (from #425) joins a positive
+condition into its negative condition's level, and #432 (from #427) restores an
+excluded fact through each of its cancellers with none of the others attached.
+Fixing the first exposed a third case of the same rule, a canceller reached
+through a positive condition on the excluded fact
+(`d [ E { y [ !E { z } ] } !E { u } ]`), which #432 covers too. `jinaga.js`'s
+feeds now cover all 19 vectors.
+
 ### Levels, and why they were set aside
 
 Before the requirements were written down, a simpler algorithm, *levels*, was
@@ -1209,6 +1217,11 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   subscribed through jinaga-server would get no rates for a rehired server.
   `feed-builder.ts` rejects the specification instead (`DistinctLabels`).
   The vector renames the rate `rt`.
+  `jinaga.js` now renames instead (jinaga/jinaga.js#430, from #426): before
+  building feeds, a declaration that repeats a name earlier in its descendant
+  takes the first unused `name2`, `name3`, …, so its feeds meet
+  `DistinctLabels`. The two differ on this input, and that renaming preserves
+  results is not proved here.
 - **A child feed that joins the givens through separate chains has no SQL.**
   In `random-children-1`, the parent reaches the given `p2`. The child reaches
   only `p1`, and a grandchild's positive condition connects the two.
@@ -1223,8 +1236,8 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   label it does not declare passes, and only the text parser catches it. The
   theorems need each descendant `WellFormed`, which `isWellFormedDeep` decides
   (`isWellFormedDeep_iff`). The vectors `child-redeclares-a-given` and
-  `child-joins-an-undefined-label` show it, and `run-vectors.ts` reports
-  jinaga.js's verdict on them as known.
+  `child-joins-an-undefined-label` show it. jinaga/jinaga.js#431 (from #428)
+  fixed it, and `run-vectors.ts` now requires jinaga.js to agree on them.
 
 Review found two places that read a projection's labels and missed a child's.
 `Projection.labels` names only the facts a projection projects. The split's
