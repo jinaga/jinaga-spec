@@ -563,4 +563,269 @@ end
 
 end Complete
 
+/-! ## Delivery moves along agreeing environments -/
+
+section Transfer
+variable {G : Graph} {B : List Fact}
+
+theorem settledOn_agree {L : List Name} {y y' : Env} (hag : Agree L y y') (h : SettledOn B L y) : SettledOn B L y' :=
+  fun x hx id hid => h x hx id (by rw [hag x hx]; exact hid)
+
+/-- Positive delivery at one negative condition, `PD`'s body. -/
+def PDN (G : Graph) (B : List Fact) (σ : Env) (N : List Match) : Prop :=
+  ∀ x ∈ evalMatches G σ (level N), ∀ N' ∈ negativesOf N, ∀ y ∈ evalMatches G x (level N'),
+    ValidL G y N' → SettledOn B (names (level N')) y ∧ PD G B y N'
+
+theorem pd_iff {σ : Env} {ms : List Match} : PD G B σ ms ↔ ∀ N ∈ negativesOf ms, PDN G B σ N := by
+  rw [PD]; rfl
+
+mutual
+  theorem pdn_agree : ∀ (N : List Match) (T : List Name) (σ σ' : Env), ScopedMatches T N → Agree T σ σ' →
+      PDN G B σ N → PDN G B σ' N
+    | N, T, σ, σ', hsc, hag, h => by
+      intro x' hx' N' hN' y' hy' hvy'
+      have hL := scoped_level hsc
+      obtain ⟨x, hx, ax⟩ := evalMatches_agree G _ T σ' σ hL hag.symm x' hx'
+      have hsc' := scoped_negativesOf hsc hN'
+      obtain ⟨y, hy, ay⟩ := evalMatches_agree G _ _ x' x (scoped_level hsc') ax y' hy'
+      have hscN'' : ∀ N'' ∈ negativesOf N', ScopedMatches (T ++ names (level N) ++ names (level N')) N'' :=
+        fun N'' hN'' => scoped_negativesOf hsc' hN''
+      obtain ⟨hon, hpd⟩ := h x hx N' hN' y hy (validL_agree ay hscN'' hvy')
+      refine ⟨settledOn_agree (fun z hz => (ay z (List.mem_append_right _ hz)).symm) hon, ?_⟩
+      exact pd_agree N' _ y y' hscN'' (fun z hz => (ay z hz).symm) hpd
+  termination_by N => (sizeOf N, 1)
+  decreasing_by all_goals (simp_wf; exact Prod.Lex.left _ _ (sizeOf_negativesOf _ ‹_›))
+
+  theorem pd_agree : ∀ (ms : List Match) (T : List Name) (σ σ' : Env), (∀ N ∈ negativesOf ms, ScopedMatches T N) →
+      Agree T σ σ' → PD G B σ ms → PD G B σ' ms
+    | ms, T, σ, σ', hsc, hag, h =>
+      pd_iff.mpr fun N hN => pdn_agree N T σ σ' (hsc N hN) hag (pd_iff.mp h N hN)
+  termination_by ms => (sizeOf ms, 2)
+  decreasing_by all_goals (simp_wf; exact Prod.Lex.left _ _ (sizeOf_negativesOf _ ‹_›))
+end
+
+theorem evd_agree : ∀ (ms : List Match) (T : List Name) (σ σ' : Env), (∀ N ∈ negativesOf ms, ScopedMatches T N) →
+    Agree T σ σ' → EvD G B σ ms → EvD G B σ' ms := by
+  intro ms T σ σ' hsc hag h
+  rw [EvD] at h ⊢
+  intro L1 N L2 hL h1 hN x' hx' hvx'
+  have hNm : N ∈ negativesOf ms := by rw [hL]; simp
+  have hscN := hsc N hNm
+  have h1' : ∀ N0 ∈ L1, evalMatches G σ N0 = [] := fun N0 hN0 =>
+    empty_agree hag.symm (hsc N0 (by rw [hL]; simp [hN0])) (h1 N0 hN0)
+  have hN' : evalMatches G σ N ≠ [] := fun he => hN (empty_agree hag hscN he)
+  obtain ⟨x, hx, ax⟩ := evalMatches_agree G _ T σ' σ (scoped_level hscN) hag.symm x' hx'
+  have hvx : ValidL G x N := validL_agree ax (fun N'' hN'' => scoped_negativesOf hscN hN'') hvx'
+  obtain ⟨hon, hev⟩ := h L1 N L2 hL h1' hN' x hx hvx
+  refine ⟨settledOn_agree (fun z hz => (ax z (List.mem_append_right _ hz)).symm) hon, fun N' hN'' y' hy' => ?_⟩
+  have hsc' := scoped_negativesOf hscN hN''
+  obtain ⟨y, hy, ay⟩ := evalMatches_agree G _ _ x' x (scoped_level hsc') ax y' hy'
+  exact evd_agree N' _ y y' (fun N2 hN2 => scoped_negativesOf hsc' hN2) (fun z hz => (ay z hz).symm) (hev N' hN'' y hy)
+termination_by ms => sizeOf ms
+decreasing_by exact negativesOf_lt ‹_› ‹_›
+
+end Transfer
+
+/-! ## One step of the walk -/
+
+theorem distinct_of_hygieneN {G0 : List Name} {Q : List Match} {negs : List (List Match)} {N : List Match}
+    (h : Hygiene G0 Q negs) (hN : N ∈ negs) : Distinct (G0 ++ names Q) N := by
+  have hw : Within (names Q ++ declaredMatches N) (names Q ++ negs.flatMap declaredMatches) :=
+    Within.append_left _ fun x => count_le_flatMap declaredMatches x hN
+  have hnd := nodup_within hw h.nodup
+  refine ⟨(List.nodup_append.mp hnd).2.1, fun x hx hxS => ?_⟩
+  rcases List.mem_append.mp hxS with hxS | hxS
+  · exact h.ordinary x (mem_within hw (List.mem_append_right _ hx)) hxS
+  · exact (List.nodup_append.mp hnd).2.2 x hxS x hx rfl
+
+section Step
+variable {G : Graph} {env : Env} {Out : List (List Match)}
+
+/-- Passing the first pending negative condition, which can be passed. -/
+theorem walk_step (G0 : List Name) {k : List Match → List (List Match)} {Q N : List Match}
+    {rest : List (List Match)} {τ : Env} (hR : Reached Out k Q (N :: rest)) (h : Hygiene G0 Q (N :: rest))
+    (hQ : Q ≠ []) (hτ : τ ∈ evalMatches G env Q) (hch : Choosable G τ N) :
+    ∃ Q' τ', Reached Out k Q' rest ∧ Hygiene G0 Q' rest ∧ Q' ≠ [] ∧ τ' ∈ evalMatches G env Q' ∧
+      Agree (G0 ++ names Q) τ τ' ∧ (∀ x ∈ names Q, x ∈ names Q') ∧
+      Within (names Q' ++ rest.flatMap declaredMatches) (names Q ++ (N :: rest).flatMap declaredMatches) := by
+  have hwl : Within (names (Q ++ level N)) (names Q ++ (N :: rest).flatMap declaredMatches) := by
+    intro x; have := within_level N x
+    simp only [names_append, List.flatMap_cons, List.count_append] at *; omega
+  have hdisL : ∀ x ∈ names (level N), x ∉ names Q := by
+    rw [names_append] at hwl
+    exact disjoint_of_nodup hwl h.nodup
+  rcases hch with hn | ⟨x, hx, N', hN', y, hy, hvy⟩
+  · have hQf : addLast (.existential false (level N)) Q ≠ [] := fun he =>
+      names_ne_nil hQ (by rw [← names_addLast (.existential false (level N)) Q, he]; rfl)
+    refine ⟨_, τ, hR.filter, hygiene_filter h, hQf, mem_addLast_of hτ hn, fun _ _ => rfl,
+      fun x hx => by rwa [names_addLast], fun x => ?_⟩
+    rw [names_addLast]; simp only [List.flatMap_cons, List.count_append]; omega
+  · have hr := hygiene_restore h hN'
+    have hxQ : x ∈ evalMatches G env (Q ++ level N) := mem_evalMatches_append.mpr ⟨τ, hτ, hx⟩
+    have hscN' := hr.inScope N' (List.mem_singleton_self _)
+    have hchN' : ∀ N'' ∈ negativesOf N', Choosable G y N'' := fun N'' hN'' =>
+      choosable_of_holds (scoped_negativesOf hscN' hN'') (by
+        have := distinct_of_hygiene hr hN''
+        simpa [List.append_assoc] using this) (hvy N'' hN'')
+    obtain ⟨Q'', τ'', c1, -, -⟩ := walk_level (G := G) (env := env) (Out := Out) G0 _ _ N' x y (hR.restore hN') hr hxQ hy hchN'
+    have hgQ : ∀ z ∈ names Q, z ∈ names Q'' := fun z hz =>
+      c1.grows z (by rw [names_append]; exact List.mem_append_left _ hz)
+    have h2 := hygiene_after_restore h hN' c1.within hgQ
+    refine ⟨Q'', τ'', c1.reached, h2, ne_nil_of_names hQ hgQ, c1.mem, fun z hz => ?_, hgQ, fun z => ?_⟩
+    · rcases List.mem_append.mp hz with hz | hz
+      · exact agree_outside hτ c1.mem (fun w hw => h.ordinary w (List.mem_append_left _ hw))
+          (fun w hw => h2.ordinary w (List.mem_append_left _ hw)) z hz
+      · exact (evalMatches_frame hx z fun hm => hdisL z hm hz).symm.trans
+          (c1.agree z (by rw [names_append]; exact List.mem_append_left _ hz))
+    · have := c1.within z; have := within_level N z; have := within_negative hN' z
+      simp only [names_append, List.flatMap_cons, List.count_append] at *; omega
+
+end Step
+
+/-! ## The walk delivers the evidence -/
+
+section Evidence
+variable {G : Graph} {B : List Fact} {env : Env} {Out : List (List Match)}
+
+/-- Moving an evaluation of a level to an environment agreeing on its scope. -/
+theorem level_agree' {S : List Name} {e e' : Env} {N : List Match} (hag : Agree S e e') (hsc : ScopedMatches S N)
+    {x : Env} (hx : x ∈ evalMatches G e (level N)) :
+    ∃ x' ∈ evalMatches G e' (level N), Agree (S ++ names (level N)) x x' :=
+  evalMatches_agree G _ S e e' (scoped_level hsc) hag x hx
+
+mutual
+  theorem evd_level (G0 : List Name) (H : ∀ F ∈ Out, ∀ τ ∈ evalMatches G env F, Settled B τ)
+      (k : List Match → List (List Match)) :
+      ∀ (P ms : List Match) (τP σ : Env), ReachedL Out k P ms → Hygiene G0 P [ms] → τP ∈ evalMatches G env P →
+        σ ∈ evalMatches G τP (level ms) → EvD G B σ ms
+    | P, [], τP, σ, _, _, _, _ => by
+      rw [EvD]; intro L1 N L2 hL; simp [negativesOf, flatten, flattenMatches] at hL
+    | P, m :: rest, τP, σ, hR, h, hτP, hσ => by
+      have hu := hygiene_unit h
+      rw [show m :: rest = [m] ++ rest from rfl, level_append] at hσ
+      obtain ⟨σ1, hσ1, hσr⟩ := mem_evalMatches_append.mp hσ
+      have hσ1P : σ1 ∈ evalMatches G env (P ++ level [m]) := mem_evalMatches_append.mpr ⟨τP, hτP, hσ1⟩
+      have hwr : Within (names (P ++ level [m]) ++ names (level rest)) (names P ++ declaredMatches (m :: rest)) := by
+        intro x; have := within_level [m] x; have := within_level rest x; have := declared_cons m rest x
+        simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+        omega
+      have hdisR := disjoint_of_nodup hwr (by simpa using h.nodup)
+      have hordU : ∀ x ∈ names (P ++ level [m]), x ∉ G0 := fun x hx => hu.ordinary x (List.mem_append_left _ hx)
+      have hagU : Agree (G0 ++ names (P ++ level [m])) σ σ1 := fun x hx =>
+        evalMatches_frame hσr x fun hm => by
+          rcases List.mem_append.mp hx with hx | hx
+          · exact h.ordinary x (by
+              have := mem_within hwr (List.mem_append_right _ hm)
+              simpa using this) hx
+          · exact hdisR x hm hx
+      have hscR : ScopedMatches (G0 ++ names (P ++ level [m])) (level rest) := by
+        have := h.inScope _ (List.mem_singleton_self _)
+        obtain ⟨u, cs⟩ := m
+        refine scoped_level (scopedMatches_mono _ _ _ (fun x hx => ?_) this.2)
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact List.mem_append_right _ (by rw [names_append]; exact List.mem_append_right _ (mem_names_level u cs))
+        · rcases List.mem_append.mp hx with hx | hx
+          · exact List.mem_append_left _ hx
+          · exact List.mem_append_right _ (by rw [names_append]; exact List.mem_append_left _ hx)
+      have hscRN : ∀ N ∈ negativesOf rest, ScopedMatches (G0 ++ names (P ++ level [m]) ++ names (level rest)) N := by
+        intro N hN
+        have := h.inScope _ (List.mem_singleton_self _)
+        obtain ⟨u, cs⟩ := m
+        refine scoped_negativesOf (scopedMatches_mono _ _ _ (fun x hx => ?_) this.2) hN
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact List.mem_append_right _ (by rw [names_append]; exact List.mem_append_right _ (mem_names_level u cs))
+        · rcases List.mem_append.mp hx with hx | hx
+          · exact List.mem_append_left _ hx
+          · exact List.mem_append_right _ (by rw [names_append]; exact List.mem_append_left _ hx)
+      rw [EvD]
+      intro L1 N L2 hL h1 hN x hx hvx
+      rw [show m :: rest = [m] ++ rest from rfl, negativesOf_append] at hL
+      -- Whether the first failing condition is the unit's, or comes after it.
+      have hrest : ∀ a', L1 = negativesOf [m] ++ a' → negativesOf rest = a' ++ N :: L2 →
+          SettledOn B (names (level N)) x ∧ ∀ N' ∈ negativesOf N, ∀ y ∈ evalMatches G x (level N'), EvD G B y N' := by
+        intro a' hL1 hR'
+        have hchU : ∀ N ∈ negativesOf [m], Choosable G σ1 N := fun n hn =>
+          choosable_of_holds (hu.inScope n hn) (distinct_of_hygieneN hu hn)
+            (empty_agree hagU (hu.inScope n hn) (h1 n (by rw [hL1]; exact List.mem_append_left _ hn)))
+        obtain ⟨Q1, τ1, c1⟩ := walk_neg (G := G) (env := env) (Out := Out) G0 _ _ _ _ hR.unit hu
+          (by simp [level_ne_nil]) hσ1P hchU
+        have h2 := hygiene_rest h c1.within c1.grows
+        have hag1 : Agree (G0 ++ names (P ++ level [m])) σ1 τ1 := fun x hx => by
+          rcases List.mem_append.mp hx with hx | hx
+          · exact agree_outside hσ1P c1.mem hordU (fun y hy => h2.ordinary y (List.mem_append_left _ hy)) x hx
+          · exact c1.agree x hx
+        obtain ⟨σ', hσ', ag'⟩ := evalMatches_agree G _ _ σ1 τ1 hscR hag1 σ hσr
+        have hev := evd_level G0 H k Q1 rest τ1 σ' c1.reached h2 c1.mem hσ'
+        have hev' := evd_agree rest _ σ' σ hscRN (fun z hz => (ag' z hz).symm) hev
+        rw [EvD] at hev'
+        exact hev' a' N L2 hR' (fun n hn => h1 n (by rw [hL1]; exact List.mem_append_right _ hn)) hN x hx hvx
+      rcases List.append_eq_append_iff.mp hL with ⟨a', hL1, hR'⟩ | ⟨c', hU, hc'⟩
+      · exact hrest a' hL1 hR'
+      · cases c' with
+        | nil =>
+          simp only [List.append_nil, List.nil_append] at hU hc'
+          exact hrest [] (by simp [hU]) hc'.symm
+        | cons n c'' =>
+          simp only [List.cons_append, List.cons.injEq] at hc'
+          obtain ⟨rfl, -⟩ := hc'
+          have hscN := hu.inScope N (by rw [hU]; simp)
+          obtain ⟨x1, hx1, ax⟩ := level_agree' hagU hscN hx
+          have hvx1 : ValidL G x1 N := validL_agree ax (fun n hn => scoped_negativesOf hscN hn) hvx
+          obtain ⟨hon, hev⟩ := evd_neg G0 H _ _ _ σ1 hR.unit hu (by simp [level_ne_nil]) hσ1P L1 N c'' hU
+            (fun n hn => empty_agree hagU (hu.inScope n (by rw [hU]; simp [hn])) (h1 n hn))
+            (fun he => hN (empty_agree hagU.symm hscN he)) x1 hx1 hvx1
+          refine ⟨settledOn_agree (fun z hz => (ax z (List.mem_append_right _ hz)).symm) hon, fun N' hN' y hy => ?_⟩
+          have hsc' := scoped_negativesOf hscN hN'
+          obtain ⟨y1, hy1, ay⟩ := level_agree' ax hsc' hy
+          exact evd_agree N' _ y1 y (fun n hn => scoped_negativesOf hsc' hn) (fun z hz => (ay z hz).symm)
+            (hev N' hN' y1 hy1)
+  termination_by _ ms => (sizeOf ms, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (apply Prod.Lex.left
+         have := maxSize_lt (b := sizeOf (m :: rest)) (by simp; omega) fun p hp => sizeOf_negativesOf_unit p hp
+         simpa using this)
+      | (apply Prod.Lex.left; omega)
+
+  theorem evd_neg (G0 : List Name) (H : ∀ F ∈ Out, ∀ τ ∈ evalMatches G env F, Settled B τ)
+      (k : List Match → List (List Match)) :
+      ∀ (Q : List Match) (negs : List (List Match)) (τ : Env), Reached Out k Q negs → Hygiene G0 Q negs → Q ≠ [] →
+        τ ∈ evalMatches G env Q → ∀ L1 N L2, negs = L1 ++ N :: L2 → (∀ N0 ∈ L1, evalMatches G τ N0 = []) →
+        evalMatches G τ N ≠ [] → ∀ x ∈ evalMatches G τ (level N), ValidL G x N →
+          SettledOn B (names (level N)) x ∧ ∀ N' ∈ negativesOf N, ∀ y ∈ evalMatches G x (level N'), EvD G B y N'
+    | Q, negs, τ, hR, h, hQ, hτ, [], N, L2, hL, _, _, x, hx, _ => by
+      rw [hL] at hR h
+      have hxQ : x ∈ evalMatches G env (Q ++ level N) := mem_evalMatches_append.mpr ⟨τ, hτ, hx⟩
+      refine ⟨fun z _ id hz => H _ hR.emit x hxQ z id hz, fun N' hN' y hy => ?_⟩
+      exact evd_level G0 H _ _ N' x y (hR.restore hN') (hygiene_restore h hN') hxQ hy
+    | Q, negs, τ, hR, h, hQ, hτ, N0 :: L1, N, L2, hL, h1, hN, x, hx, hvx => by
+      rw [hL] at hR h
+      have hd0 := distinct_of_hygieneN h (List.mem_cons_self ..)
+      have hch := choosable_of_holds (h.inScope N0 (List.mem_cons_self ..)) hd0 (h1 N0 (List.mem_cons_self ..))
+      obtain ⟨Q', τ', hR', h', hQ', hτ', ag, -, -⟩ := walk_step G0 hR h hQ hτ hch
+      have hscIn : ∀ n ∈ L1 ++ N :: L2, ScopedMatches (G0 ++ names Q) n := fun n hn =>
+        h.inScope n (List.mem_cons_of_mem _ hn)
+      have hscN := hscIn N (by simp)
+      obtain ⟨x', hx', ax⟩ := level_agree' ag hscN hx
+      have hvx' : ValidL G x' N := validL_agree ax (fun n hn => scoped_negativesOf hscN hn) hvx
+      obtain ⟨hon, hev⟩ := evd_neg G0 H k Q' (L1 ++ N :: L2) τ' hR' h' hQ' hτ' L1 N L2 rfl
+        (fun n hn => empty_agree ag (hscIn n (by simp [hn])) (h1 n (List.mem_cons_of_mem _ hn)))
+        (fun he => hN (empty_agree ag.symm hscN he)) x' hx' hvx'
+      refine ⟨settledOn_agree (fun z hz => (ax z (List.mem_append_right _ hz)).symm) hon, fun N' hN' y hy => ?_⟩
+      have hsc' := scoped_negativesOf hscN hN'
+      obtain ⟨y', hy', ay⟩ := level_agree' ax hsc' hy
+      exact evd_agree N' _ y' y (fun n hn => scoped_negativesOf hsc' hn) (fun z hz => (ay z hz).symm) (hev N' hN' y' hy')
+  termination_by _ negs => (maxSize negs, negs.length)
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | exact maxSize_lex _ _
+      | (rw [hL]; have := maxSize_lex N0 (L1 ++ N :: L2); simpa using this)
+      | (rw [hL]
+         exact Prod.Lex.left _ _ (Nat.lt_of_lt_of_le (sizeOf_negativesOf _ hN') (le_maxSize (by simp))))
+end
+
+end Evidence
+
 end JinagaSpec
