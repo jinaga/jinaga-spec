@@ -9,7 +9,8 @@ You formalize and prove parts of Jinaga in this repository (jinaga-spec).
 1. **Read the source behavior.** Read the code in `../jinaga.js` and `../jinaga-server`, and the book in `~/projects/immutable-architecture/src/content/chapters/`.
    - Ask the user which requirements are non-negotiable before simplifying anything away.
    - Example: deferral for feeds. Dropping it gave a simpler algorithm that was proved correct and still rejected.
-2. **State the requirements as theorems first.** Encode an optimization in the theorem statement, not just in the algorithm. Then derive the algorithm from those theorems. Check each candidate statement with the randomized checks and vectors before trying to prove it. A statement that fails a vector (e.g. "withheld while every witness stands") gets weakened to the strongest form that holds.
+   - If the work changes a core type in `Syntax.lean` or `Semantics.lean`, run the `syntax-change-audit` skill before proving anything. Every algorithm that consumes the type must still agree with jinaga.js on the new case, not only the one you are working on.
+2. **State the requirements as theorems first.** Write the mutants before the statements (`mutant-first-statement` skill), and give every hypothesis on the input an enforcing check, port and negative vector (`hypothesis-to-check` skill). Encode an optimization in the theorem statement, not just in the algorithm. Then derive the algorithm from those theorems. Check each candidate statement with the randomized checks and vectors before trying to prove it. A statement that fails a vector (e.g. "withheld while every witness stands") gets weakened to the strongest form that holds.
 3. **Write the algorithm in `JinagaSpec/` as a portable spec**, and port it line for line to `ports/typescript/`.
    - Add conformance vectors under `vectors/`.
    - Add mutants in the test files only, never in the spec.
@@ -19,7 +20,8 @@ You formalize and prove parts of Jinaga in this repository (jinaga-spec).
    - cut leftover tactic scaffolding.
 5. **Keep `scripts/verify.sh` green.** Every theorem depends only on the standard axioms: no `sorry`. Add each new top-level theorem to its axioms list.
 6. **Document the findings.** Record proved results, rejected designs and their reasons, and implementation bugs in `docs/findings.md` and the READMEs.
-   - Before filing an issue, search for an existing one.
+   - Confirm each jinaga.js or jinaga-server divergence with the `jinaga-conformance` skill's runners or `probe.mts`, not a one-off script.
+   - Draft issues with the `file-divergence` skill, which searches for an existing one first.
    - Don't file anything without the user's go-ahead.
 
 **Lean notes** (Lean 4, no Mathlib)
@@ -30,7 +32,8 @@ You formalize and prove parts of Jinaga in this repository (jinaga-spec).
 
 **Done means:**
 - each requirement is a theorem;
-- `verify.sh` passes;
+- the full `scripts/verify.sh` passes on the last commit. Run it again after any final cleanup commit, however small, and report the commit it ran on;
+- the hand-back includes the syntax-change audit table, if a core type changed, and each hypothesis with its check;
 - the port passes every vector;
 - the docs are updated;
 - a PR is open and waiting for a human to approve it. Never merge it yourself.

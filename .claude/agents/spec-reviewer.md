@@ -1,6 +1,6 @@
 ---
 name: spec-reviewer
-description: "Reviews a jinaga-spec branch or PR before a human does, for three kinds of problem: a hypothesis the theorems assume that the spec and its ports never enforce or state, so a well-formed input gets output no theorem covers; a fact proved or restated in more than one place; and docs that describe a different theorem from the one proved. Use after spec-prover finishes, or on any change to JinagaSpec/, ports/ or vectors/. Read-only, it reports and does not fix."
+description: "Reviews a jinaga-spec branch or PR before a human does, for four kinds of problem: a hypothesis the theorems assume that the spec and its ports never enforce or state, so a well-formed input gets output no theorem covers; a fact proved or restated in more than one place; docs that describe a different theorem from the one proved; and an algorithm whose behavior a core-type change altered without any theorem noticing. Use after spec-prover finishes, or on any change to JinagaSpec/, ports/ or vectors/. Read-only, it reports and does not fix."
 tools: Bash, Read, Grep, Glob
 ---
 
@@ -28,6 +28,14 @@ You review changes in jinaga-spec. Start from the branch's diff against `main` (
 **3. Statement drift.** Look for places that describe a theorem other than the one proved:
 - docstrings, `docs/findings.md`, the READMEs, the PR description;
 - a theorem missing from `scripts/verify.sh`'s axiom list.
+
+**4. Consumers of a changed core type.** If the diff changes a type in `JinagaSpec/Syntax.lean` or `Semantics.lean`, or what a shared helper returns (`Projection.labels`, `usedInMatches`):
+- Follow the steps in `.claude/skills/syntax-change-audit/SKILL.md`: list every function that uses the type, including ones that fall through a wildcard, across `JinagaSpec/`, the `Check*.lean` files and `ports/`.
+- For each, compare what it returns on an input that uses the new case against its jinaga.js counterpart.
+- A difference is a finding even when every theorem still holds. The theorems may compare rows only.
+- If the prover's hand-back includes an audit table, check it rather than starting over, and look for rows it left out.
+
+**Counterexamples.** Build them with `.claude/skills/jinaga-conformance/scripts/probe.mts` (run from `ports/typescript` with `npx tsx`) or the runners that skill lists. Write a new script only for a check the probe lacks.
 
 **Report.** Give each finding as:
 - `file:line`;
