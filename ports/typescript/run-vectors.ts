@@ -85,9 +85,9 @@ console.log(`\n${tailReadsGivenChecked - tailReadsGivenFailed} of ${tailReadsGiv
 let wellFormedFailed = 0;
 const checkers: [string, (specification: any) => boolean][] = [["reference", isWellFormed]];
 if (wellFormedErrors) checkers.push(["jinaga.js", specification => wellFormedErrors(structuredClone(specification)).length === 0]);
-// jinaga.js's wellFormedErrors does not look inside a child specification
-// (docs/findings.md), so it accepts these. Reported, until it does.
-const jinagaWellFormedMisses = new Set(["child-redeclares-a-given", "child-joins-an-undefined-label"]);
+// The vectors jinaga.js's wellFormedErrors is expected to disagree on. None
+// since jinaga/jinaga.js#431 made it look inside child specifications.
+const jinagaWellFormedMisses = new Set<string>();
 const wellFormedFiles = readdirSync(wellFormedDir).filter(f => f.endsWith(".json")).sort();
 for (const file of wellFormedFiles) {
     const vector = JSON.parse(readFileSync(join(wellFormedDir, file), "utf8"));
