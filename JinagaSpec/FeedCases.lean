@@ -54,6 +54,21 @@ def serversSpec : Specification :=
       .specification "names" [latest "sn" "Name" "server" "Server" "s"] (fact "sn"),
       .specification "rates" [latest "rt" "Rate" "server" "Server" "s"] (fact "rt")])
 
+/-- An event's names, unless its delete stands: a delete stands unless restored,
+a restore unless revoked, and a revoke unless unrevoked. Four levels of negative
+condition, where an exclusion can be contested: a restore revoked twice, one
+revocation undone. No feeds that page by bookmark withhold its names exactly
+(`exact_deferral_impossible`, `Proofs/Contested.lean`). -/
+def contested : Specification :=
+  spec [("t", "Tenant")]
+    [unknown "e" "Event" [path [r "tenant" "Tenant"] "t",
+      notExists [unknown "d" "Delete" [path [r "event" "Event"] "e",
+        notExists [unknown "x" "Restore" [path [r "delete" "Delete"] "d",
+          notExists [unknown "v" "Revoke" [path [r "restore" "Restore"] "x",
+            notExists [unknown "z" "Unrevoke" [path [r "revoke" "Revoke"] "v"]]]]]]]]],
+     unknown "n" "Name" [path [r "event" "Event"] "e"]]
+    (fact "n")
+
 def feedCases : List FeedCase := [
   { name := "not-exists-excludes"
     description := "One notExists. The ordinary feed is filtered by it; the excluding feed delivers the Done that removes a task, and stops."
@@ -102,14 +117,7 @@ def feedCases : List FeedCase := [
   { name := "restore-revoked-and-unrevoked"
     description := "A delete restored, whose restore is revoked twice, one revocation itself undone. The event stays deleted, but the restoring feed through the undone revocation still delivers its name: withholding it would need a nested negative condition, which append-only forbids. Deferral is guaranteed only when no witness of the exclusion has a cancelling fact."
     source := "feeds_defer"
-    spec := spec [("t", "Tenant")]
-      [unknown "e" "Event" [path [r "tenant" "Tenant"] "t",
-        notExists [unknown "d" "Delete" [path [r "event" "Event"] "e",
-          notExists [unknown "x" "Restore" [path [r "delete" "Delete"] "d",
-            notExists [unknown "v" "Revoke" [path [r "restore" "Restore"] "x",
-              notExists [unknown "z" "Unrevoke" [path [r "revoke" "Revoke"] "v"]]]]]]]]],
-       unknown "n" "Name" [path [r "event" "Event"] "e"]]
-      (fact "n")
+    spec := contested
     givens := [("t", 0)]
     graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
       ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Revoke", [("restore", 3)]⟩, ⟨5, "Revoke", [("restore", 3)]⟩,

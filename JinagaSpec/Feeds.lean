@@ -274,9 +274,12 @@ unknowns, in order. These are what a page of the feed names. -/
 def Specification.tuples (f : Specification) (g : Graph) (env : Env) : List (List FactId) :=
   (evalMatches g env f.matchList).map fun e => (f.matchList.map (·.unknown.name)).filterMap e
 
+/-- Every fact the feeds `Fs` deliver on `g`. -/
+def deliver (Fs : List Specification) (g : Graph) (env : Env) : List FactId :=
+  Fs.flatMap fun f => (f.tuples g env).flatten
+
 /-- Every fact the feeds of `s` deliver on `g`. -/
-def delivered (s : Specification) (g : Graph) (env : Env) : List FactId :=
-  (buildFeeds s).flatMap fun f => (f.tuples g env).flatten
+def delivered (s : Specification) (g : Graph) (env : Env) : List FactId := deliver (buildFeeds s) g env
 
 mutual
   /-- Every label the matches declare, at any depth. -/

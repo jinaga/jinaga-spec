@@ -130,6 +130,13 @@ theorem holds_exists {G : Graph} {env : Env} {u : Name} {ms : List Match} :
   simp only [holds]
   cases h : evalMatches G env ms <;> simp
 
+/-- `notExists ms` holds exactly when `ms` has no solution. -/
+theorem holds_notExists {G : Graph} {env : Env} {u : Name} {ms : List Match} :
+    holds G env u (.existential false ms) = true ↔ ∀ σ, σ ∉ evalMatches G env ms := by
+  simp only [holds]
+  cases h : evalMatches G env ms <;> simp
+  exact ⟨_, fun h => (h rfl).elim⟩
+
 /-- Functions that agree on a list's members give the same `flatMap`. -/
 theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g x = h x) :
     l.flatMap g = l.flatMap h := by
