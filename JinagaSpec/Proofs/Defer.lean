@@ -3,11 +3,12 @@ import JinagaSpec.Proofs.Flat
 /-!
 # Deferral
 
-`feeds_defer`: a feed that carries an entity's details, the top-level matches
-after it, does so only where each of the entity's negative conditions is either
+`flatFeeds_defer`: a flat feed that carries an entity's details, the top-level
+matches after it, does so only where each of the entity's negative conditions is either
 unwitnessed or has a witness with a cancelling fact. So a new client is not
 sent the details of an entity that something excludes and nothing has tried to
-cancel: a deleted menu item's names, while no restore exists.
+cancel: a deleted menu item's names, while no restore exists. `feeds_defer`
+(`Proofs/Children.lean`) lifts it to child specifications.
 -/
 namespace JinagaSpec
 
@@ -542,16 +543,11 @@ theorem declared_append (a b : List Match) :
   | nil => simp [declaredMatches]
   | cons m a ih => obtain ⟨u, cs⟩ := m; simp [declaredMatches, ih]
 
-/-- **Deferral.** A feed that carries any of the details of a top-level match
-`m`, the matches after it, does so only for tuples at which each of `m`'s
-negative conditions, with its positive conditions joined, is either not
-witnessed, or has a witness with a fact of one of its own negative conditions.
-
-So a new client is not sent the details of an entity excluded by a fact that
-nothing has tried to cancel: the names of a deleted menu item, while no restore
-of its delete exists. Exactness is not possible: `restore-revoked-and-unrevoked`
-(`FeedCases.lean`) is an entity still excluded whose details a feed must carry,
-because telling it apart needs a nested negative condition. -/
+/-- A flat feed that carries any of the details of a top-level match `m`, the
+matches after it, does so only for tuples at which each of `m`'s negative
+conditions, with its positive conditions joined, is either not witnessed, or
+has a witness with a fact of one of its own negative conditions
+(`feeds_defer`). -/
 theorem flatFeeds_defer {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s)
     {a b : List Match} {m : Match} (hs : s.matchList = a ++ m :: b) (G : Graph) (env : Env) :
     ∀ f ∈ flatFeeds s, (∃ y ∈ names (flatten b), y ∈ names f.matchList) →

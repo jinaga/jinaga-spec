@@ -30,8 +30,9 @@ Differences from the TypeScript, each forced by the language rather than chosen:
   given. None can: `simplifyMatch` already returned `null` for any match with
   such a condition. That check is omitted.
 * **Not ported.** Inverses of nested specifications in a projection
-  (`invertProjection`), because this language's projections hold no
-  specifications. Deduplication, because results are compared as sets.
+  (`invertProjection`): the results here are a projection's rows, which a
+  child specification does not change (`Specification.evaluate`).
+  Deduplication, because results are compared as sets.
 -/
 namespace JinagaSpec
 

@@ -2,11 +2,11 @@ import JinagaSpec.Proofs.Defer
 import JinagaSpec.Proofs.Cursor
 
 /-!
-# The feeds cover the specification
+# The flat feeds cover the specification
 
-`feeds_cover`: a replica that holds the givens and every fact the feeds
-deliver on the replicator's graph, with their predecessors, reads what the
-replicator reads. The replica is `g`, and what of the replicator's graph it
+`flatFeeds_cover`: a replica that holds every fact the flat feeds deliver on
+the replicator's graph, with their predecessors, finds the solutions the
+replicator finds. The replica is `g`, and what of the replicator's graph it
 does not hold is `B`: a fresh batch to it, since a replica saves each fact with
 its predecessors (`Fresh`, as for the stream).
 
@@ -22,6 +22,7 @@ its predecessors (`Fresh`, as for the stream).
    delivers its witnesses (`evd_level`). A dropped feed walks only to
    predecessors (`feeds_settled`).
 
+`feeds_cover` (`Proofs/Children.lean`) lifts this to child specifications, and
 `feed_converges` adds paging by bookmark (`Proofs/Cursor.lean`).
 -/
 namespace JinagaSpec

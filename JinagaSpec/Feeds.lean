@@ -15,13 +15,15 @@ what the feeds are:
 
 1. **Consistency.** A replica holding what the feeds deliver, with their
    predecessors, and any other facts of the replicator's graph, reads what the
-   replicator reads (`feeds_cover`).
+   replicator reads, the results of its child specifications included, at
+   every depth (`feeds_cover`).
 2. **Append-only.** A tuple is never inserted behind a bookmark. So a feed has
    only path conditions, and negative conditions over matches with only path
    conditions, which can only ever remove a tuple (`feed_antitone`).
 3. **Deferral.** A new client is not sent the details of an entity that is
    excluded by a negative condition none of whose facts has been cancelled: a
-   deleted menu item's names, until it is restored (`feeds_defer`).
+   deleted menu item's names, until it is restored, whether they are later
+   matches or a child specification's (`feeds_defer`).
 
 ## The feeds
 

@@ -13,9 +13,9 @@ specifications follows from the same requirement of its descendants, which
 have none:
 
 * `buildFeeds_feedShape` and `buildFeeds_nodup` (append-only);
-* `feeds_defer` (deferral), which applies to each descendant, and so to an
-  entity a child specification matches, since the feeds of a descendant are
-  among the specification's (`buildFeeds_descendant`);
+* `feeds_defer` (deferral): each feed is one of a descendant's, and defers the
+  details of each entity that descendant matches, a child specification's
+  entities included;
 * `feeds_cover` (consistency): a replica reads the replicator's results, child
   specifications' included, at every depth, because the flat feeds give it the
   replicator's solutions of each descendant's matches (`flatFeeds_cover`), and
@@ -81,16 +81,8 @@ mutual
 end
 
 theorem mem_paths {p : Projection} {x : List Match × Projection} :
-    x ∈ p.paths ↔ x = ([], p) ∨ ∃ c ∈ p.children, ∃ y ∈ c.2.paths, x = (c.1 ++ y.1, y.2) := by
-  rw [Projection.paths]
-  simp only [List.mem_cons, List.mem_flatMap, List.mem_attach, true_and, Subtype.exists, List.mem_map]
-  constructor
-  · rintro (h | ⟨c, hc, y, hy, rfl⟩)
-    · exact Or.inl h
-    · exact Or.inr ⟨c, hc, y, hy, rfl⟩
-  · rintro (h | ⟨c, hc, y, hy, rfl⟩)
-    · exact Or.inl h
-    · exact Or.inr ⟨c, hc, y, hy, rfl⟩
+    x ∈ p.paths ↔ x = ([], p) ∨ ∃ c ∈ p.children, ∃ y ∈ c.2.paths, (c.1 ++ y.1, y.2) = x := by
+  rw [Projection.paths]; simp
 
 theorem paths_ne_nil (p : Projection) : p.paths ≠ [] := by
   rw [Projection.paths]; exact List.cons_ne_nil _ _
@@ -140,38 +132,6 @@ theorem mem_buildFeeds {s : Specification} {f : Specification} :
   · rintro ⟨x, hx, h⟩; exact ⟨_, ⟨x, hx, rfl⟩, h⟩
   · rintro ⟨_, ⟨x, hx, rfl⟩, h⟩; exact ⟨x, hx, h⟩
 
-/-! ## Descendants -/
-
-theorem paths_trans : ∀ (p : Projection) {x y : List Match × Projection}, x ∈ p.paths → y ∈ x.2.paths →
-    (x.1 ++ y.1, y.2) ∈ p.paths
-  | p, x, y, hx, hy => by
-    rcases mem_paths.mp hx with rfl | ⟨c, hc, z, hz, rfl⟩
-    · simpa using hy
-    · exact mem_paths.mpr (Or.inr ⟨c, hc, _, paths_trans c.2 hz hy, by simp⟩)
-termination_by p => sizeOf p
-decreasing_by exact Projection.sizeOf_children ‹_›
-
-/-- A descendant of a descendant is a descendant. -/
-theorem descendants_trans {s d d' : Specification} (hd : d ∈ s.descendants) (hd' : d' ∈ d.descendants) :
-    d' ∈ s.descendants := by
-  simp only [Specification.descendants, List.mem_map] at hd hd' ⊢
-  obtain ⟨x, hx, rfl⟩ := hd
-  obtain ⟨y, hy, rfl⟩ := hd'
-  exact ⟨_, paths_trans _ hx hy, by simp⟩
-
-/-- The feeds of a descendant are feeds of the specification. -/
-theorem buildFeeds_descendant {s d : Specification} (hd : d ∈ s.descendants) :
-    ∀ f ∈ buildFeeds d, f ∈ buildFeeds s := fun f hf => by
-  obtain ⟨d', hd', hf⟩ := mem_buildFeeds.mp hf
-  exact mem_buildFeeds.mpr ⟨d', descendants_trans hd hd', hf⟩
-
-/-- A descendant's matches go on from the specification's. -/
-theorem descendants_prefix {s d : Specification} (hd : d ∈ s.descendants) :
-    d.given = s.given ∧ ∃ X, d.matchList = s.matchList ++ X := by
-  simp only [Specification.descendants, List.mem_map] at hd
-  obtain ⟨x, -, rfl⟩ := hd
-  exact ⟨rfl, x.1, rfl⟩
-
 /-! ## The requirements -/
 
 /-- **Append-only.** Every feed has one level of negative condition, over
@@ -187,30 +147,31 @@ theorem buildFeeds_nodup {s : Specification} (hwf : ∀ d ∈ s.descendants, Wel
   obtain ⟨d, hdd, hf⟩ := mem_buildFeeds.mp hf
   exact flatFeeds_nodup (hwf d hdd) (hd d hdd) f hf
 
-/-- **Deferral.** A feed that carries any of the details of a top-level match
-`m`, the matches after it or any child specification's, does so only for
-tuples at which each of `m`'s negative conditions, with its positive conditions
+/-- **Deferral.** Every feed is a feed of one of the specification's
+descendants, the specification or one of its child specifications at any
+depth, and binds only its labels. And it carries any of the details of one of
+that descendant's top-level matches `m`, the matches after it, only for tuples
+at which each of `m`'s negative conditions, with its positive conditions
 joined, is either not witnessed, or has a witness with a fact of one of its own
 negative conditions.
 
 So a new client is not sent the details of an entity excluded by a fact that
-nothing has tried to cancel: the names of a deleted menu item, while no restore
-of its delete exists. A child specification is a specification, a descendant,
-whose feeds are among these (`buildFeeds_descendant`), so this holds of an
-entity a child specification matches too. Exactness is not possible:
-`restore-revoked-and-unrevoked` (`FeedCases.lean`) is an entity still excluded
-whose details a feed must carry, because telling it apart needs a nested
-negative condition. -/
+nothing has tried to cancel, a child specification's facts about it included:
+the names of a deleted menu item, while no restore of its delete exists.
+Exactness is not possible: `restore-revoked-and-unrevoked` (`FeedCases.lean`)
+is an entity still excluded whose details a feed must carry, because telling
+it apart needs a nested negative condition. -/
 theorem feeds_defer {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d)
-    (hd : ∀ d ∈ s.descendants, DistinctLabels d)
-    {a b : List Match} {m : Match} (hs : s.matchList = a ++ m :: b) (G : Graph) (env : Env) :
-    ∀ f ∈ buildFeeds s, (∃ y ∈ names (flatten b), y ∈ names f.matchList) →
-      ∀ τ ∈ evalMatches G env f.matchList, ∀ ns ∈ negativesOf [m], Passes G τ ns := by
-  intro f hf ⟨y, hyb, hyf⟩
+    (hd : ∀ d ∈ s.descendants, DistinctLabels d) (G : Graph) (env : Env) :
+    ∀ f ∈ buildFeeds s, ∃ d ∈ s.descendants, (∀ x ∈ names f.matchList, x ∈ declaredMatches d.matchList) ∧
+      ∀ a m b, d.matchList = a ++ m :: b → (∃ y ∈ names (flatten b), y ∈ names f.matchList) →
+        ∀ τ ∈ evalMatches G env f.matchList, ∀ ns ∈ negativesOf [m], Passes G τ ns := by
+  intro f hf
   obtain ⟨d, hdd, hf⟩ := mem_buildFeeds.mp hf
-  obtain ⟨-, X, hX⟩ := descendants_prefix hdd
-  exact flatFeeds_defer (hwf d hdd) (hd d hdd) (a := a) (m := m) (b := b ++ X) (by rw [hX, hs]; simp) G env f hf
-    ⟨y, by rw [flatten_append, names_append]; exact List.mem_append_left _ hyb, hyf⟩
+  refine ⟨d, hdd, fun x hx => ?_, fun a m b hs => flatFeeds_defer (hwf d hdd) (hd d hdd) hs G env f hf⟩
+  obtain ⟨hf, -⟩ := List.mem_filter.mp hf
+  obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hf
+  exact mem_within (levelFeeds_within (hwf d hdd) (hd d hdd) F hF) hx
 
 /-! ## Consistency -/
 
@@ -237,13 +198,8 @@ theorem prefix_iff {G1 G2 : Graph} {env σ : Env} {ms X : List Match}
     exact prefix_unique hG hσ' hτ hτ' hdis ▸ hτ'
   exact fun τ => ⟨go h1 h2 (fun τ => (h τ).mp) τ, go h2 h1 (fun τ => (h τ).mpr) τ⟩
 
-theorem names_sub_declared : ∀ {ms : List Match} {x : Name}, x ∈ names ms → x ∈ declaredMatches ms
-  | .mk u cs :: rest, x, h => by
-    simp only [names, List.map_cons, List.mem_cons, Match.unknown_mk] at h
-    simp only [declaredMatches, List.mem_cons, List.mem_append]
-    rcases h with h | h
-    · exact Or.inl h
-    · exact Or.inr (Or.inr (names_sub_declared (ms := rest) h))
+theorem names_sub_declared {ms : List Match} {x : Name} (h : x ∈ names ms) : x ∈ declaredMatches ms :=
+  mem_within (within_level ms) (List.mem_append_left _ (by rw [names_level]; exact mem_names_flatten h))
 
 /-- **Nested results are determined by the solutions along each path.** Two
 graphs that have the same solutions of the matches along every path to a child
@@ -259,19 +215,14 @@ theorem reads_congr {g g' : Graph} : ∀ (p : Projection) (ms : List Match) (env
     have hchild : ∀ c ∈ p.children, ∀ y ∈ c.2.paths, (c.1 ++ y.1, y.2) ∈ p.paths := fun c hc y hy =>
       mem_paths.mpr (Or.inr ⟨c, hc, y, hy, rfl⟩)
     have hih : ∀ σ ∈ evalMatches g env ms, ∀ c ∈ p.children, ∀ r,
-        c.2.Reads g c.1 σ r ↔ c.2.Reads g' c.1 σ r := fun σ hσ c hc =>
-      reads_congr c.2 c.1 σ
-        (fun y hy => by
-          have := hd _ (hchild c hc y hy)
-          rw [declared_append] at this
-          exact (List.nodup_append.mp this).2.1)
-        (fun y hy => by
-          have hnd := hd _ (hchild c hc y hy)
-          rw [declared_append] at hnd
-          exact prefix_iff hσ ((he0 σ).mp hσ)
-            (fun x hx hx' => (List.nodup_append.mp hnd).2.2 x (names_sub_declared hx) x
-              (names_sub_declared hx') rfl)
-            (by simpa only [List.append_assoc] using he _ (hchild c hc y hy)))
+        c.2.Reads g c.1 σ r ↔ c.2.Reads g' c.1 σ r := fun σ hσ c hc => by
+      have hnd : ∀ y ∈ c.2.paths, (declaredMatches ms ++ declaredMatches (c.1 ++ y.1)).Nodup := fun y hy => by
+        have := hd _ (hchild c hc y hy); rwa [declared_append] at this
+      exact reads_congr c.2 c.1 σ (fun y hy => (List.nodup_append.mp (hnd y hy)).2.1) fun y hy =>
+        prefix_iff hσ ((he0 σ).mp hσ)
+          (fun x hx hx' => (List.nodup_append.mp (hnd y hy)).2.2 x (names_sub_declared hx) x
+            (names_sub_declared hx') rfl)
+          (he _ (hchild c hc y hy))
     rw [Projection.Reads, Projection.Reads]
     constructor
     · rintro ⟨σ, hσ, hrow, hlen, hch⟩

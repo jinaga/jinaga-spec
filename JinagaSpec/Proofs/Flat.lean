@@ -10,9 +10,9 @@ on a replica and the replicator's graph when its solutions are delivered
 (`flat_agree`); and a feed that walks only to predecessors delivering only what
 the replica holds (`dropped_settled`).
 
-`feeds_cover`: a replica that holds the givens and every fact the feeds
-deliver on the replicator's graph, with their predecessors, reads what the
-replicator reads. The replica is `g`, and what of the replicator's graph it does
+`flatFeeds_cover`: a replica that holds every fact the feeds deliver on the
+replicator's graph, with their predecessors, finds the solutions the replicator
+finds. The replica is `g`, and what of the replicator's graph it does
 not hold is `B`: a fresh batch to it, because it holds every fact's
 predecessors (`Fresh`, as for the stream).
 -/
