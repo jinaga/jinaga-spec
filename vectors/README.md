@@ -169,8 +169,9 @@ vector:
 
 ## `feeds/<name>.json`
 
-The feeds `buildFeeds` makes of a specification (`JinagaSpec/Feeds.lean`), one
-per level, and what they deliver on a graph a replicator holds. Generated from
+The feeds `buildFeeds` makes of a specification (`JinagaSpec/Feeds.lean`):
+chapter 12's ordinary, excluding and restoring feeds. Also what they deliver on
+a graph a replicator holds. Generated from
 `JinagaSpec/FeedCases.lean` (named cases) and a fixed random seed (`random-<n>`:
 specifications shaped like an application's, with at least three feeds, on
 graphs where each delivers a fact).
@@ -191,8 +192,9 @@ graphs where each delivers a fact).
 }
 ```
 
-A feed has a composite projection with no components, only path conditions,
-and as givens the specification's givens its path conditions name, in the
+A feed has a composite projection with no components. Its conditions are path
+conditions, and negative conditions over path conditions only. Its givens are
+the specification's givens it names anywhere, filters included, in the
 specification's order. A feed is read from the subscription's givens, by name, as the replicator
 reads `GET /feeds/{hash}`. `delivered` does not list the givens.
 
@@ -200,7 +202,8 @@ A port of `buildFeeds` passes a vector when its feeds equal `expected.feeds`,
 and, whatever its feeds, when a replica holding the givens, what its feeds
 deliver on `graph`, and the predecessors of each, reads `expected.results`
 (`feeds_cover`). The second is what eventual consistency needs; the first pins
-the algorithm. `lake exe vectors` refuses to write a vector whose results the
+the algorithm. The TypeScript runner also checks that a port's feeds deliver no
+fact `expected.delivered` leaves out (`feeds_defer`). `lake exe vectors` refuses to write a vector whose results the
 reference's own feeds do not cover.
 
 ## `cascade/<name>.json`

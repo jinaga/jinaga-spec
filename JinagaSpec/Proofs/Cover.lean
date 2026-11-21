@@ -18,8 +18,11 @@ its predecessors (`Fresh`, as for the stream).
    invalid on the replicator, whose first failing condition's valid witnesses
    are delivered, is invalid on the replica. Neither mentions a feed.
 3. **The walk delivers both.** Restoring through a cancelled witness delivers its
-   canceller (`pd_walk`); the excluding feed at the first condition that fails
-   delivers its witnesses (`evd_walk`).
+   canceller (`pd_level`); the excluding feed at the first condition that fails
+   delivers its witnesses (`evd_level`). A dropped feed walks only to
+   predecessors (`feeds_settled`).
+
+`feed_converges` adds paging by bookmark (`Proofs/Cursor.lean`).
 -/
 namespace JinagaSpec
 

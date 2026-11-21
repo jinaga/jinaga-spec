@@ -17,17 +17,18 @@ Two algorithms are covered end to end:
   `exact_stream_correct` proves a stream that applies them exact, when the
   projection names every top-level unknown.
 
-A third is in progress:
+A third is proved for specifications without child projections:
 
 - **Feeds** (`buildFeeds`), which a replica pages by bookmark to learn the facts
   a specification reads: chapter 12's ordinary, excluding and restoring feeds,
-  derived from three requirements. A replica holding what they deliver reads
-  what the replicator reads; a tuple is never inserted behind a bookmark
-  (`feed_antitone`, proved); and a new client is not sent the details of an
-  entity whose exclusion nothing has cancelled. The randomized check holds the
-  definition to all three; the proofs of the first and third are under way. Paging
-  by bookmark loses nothing while the graph grows, provided ids increase in
-  commit order (`Cursor.lean`, proved; jinaga/jinaga-server#203).
+  derived from three requirements, each proved. A replica holding what they
+  deliver reads what the replicator reads (`feeds_cover`). A tuple is never
+  inserted behind a bookmark (`feed_antitone`). And a new client is not sent
+  the details of an entity whose exclusion nothing has cancelled
+  (`feeds_defer`). Paging by bookmark loses nothing while the graph grows,
+  provided ids increase in commit order (`Cursor.lean`;
+  jinaga/jinaga-server#203). So a replica that pages every feed to an empty
+  page converges (`feed_converges`).
 
 **Status.** It began as a spike to find out whether this approach keeps the
 definitions readable, the proofs tractable, and the ports checkable. It does,
@@ -454,8 +455,7 @@ harder to hide, but they are not a proof about the TypeScript.
    must be serialized (#13).
 3. Conditions on givens in the split, the remaining projections, and nested
    collections.
-4. Feeds: prove consistency and deferral; then child specifications in
-   projections. `jinaga.js` takes the corrections in
+4. Feeds: child specifications in projections. `jinaga.js` takes the corrections in
    `ports/typescript/feed-builder.ts`, and jinaga-server serializes saves so that
    ids increase in commit order (jinaga/jinaga-server#203). Then skeleton
    canonicity and distribution soundness.
