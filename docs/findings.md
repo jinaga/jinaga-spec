@@ -1133,15 +1133,16 @@ defects:
   restoring branch for one of them keeps the other conditions its excluding feed
   attached. A delete that is both restored and undone is then restored by no
   feed, and the event's name reaches the replica through none
-  (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`).
-  jinaga/jinaga.js#368 fixed the conditions waiting at the even level, which a
+  (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`;
+  jinaga/jinaga.js#427). jinaga/jinaga.js#368 fixed the conditions waiting at the even level, which a
   restoring branch does need; the same rule reached the odd level too.
 - **A positive condition inside a negative one replaces it.**
   `buildExistentialCondition` builds the inner positive condition from its own
   matches, doubled, and assigns it over the outer one. The main feed of
   `!E { d: Delete [..., E { a: Approval [a->delete = d] }] }` becomes
   `E { a, a }`, which names `d` without binding it. jinaga.js's own
-  `MemoryStore` throws reading it (`exists-inside-not-exists`).
+  `MemoryStore` throws reading it, and so does jinaga-server's `sqlFromFeed`
+  (`exists-inside-not-exists`; jinaga/jinaga.js#425).
 
 `ports/typescript/feed-builder.ts` corrects both and drops the filter inside
 the excluding feed. It matches every vector and sends no fact the vector's
@@ -1272,14 +1273,17 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   `sqlFromFeed` with jinaga 6.16.1, not against a database. So a replica
   subscribed through jinaga-server would get no rates for a rehired server.
   `feed-builder.ts` rejects the specification instead (`DistinctLabels`).
-  The vector renames the rate `rt`.
+  The vector renames the rate `rt`. Filed as jinaga/jinaga.js#426: the cause is
+  `buildFeeds`, whose feeds its own `wellFormedErrors` rejects.
 - **A child feed that joins the givens through separate chains has no SQL.**
   In `random-children-1`, the parent reaches the given `p2`. The child reaches
   only `p1`, and a grandchild's positive condition connects the two.
   `detectDisconnectedSpecification` accepts the specification. But the child's
   first feeds are a product of two chains, and jinaga-server's `generateJoins`
   throws `Neither predecessor nor successor fact has been written` for them.
-  It does so for jinaga.js's feeds and for the vector's alike.
+  It does so for jinaga.js's feeds and for the vector's alike. The cause is
+  wider than child feeds: a top-level specification whose two givens each have
+  their own chain fails the same way (jinaga/jinaga-server#233).
 - **`assertWellFormed` does not look inside a child specification.**
   `wellFormedErrors` checks scope only for the top-level matches, and
   `projectedLabels` skips specification components. A child specification
@@ -1288,7 +1292,7 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   theorems need each descendant `WellFormed`, which `isWellFormedDeep` decides
   (`isWellFormedDeep_iff`). The vectors `child-redeclares-a-given` and
   `child-joins-an-undefined-label` show it, and `run-vectors.ts` reports
-  jinaga.js's verdict on them as known.
+  jinaga.js's verdict on them as known (jinaga/jinaga.js#428).
 
 Review found two places that read a projection's labels and missed a child's.
 `Projection.labels` names only the facts a projection projects. The split's
