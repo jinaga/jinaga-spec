@@ -167,6 +167,61 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
   ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone)]
 
 
+/-! ## Feed vectors -/
+
+def feedVector (c : FeedCase) : Json :=
+  let env := c.env
+  Json.mkObj [
+    ("name", c.name),
+    ("description", c.description),
+    ("source", c.source),
+    ("specification", specificationToJson c.spec),
+    ("text", describeSpecification c.spec),
+    ("rowLabels", Json.arr (c.spec.projection.labels.map Json.str).toArray),
+    ("givens", Json.mkObj (c.givens.map fun (n, id) => (n, Json.num id))),
+    ("graph", Json.arr (c.graph.map factToJson).toArray),
+    ("expected", Json.mkObj [
+      ("feeds", Json.arr ((buildFeeds c.spec).map inverseToJson).toArray),
+      ("delivered", Json.arr (((delivered c.spec c.graph env).eraseDups.mergeSort (· ≤ ·)).map fun (id : FactId) => Json.num id).toArray),
+      ("results", rowsToJson (c.spec.read c.graph env))])]
+
+/-- Random specifications shaped like an application's, each with a graph on
+which every one of at least three levels delivers a fact, from a fixed seed. -/
+def randomFeedCases (count : Nat) : List FeedCase := Id.run do
+  let mut gen : StdGen × Nat := (mkStdGen 11, 0)
+  let mut out : List FeedCase := []
+  for _ in [0:4000] do
+    if out.length ≥ count then break
+    let (s, g) := genFeedSpec.run gen
+    gen := g
+    let ((G, env), g) := (do
+      let G ← genFeedGraph s 8
+      return (G, ← genEnv s G) : Gen (Graph × Env)).run gen
+    gen := g
+    -- Every level delivers something: the results, the facts that exclude
+    -- some, and the facts that cancel those.
+    let results := s.read G env
+    let feeds := buildFeeds s
+    let missed := feeds.length ≥ 3 && feeds.all fun f => !(f.tuples G env).isEmpty
+    if !results.isEmpty && missed then
+      out := out ++ [{ name := s!"random-{out.length + 1}"
+                       description := "A random specification shaped like an application's, and a graph on which each of its levels delivers a fact."
+                       source := "lake exe vectors, seed 11"
+                       spec := s, givens := s.given.map fun l => (l.name, (env l.name).getD 0), graph := G }]
+  return out
+
+/-- What the feed vectors must show between them. -/
+def feedCoverage : List (String × (FeedCase → Bool)) := [
+  ("a notExists condition", fun c => anyConditionIn (fun | .existential false _ => true | _ => false) c.spec.matchList),
+  ("a notExists condition inside another",
+    fun c => anyConditionIn (fun | .existential false ms => anyConditionIn (fun | .existential false _ => true | _ => false) ms | _ => false) c.spec.matchList),
+  ("an exists condition inside a notExists",
+    fun c => anyConditionIn (fun | .existential false ms => anyConditionIn (fun | .existential true _ => true | _ => false) ms | _ => false) c.spec.matchList),
+  ("several givens", fun c => c.spec.given.length > 1),
+  ("a composite projection", fun c => match c.spec.projection with | .composite _ => true | _ => false),
+  ("a feed that is dropped", fun c => (buildFeeds c.spec).isEmpty)]
+
+
 /-! ## Cascade vectors -/
 
 namespace CascadeVectors
@@ -501,6 +556,8 @@ def main (args : List String) : IO Unit := do
   let wfDir := root / "well-formed"
   let inverseDir := root / "inverse"
   let cascadeDir := root / "cascade"
+  let feedsDir := root / "feeds"
+  IO.FS.createDirAll feedsDir
   IO.FS.createDirAll splitDir
   IO.FS.createDirAll wfDir
   IO.FS.createDirAll inverseDir
@@ -527,8 +584,20 @@ def main (args : List String) : IO Unit := do
   for c in wellFormedCases do
     checkIntent c
     IO.FS.writeFile (wfDir / s!"{c.name}.json") ((wellFormedCaseToJson c).pretty ++ "\n")
+  let feedAll := feedCases ++ randomFeedCases 6
+  for (shape, shows) in feedCoverage do
+    unless feedAll.any shows do
+      throw <| IO.userError s!"no feed vector shows {shape}"
+  for c in feedAll do
+    unless isWellFormed c.spec do
+      throw <| IO.userError s!"feed case {c.name} is not well-formed"
+    -- The vector's results are what a replica holding what the feeds deliver
+    -- reads (`FeedsCover`).
+    unless sameSet (c.spec.read (replica c.spec c.graph c.env (delivered c.spec c.graph c.env) []) c.env) (c.spec.read c.graph c.env) do
+      throw <| IO.userError s!"feed case {c.name}: a replica holding what the feeds deliver reads something else"
+    IO.FS.writeFile (feedsDir / s!"{c.name}.json") ((feedVector c).pretty ++ "\n")
   CascadeVectors.checkMutants
   for c in JinagaSpec.Cascade.cases do
     CascadeVectors.check c
     IO.FS.writeFile (cascadeDir / s!"{c.name}.json") ((CascadeVectors.vector c).pretty ++ "\n")
-  IO.println s!"wrote {cases.length} split vectors to {splitDir}, {wellFormedCases.length} well-formedness vectors to {wfDir}, and {inverseAll.length} inverse vectors to {inverseDir}"
+  IO.println s!"wrote {cases.length} split vectors to {splitDir}, {wellFormedCases.length} well-formedness vectors to {wfDir}, {inverseAll.length} inverse vectors to {inverseDir}, and {feedAll.length} feed vectors to {feedsDir}"

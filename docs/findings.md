@@ -949,6 +949,157 @@ The output keeps an item's key tagged where the TypeScript keeps it plain. The
 vectors never compare keys, so the difference is not observable in them. No
 cascade-core runtime test scoped a `flatten` before these vectors; they pass.
 
+## Feeds: what a replica needs to converge
+
+A replica reads a specification's feeds page by page, loads what they name with
+its predecessors, and runs the specification on what it holds. Eventual
+consistency is the claim that once every feed's page comes back empty, it reads
+what the replicator reads. It splits into two parts, and both are proved.
+
+**Paging loses nothing** (`Cursor.lean`, `Proofs/Cursor.lean`). A tuple's
+position is its fact ids, largest first, compared lexicographically, as
+jinaga-server's `sort(array[...], 'desc')`. `Caught` (every tuple at or before
+the bookmark has been delivered) holds from the start, after every page, and
+after every batch the replicator saves, and an empty page then means every
+tuple is delivered. Two tuples at one position hold the same facts, so a
+`LIMIT` that cuts between them loses nothing. The growth step rests on two
+things. `feed_antitone`: a feed has path conditions, and negative conditions
+over path conditions only (`buildFeeds_feedShape`), so a tuple that appears
+after a batch binds a fact of the batch. And
+`IdsIncrease`: that fact's id is larger than every id the replica's bookmark
+names. jinaga-server assigns `fact_id` from a sequence before commit, and its
+saves take no lock, so two saves can commit out of id order and a bookmark can
+pass a fact that commits later. That is jinaga/jinaga-server#203, reproduced
+there against replicator 3.8.0, and #207.
+
+**The feeds cover the specification** (`feeds_cover`, `Proofs/Cover.lean`). A
+replica holding the givens, every fact the feeds deliver, their predecessors,
+and any other facts of the graph reads what the replicator reads.
+`feed_converges` puts the two together. This is #9's `relevance_complete`, in
+the form the stream already uses: the replica is `g`, and the rest of the
+replicator's graph is a fresh batch `B` to it, since a replica saves each fact
+with its predecessors.
+
+### The feeds, from the requirements
+
+`buildFeeds` is chapter 12's ordinary, excluding and restoring feeds. It was
+reached by stating what a feed must do and removing every rule the statement
+does not force. There are three requirements, and each is a theorem:
+
+1. **Consistency** (`feeds_cover`), above.
+2. **Append-only** (`buildFeeds_feedShape`, `feed_antitone`). A bookmark can
+   only move forward, so a tuple must never appear behind one. A feed has path
+   conditions and negative conditions over path conditions only. A fact that
+   arrives can then remove a feed's tuple, but never add one that binds only
+   older facts.
+3. **Deferral** (`feeds_defer`). A new client is not sent the details of an
+   entity whose exclusion nothing has cancelled. In chapter 12's terms, the
+   properties of a deleted entity are withheld until the delete is restored.
+   Restorable deletes are the common case.
+
+The walk follows a level's matches, each with its positive conditions joined
+in. At each negative condition, every feed so far does three things:
+
+- it **emits an excluding feed**: itself, then the condition's level, and stops;
+- it **goes on filtered** by the condition's level; and
+- it **goes on restored**: through the condition's level, then the level of one
+  of that level's own negative conditions, walked the same way.
+
+Each rule is forced, and the check has a mutant for each, caught on 34 to 55 of
+610 specifications. Deferral forces the excluding feed to stop. Consistency then
+forces both the filter and the restore. The filter is the negative condition's
+level, path conditions only, so append-only holds. A restoring feed must drop
+the restored fact's other negative conditions; it is restored when any one
+fails. That rule is `jinaga.js`'s first bug below. Nothing forces a filter
+inside an excluding feed: what it would filter out, a restoring feed delivers
+anyway. So there is none.
+
+`feeds_defer` states deferral exactly as the walk delivers it. Take any feed
+that binds a label after a match `m`, and any tuple of it. Then every negative
+condition of `m` is *passed* at a context the tuple extends: either the
+condition has no witness, or some witness has a fact of one of its own negative
+conditions. A stronger statement, that a feed is withheld while every witness
+stands, is false four levels deep. A delete that is revoked, then unrevoked,
+has a canceller whose own exclusion has been cancelled. The vector
+`restore-revoked-and-unrevoked` shows it, and exact deferral of a contested
+exclusion is not attempted.
+
+The cost is measured on chapter 12's case: 50 events of 10 names each, 30
+deleted, and 10 of those restored. A new client downloads 391 of the graph's
+591 facts. Levels, which had no excluding or restoring feeds, would send all
+591.
+
+### How consistency is proved
+
+The proof has three parts, and only the last mentions a feed.
+
+- **Normal form** (`nf`). A level has a solution exactly when its path
+  conditions, positive conditions joined in, have one at which each of its
+  negative conditions has none. This reuses `flatten_correct`
+  (`Proofs/Reorder.lean`) with every positive condition lifted.
+- **Two semantic inductions.** (A) `semA`: a context valid on the replicator,
+  held by the replica, all of whose valid cancellers are delivered (`PD`), is
+  valid on the replica. (B) `semB`: a context invalid on the replicator, whose
+  first failing condition's valid witnesses and their evidence are delivered
+  (`EvD`), is invalid on the replica. Both induct on the specification's size.
+- **The walk delivers both.** `pd_level` shows the restoring feeds deliver
+  every valid canceller. A restoring feed through the witness reaches the
+  canceller's level. From there, the rest of the walk lands in a feed, because
+  every condition after it can be passed (`walk_level`, `walk_neg`).
+  `evd_level` shows the excluding feed at the first failing condition delivers
+  its witnesses. Every earlier condition holds, so the walk reaches that
+  condition filtered. Landing is threaded through a continuation property,
+  `KDone`, since a feed's tail is the rest of the specification. A label budget
+  (`Within`, `Hygiene`) keeps every label bound once along the way.
+
+A feed that `traversesSuccessors` drops walks only to predecessors of what it
+starts from. Its tuples bind facts the replica already holds
+(`feeds_settled`, using `levelFeeds_rooted` and `dropped_settled`). The theorem
+needs `WellFormed`, `DistinctLabels` (joining a positive condition binds nothing
+twice) and `RootedMatches` (every match has a path condition, which `jinaga.js`
+requires). `buildFeeds_nodup` gives `feed_grow` its other hypothesis.
+
+### What `jinaga.js` gets wrong
+
+Checking consistency against a port of `jinaga.js`'s `buildFeeds` found two
+defects:
+
+- **A restoring feed asks too much of the fact it restores.** An excluded fact
+  is cancelled when any one of its negative conditions fails. `jinaga.js`'s
+  restoring branch for one of them keeps the other conditions its excluding feed
+  attached. A delete that is both restored and undone is then restored by no
+  feed, and the event's name reaches the replica through none
+  (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`).
+  jinaga/jinaga.js#368 fixed the conditions waiting at the even level, which a
+  restoring branch does need; the same rule reached the odd level too.
+- **A positive condition inside a negative one replaces it.**
+  `buildExistentialCondition` builds the inner positive condition from its own
+  matches, doubled, and assigns it over the outer one. The main feed of
+  `!E { d: Delete [..., E { a: Approval [a->delete = d] }] }` becomes
+  `E { a, a }`, which names `d` without binding it. jinaga.js's own
+  `MemoryStore` throws reading it (`exists-inside-not-exists`).
+
+`ports/typescript/feed-builder.ts` corrects both and drops the filter inside
+the excluding feed. It matches every vector and sends no fact the vector's
+feeds withhold. `jinaga.js` misses a result on four of the 13 vectors.
+
+### Levels, and why they were set aside
+
+Before the requirements were written down, a simpler algorithm, *levels*, was
+proved consistent. It had one feed per level, positive conditions joined, path
+conditions only, and no filter at all. It was six lines against the machine's
+22. It met consistency and append-only, but it sends every deleted entity's
+details to every new client, so it fails deferral. The lemmas its proof needed
+survive in `Proofs/Flat.lean`. Its measurements on `check-feeds`' seed 1 are
+kept for comparison. Levels made 1,641 feeds and delivered 8,934 facts. The
+corrected filtered machine made 2,377 feeds and delivered 9,865. The present
+algorithm makes 2,373 feeds and delivers 9,593.
+
+A specification that reuses a name an existential condition declared, which
+`WellFormed` allows, can give a level two matches with the same label. The
+semantics shadows, but the SQL a feed becomes names its labels by name.
+`DistinctLabels` excludes it.
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -984,6 +1135,9 @@ cascade-core runtime test scoped a `flatten` before these vectors; they pass.
 | `Proofs/Cascade/Sources.lean` | Each source's correct pipeline, run on its own tree, is correct for the sources; a correct join composes with what comes before and after it, and its output does not depend on how the sources' events interleave. |
 | `Proofs/Cascade/Enrich.lean` | `enrich` is correct for any event in either source, and its copies depend only on what the secondary holds. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
+| `Proofs/Feeds.lean` | A feed has only path conditions, so a tuple new to a feed binds a new fact. |
+| `Proofs/Cursor.lean` | Paging by bookmark keeps a replica caught up from the first page to an empty one while the graph grows. |
+| `Proofs/Cover.lean` | A flat level, then any level, agrees on a replica holding what its feeds deliver; every feed is scoped and binds each label once; the feeds cover the specification, and a replica that has paged them all converges. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
@@ -1000,5 +1154,5 @@ became 350, with the check included.
 not modelled. In the cascade model: `groupBy`,
 `filter` and `flatten` below the root; and the caches of the steps other than
 `groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
-the stream, not for the split. `buildFeeds`, skeleton canonicity
-and distribution soundness are not started.
+the stream, not for the split. Skeleton canonicity (feed hashes), the stream
+session's wake-ups (liveness), and distribution soundness are not started.

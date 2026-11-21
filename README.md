@@ -17,6 +17,19 @@ Two algorithms are covered end to end:
   `exact_stream_correct` proves a stream that applies them exact, when the
   projection names every top-level unknown.
 
+A third is proved for specifications without child projections:
+
+- **Feeds** (`buildFeeds`), which a replica pages by bookmark to learn the facts
+  a specification reads: chapter 12's ordinary, excluding and restoring feeds,
+  derived from three requirements, each proved. A replica holding what they
+  deliver reads what the replicator reads (`feeds_cover`). A tuple is never
+  inserted behind a bookmark (`feed_antitone`). And a new client is not sent
+  the details of an entity whose exclusion nothing has cancelled
+  (`feeds_defer`). Paging by bookmark loses nothing while the graph grows,
+  provided ids increase in commit order (`Cursor.lean`;
+  jinaga/jinaga-server#203). So a replica that pages every feed to an empty
+  page converges (`feed_converges`).
+
 **Status.** It began as a spike to find out whether this approach keeps the
 definitions readable, the proofs tractable, and the ports checkable. It does,
 and the libraries now port from it:
@@ -38,6 +51,7 @@ and the libraries now port from it:
 | `JinagaSpec/Store.lean` | The graph a rule runs on while its fact is under authorization, and the boundary `tailReadsGiven` decides. |
 | `JinagaSpec/Candidates.lean`, `Reorder.lean` | `candidates`: the inverses of a specification, each reordered to start at the new fact. |
 | `JinagaSpec/Exact.lean` | `changes`: the exact inverses, which report adds and removes from one read each, and a stream that applies them. |
+| `JinagaSpec/Feeds.lean`, `Cursor.lean` | `buildFeeds`: the ordinary, excluding and restoring feeds of a specification, and what they deliver; paging a feed by bookmark, as jinaga-server does. |
 | `JinagaSpec/Maintain.lean` | A stream that re-checks candidates after each batch. |
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
@@ -45,9 +59,9 @@ and the libraries now port from it:
 | `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: finite maps and JSON values (`CMap.lean`, `Json.lean`), the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), the steps over ordered siblings (`Ordered.lean`), named sources and joins (`Sources.lean`), `enrich` (`Enrich.lean`), and a step below the root (`Within.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
-| `vectors/` | The generated conformance vectors: `split/`, `well-formed/` and `inverse/`. Any port can read them; `vectors/README.md` gives the format. |
-| `ports/typescript/` | Runs the vectors against `jinaga.js`, holds reference implementations of `isWellFormed` and of the inverse algorithm, and audits `jinaga.js`'s parser. |
-| `Check.lean`, `CheckInverse.lean` | Randomized tests of the theorems, with mutation checks. They run before a proof exists, and keep earning their place after. |
+| `vectors/` | The generated conformance vectors: `split/`, `well-formed/`, `inverse/`, `cascade/` and `feeds/`. Any port can read them; `vectors/README.md` gives the format. |
+| `ports/typescript/` | Runs the vectors against `jinaga.js`, holds reference implementations of `isWellFormed`, of the inverse algorithm and of `buildFeeds`, and audits `jinaga.js`'s parser. |
+| `Check.lean`, `CheckInverse.lean`, `CheckFeeds.lean` | Randomized tests of the theorems, with mutation checks. They run before a proof exists, and keep earning their place after. |
 | `docs/findings.md` | What each step turned up, in order. Read it after the theorems. |
 | `docs/contracts.md` | What the split expects, who must provide it, and how to check a sequence of steps. |
 
@@ -441,8 +455,10 @@ harder to hide, but they are not a proof about the TypeScript.
    must be serialized (#13).
 3. Conditions on givens in the split, the remaining projections, and nested
    collections.
-4. Feeds: prove that they carry every relevant fact and that replicas converge
-   (#9). Then `buildFeeds`, skeleton canonicity, and distribution soundness.
+4. Feeds: child specifications in projections. `jinaga.js` takes the corrections in
+   `ports/typescript/feed-builder.ts`, and jinaga-server serializes saves so that
+   ids increase in commit order (jinaga/jinaga-server#203). Then skeleton
+   canonicity and distribution soundness.
 
 ## License
 

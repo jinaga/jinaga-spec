@@ -29,6 +29,9 @@ abbrev Graph := List Fact
 def Graph.factOf (g : Graph) (id : FactId) : Option Fact :=
   g.find? fun f => f.id == id
 
+/-- An id names at most one fact of the graph. -/
+def Graph.IdsUnique (g : Graph) : Prop := ∀ a ∈ g, ∀ b ∈ g, a.id = b.id → a = b
+
 /-- The facts a fact points to by one role. Only a predecessor of the role's
 declared type is reached. -/
 def Graph.step (g : Graph) (role : Role) (id : FactId) : List FactId :=

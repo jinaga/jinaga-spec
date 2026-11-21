@@ -108,9 +108,6 @@ mutual
       simp only [holds, this]
 end
 
-/-- An id names at most one fact of the graph. -/
-def Graph.IdsUnique (g : Graph) : Prop := ∀ a ∈ g, ∀ b ∈ g, a.id = b.id → a = b
-
 /-- Two graphs holding the same facts, in any order and with any repetition,
 give the same results. -/
 theorem evaluate_congr {g g' : Graph} (hmem : ∀ x, x ∈ g ↔ x ∈ g') (huniq : g.IdsUnique)

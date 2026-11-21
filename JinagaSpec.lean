@@ -14,6 +14,14 @@ import JinagaSpec.Inverse
 import JinagaSpec.Candidates
 import JinagaSpec.Reorder
 import JinagaSpec.Exact
+import JinagaSpec.Feeds
+import JinagaSpec.FeedCases
+import JinagaSpec.Cursor
+import JinagaSpec.Proofs.Feeds
+import JinagaSpec.Proofs.Cursor
+import JinagaSpec.Proofs.Flat
+import JinagaSpec.Proofs.Defer
+import JinagaSpec.Proofs.Cover
 import JinagaSpec.Proofs.Scoped
 import JinagaSpec.Proofs.Basic
 import JinagaSpec.Proofs.Locality
