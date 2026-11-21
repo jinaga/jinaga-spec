@@ -1238,6 +1238,15 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   (`isWellFormedDeep_iff`). The vectors `child-redeclares-a-given` and
   `child-joins-an-undefined-label` show it. jinaga/jinaga.js#431 (from #428)
   fixed it, and `run-vectors.ts` now requires jinaga.js to agree on them.
+- **jinaga.js's parser refuses an existential condition that does not join its
+  own unknown.** `WellFormed` puts a condition's matches in scope of the givens,
+  the earlier matches and the enclosing unknown, and does not require them to
+  join the unknown. `random-2` has such a condition, `!E { e1717 }` on
+  `e1716`, which joins only the given `p1`. `wellFormedErrors` accepts it, and
+  jinaga.js's feeds and `MemoryStore` handle it, but `SpecificationParser`
+  throws `The existential condition must be based on the unknown`, so
+  `describeSpecification`'s text for it cannot be read back
+  (jinaga/jinaga.js#434).
 
 Review found two places that read a projection's labels and missed a child's.
 `Projection.labels` names only the facts a projection projects. The split's
