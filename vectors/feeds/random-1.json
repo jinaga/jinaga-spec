@@ -1,0 +1,264 @@
+{"text":
+ "(p1: R) {\n    u1: B [\n        u1->r: R = p1\n        !E {\n            e130: C [\n                e130->r: R = p1\n                e130->r: R = p1\n                !E {\n                    e131: C [\n                        e131->r: R = p1\n                    ]\n                }\n                !E {\n                    e132: C [\n                        e132->r: R = p1\n                        !E {\n                            e133: B [\n                                e133->c: C = e132\n                            ]\n                        }\n                        E {\n                            e134: A [\n                                e134->b: B = u1\n                            ]\n                        }\n                    ]\n                }\n            ]\n        }\n    ]\n} => u1\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "u1"},
+  "matches":
+  [{"unknown": {"type": "B", "name": "u1"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+      "labelRight": "p1"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "C", "name": "e130"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+          "labelRight": "p1"},
+         {"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+          "labelRight": "p1"},
+         {"type": "existential",
+          "matches":
+          [{"unknown": {"type": "C", "name": "e131"},
+            "conditions":
+            [{"type": "path",
+              "rolesRight": [],
+              "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+              "labelRight": "p1"}]}],
+          "exists": false},
+         {"type": "existential",
+          "matches":
+          [{"unknown": {"type": "C", "name": "e132"},
+            "conditions":
+            [{"type": "path",
+              "rolesRight": [],
+              "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+              "labelRight": "p1"},
+             {"type": "existential",
+              "matches":
+              [{"unknown": {"type": "B", "name": "e133"},
+                "conditions":
+                [{"type": "path",
+                  "rolesRight": [],
+                  "rolesLeft": [{"predecessorType": "C", "name": "c"}],
+                  "labelRight": "e132"}]}],
+              "exists": false},
+             {"type": "existential",
+              "matches":
+              [{"unknown": {"type": "A", "name": "e134"},
+                "conditions":
+                [{"type": "path",
+                  "rolesRight": [],
+                  "rolesLeft": [{"predecessorType": "B", "name": "b"}],
+                  "labelRight": "u1"}]}],
+              "exists": true}]}],
+          "exists": false}]}],
+      "exists": false}]}],
+  "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]},
+ "source": "lake exe vectors, seed 11",
+ "rowLabels": ["u1"],
+ "name": "random-1",
+ "graph":
+ [{"type": "R", "predecessors": [], "id": 0},
+  {"type": "C",
+   "predecessors": [{"role": "r", "id": 0}, {"role": "r", "id": 0}],
+   "id": 1},
+  {"type": "C",
+   "predecessors": [{"role": "r", "id": 0}, {"role": "c", "id": 1}],
+   "id": 2},
+  {"type": "A", "predecessors": [{"role": "c", "id": 1}], "id": 3},
+  {"type": "C",
+   "predecessors": [{"role": "c", "id": 1}, {"role": "c", "id": 1}],
+   "id": 4},
+  {"type": "B", "predecessors": [{"role": "c", "id": 4}], "id": 5},
+  {"type": "B",
+   "predecessors": [{"role": "r", "id": 0}, {"role": "c", "id": 2}],
+   "id": 6},
+  {"type": "A", "predecessors": [{"role": "b", "id": 6}], "id": 7}],
+ "givens": {"p1": 0},
+ "expected":
+ {"results": [[6]],
+  "feeds":
+  [{"text":
+    "(p1: R) {\n    u1: B [\n        u1->r: R = p1\n    ]\n    e130: C [\n        e130->r: R = p1\n        e130->r: R = p1\n    ]\n    e131: C [\n        e131->r: R = p1\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "B", "name": "u1"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "C", "name": "e130"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"},
+        {"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "C", "name": "e131"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]}],
+     "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]}},
+   {"text":
+    "(p1: R) {\n    u1: B [\n        u1->r: R = p1\n    ]\n    e130: C [\n        e130->r: R = p1\n        e130->r: R = p1\n    ]\n    e132: C [\n        e132->r: R = p1\n    ]\n    e133: B [\n        e133->c: C = e132\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "B", "name": "u1"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "C", "name": "e130"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"},
+        {"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "C", "name": "e132"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "B", "name": "e133"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "C", "name": "c"}],
+         "labelRight": "e132"}]}],
+     "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]}},
+   {"text":
+    "(p1: R) {\n    u1: B [\n        u1->r: R = p1\n    ]\n    e130: C [\n        e130->r: R = p1\n        e130->r: R = p1\n    ]\n    e132: C [\n        e132->r: R = p1\n        !E {\n            e133: B [\n                e133->c: C = e132\n            ]\n        }\n    ]\n    e134: A [\n        e134->b: B = u1\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "B", "name": "u1"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "C", "name": "e130"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"},
+        {"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "C", "name": "e132"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "B", "name": "e133"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "C", "name": "c"}],
+             "labelRight": "e132"}]}],
+         "exists": false}]},
+      {"unknown": {"type": "A", "name": "e134"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "B", "name": "b"}],
+         "labelRight": "u1"}]}],
+     "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]}},
+   {"text":
+    "(p1: R) {\n    u1: B [\n        u1->r: R = p1\n    ]\n    e130: C [\n        e130->r: R = p1\n        e130->r: R = p1\n        !E {\n            e131: C [\n                e131->r: R = p1\n            ]\n        }\n        !E {\n            e132: C [\n                e132->r: R = p1\n            ]\n            e134: A [\n                e134->b: B = u1\n            ]\n        }\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "B", "name": "u1"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"}]},
+      {"unknown": {"type": "C", "name": "e130"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"},
+        {"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "C", "name": "e131"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+             "labelRight": "p1"}]}],
+         "exists": false},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "C", "name": "e132"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+             "labelRight": "p1"}]},
+          {"unknown": {"type": "A", "name": "e134"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "B", "name": "b"}],
+             "labelRight": "u1"}]}],
+         "exists": false}]}],
+     "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]}},
+   {"text":
+    "(p1: R) {\n    u1: B [\n        u1->r: R = p1\n        !E {\n            e130: C [\n                e130->r: R = p1\n                e130->r: R = p1\n            ]\n        }\n    ]\n}\n",
+    "specification":
+    {"projection": {"type": "composite", "components": []},
+     "matches":
+     [{"unknown": {"type": "B", "name": "u1"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+         "labelRight": "p1"},
+        {"type": "existential",
+         "matches":
+         [{"unknown": {"type": "C", "name": "e130"},
+           "conditions":
+           [{"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+             "labelRight": "p1"},
+            {"type": "path",
+             "rolesRight": [],
+             "rolesLeft": [{"predecessorType": "R", "name": "r"}],
+             "labelRight": "p1"}]}],
+         "exists": false}]}],
+     "given": [{"label": {"type": "R", "name": "p1"}, "conditions": []}]}}],
+  "delivered": [1, 2, 6, 7]},
+ "description":
+ "A random specification shaped like an application's, and a graph on which a restoring feed delivers a result."}

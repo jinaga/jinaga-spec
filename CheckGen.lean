@@ -179,3 +179,98 @@ def genBatch (s : Specification) (store : Graph) (size : Nat) : Gen (List Fact) 
 
 def sameSet [BEq α] (a b : List α) : Bool :=
   a.all (b.contains ·) && b.all (a.contains ·)
+
+/-! ## Graphs and specifications for feeds -/
+
+/-- A graph as a replicator holds it: each fact points only to facts saved
+before it, so the predecessors of a fact are a small part of the graph. The
+first facts are of the givens' types, so the givens have successors. -/
+def genAcyclicGraph (s : Specification) (size : Nat) : Gen Graph := do
+  let types := (s.given.map (·.type) ++ typesInMatches s.matchList).eraseDups
+  let roles := (rolesInMatches s.matchList).eraseDups
+  let types := if types.isEmpty then ["T"] else types
+  let mut facts : Graph := []
+  for i in [0:size] do
+    let type ← match s.given[i]? with | some l => pure l.type | none => pick types
+    let mut preds : List (Name × Nat) := []
+    for role in roles do
+      if ← chance 2 3 then
+        let targets := (facts.filter (·.type == role.predecessorType)).map (·.id)
+        if !targets.isEmpty then
+          preds := (role.name, ← pick targets) :: preds
+    facts := facts ++ [{ id := i, type := type, predecessors := preds }]
+  return facts
+
+def feedShape (ms : List Match) : Bool :=
+  ms.all fun m => m.conditions.all fun
+    | .path _ => true
+    | .existential false ms' => ms'.all (·.conditions.all (·.isPath))
+    | .existential true _ => false
+
+/-! ## Specifications shaped like the ones applications write
+
+Each match reaches a successor of an earlier label, the way `successors`
+reads, and existential conditions nest the same way: a `Delete` of an event,
+a `Restore` of the delete. A role is named for the type it points to. -/
+
+def feedTypes : List Name := ["A", "B", "C"]
+
+def toRole (type : Name) : Role := role type.toLower type
+
+partial def genSuccessor (maxDepth : Nat) (scope : List (Name × Name)) (name : Name) (depth : Nat) : Gen Match := do
+  let type ← pick feedTypes
+  let (parent, parentType) ← pick scope
+  let mut conditions := [path [toRole parentType] parent]
+  -- Sometimes a second path condition, joining another label in scope.
+  if ← chance 1 4 then
+    let (other, otherType) ← pick scope
+    conditions := conditions ++ [path [toRole otherType] other]
+  for _ in [0:(← below 3)] do
+    if depth < maxDepth then
+      let inner ← genSuccessor maxDepth ((name, type) :: scope) s!"e{← fresh}" (depth + 1)
+      conditions := conditions ++ [if ← chance 1 3 then exists' [inner] else notExists [inner]]
+  return .mk { name := name, type := type } conditions
+
+def genFeedSpec : Gen Specification := do
+  let given := [("p1", "R")] ++ (if ← chance 1 3 then [("p2", "A")] else [])
+  let mut scope := given
+  let mut matchList := []
+  for i in [0:(← below 2) + 1] do
+    let m ← genSuccessor 3 scope s!"u{i + 1}" 0
+    matchList := matchList ++ [m]
+    scope := scope ++ [(m.unknown.name, m.unknown.type)]
+  let labels := matchList.map (·.unknown.name)
+  return { given := givens given, matchList := matchList,
+           projection := match labels with
+             | [l] => .fact l
+             | ls => .composite (ls.map fun l => { name := l, label := l }) }
+
+/-- A graph of the types and roles `genFeedSpec` uses. Each fact points to
+one or two facts saved before it. -/
+def genFeedGraph (s : Specification) (size : Nat) : Gen Graph := do
+  let mut facts : Graph := []
+  for i in [0:size] do
+    let type ← match s.given[i]? with | some l => pure l.type | none => pick feedTypes
+    let mut preds : List (Name × Nat) := []
+    for _ in [0:(← below 2) + 1] do
+      if !facts.isEmpty then
+        let target ← pick facts
+        preds := (target.type.toLower, target.id) :: preds
+    facts := facts ++ [{ id := i, type := type, predecessors := preds }]
+  return facts
+
+/-- The facts `ids` name, and all their predecessors. -/
+def closure (g : Graph) (ids : List FactId) : List FactId := Id.run do
+  let mut out := ids.eraseDups
+  for _ in [0:g.length] do
+    let next := (out ++ out.flatMap fun id => ((g.factOf id).map (·.predecessors.map (·.2))).getD []).eraseDups
+    if next.length == out.length then break
+    out := next
+  return out
+
+def givenIds (s : Specification) (env : Env) : List FactId := s.given.filterMap (env ·.name)
+
+/-- A replica holding the closure of `D`, the givens, and some extra facts of `g`. -/
+def replica (s : Specification) (g : Graph) (env : Env) (D : List FactId) (extra : List FactId) : Graph :=
+  let held := closure g (D ++ givenIds s env ++ extra)
+  g.filter (held.contains ·.id)

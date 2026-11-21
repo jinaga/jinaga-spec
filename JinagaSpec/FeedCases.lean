@@ -1,0 +1,130 @@
+import JinagaSpec.Build
+import JinagaSpec.Semantics
+
+/-!
+# Named cases for feeds
+
+Each is a specification, the subscription's givens, and a graph a replicator
+holds. `lake exe vectors` writes one feed vector per case (`vectors/feeds/`):
+the feeds `buildFeeds` makes, the facts they deliver on the graph, and the
+results, which a replica holding those facts and their predecessors reads
+(`feeds_cover`). `check-feeds` checks each, and that each mutant it names is
+caught on it.
+-/
+namespace JinagaSpec
+
+open Build
+
+structure FeedCase where
+  name : String
+  description : String
+  source : String
+  spec : Specification
+  givens : List (Name × FactId)
+  graph : Graph
+
+private def r (n t : Name) : Role := role n t
+
+/-- An event, unless it has a delete that is not cancelled. `cancel` lists the
+negative conditions on the delete. -/
+private def eventSpec (cancel : List Condition) : Specification :=
+  spec [("t", "Tenant")]
+    [unknown "e" "Event" [path [r "tenant" "Tenant"] "t",
+      notExists [unknown "d" "Delete" ([path [r "event" "Event"] "e"] ++ cancel)]],
+     unknown "n" "Name" [path [r "event" "Event"] "e"]]
+    (.composite [{ name := "event", label := "e" }, { name := "name", label := "n" }])
+
+private def restored : Condition := notExists [unknown "x" "Restore" [path [r "delete" "Delete"] "d"]]
+private def undone : Condition := notExists [unknown "u" "Undo" [path [r "delete" "Delete"] "d"]]
+
+def feedCases : List FeedCase := [
+  { name := "not-exists-excludes"
+    description := "One notExists. The feed of the condition delivers the Done that removes a task."
+    source := "jinaga-server feeds"
+    spec := spec [("p1", "Root")]
+      [unknown "t" "Task" [path [r "root" "Root"] "p1",
+        notExists [unknown "d" "Done" [path [r "task" "Task"] "t"]]]]
+      (fact "t")
+    givens := [("p1", 0)]
+    graph := [⟨0, "Root", []⟩, ⟨1, "Task", [("root", 0)]⟩, ⟨2, "Done", [("task", 1)]⟩,
+      ⟨3, "Task", [("root", 0)]⟩] },
+  { name := "not-exists-restored"
+    description := "notExists { notExists }: an event with a delete that has been restored. Only the restoring feed delivers the event and its name."
+    source := "jinaga-server docs/analysis/feed-builder-nested-existential-bug.md"
+    spec := eventSpec [restored]
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
+      ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Name", [("event", 1)]⟩] },
+  { name := "not-exists-cancelled-twice"
+    description := "A delete that is both restored and undone. A restoring feed that also asks the delete to have no undo, as jinaga.js's does, delivers no name."
+    source := "check-feeds"
+    spec := eventSpec [restored, undone]
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
+      ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Undo", [("delete", 2)]⟩, ⟨5, "Name", [("event", 1)]⟩] },
+  { name := "not-exists-cancelled-by-second"
+    description := "A delete undone, whose restore was revoked. A restoring feed for the undo that keeps the excluding feed's own condition on restores delivers no name."
+    source := "check-feeds"
+    spec := eventSpec
+      [notExists [unknown "x" "Restore" [path [r "delete" "Delete"] "d",
+        notExists [unknown "v" "Revoke" [path [r "restore" "Restore"] "x"]]]], undone]
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
+      ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Revoke", [("restore", 3)]⟩, ⟨5, "Undo", [("delete", 2)]⟩,
+      ⟨6, "Name", [("event", 1)]⟩] },
+  { name := "not-exists-cancelled-by-first"
+    description := "A delete restored, whose undo was revoked. A restoring feed for the restore that goes on to ask the delete to have no undo, as jinaga.js's does, delivers no name."
+    source := "check-feeds"
+    spec := eventSpec
+      [restored, notExists [unknown "u" "Undo" [path [r "delete" "Delete"] "d",
+        notExists [unknown "v" "Revoke" [path [r "undo" "Undo"] "u"]]]]]
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
+      ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Undo", [("delete", 2)]⟩, ⟨5, "Revoke", [("undo", 4)]⟩,
+      ⟨6, "Name", [("event", 1)]⟩] },
+  { name := "exists-inside-not-exists"
+    description := "notExists { exists }: an event with no approved delete. The feed applies the condition with the approval's match joined to the delete's."
+    source := "check-feeds"
+    spec := spec [("t", "Tenant")]
+      [unknown "e" "Event" [path [r "tenant" "Tenant"] "t",
+        notExists [unknown "d" "Delete" [path [r "event" "Event"] "e",
+          exists' [unknown "a" "Approval" [path [r "delete" "Delete"] "d"]]]]]]
+      (fact "e")
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
+      ⟨3, "Event", [("tenant", 0)]⟩, ⟨4, "Delete", [("event", 3)]⟩, ⟨5, "Approval", [("delete", 4)]⟩] },
+  { name := "sibling-conditions"
+    description := "An account with no unthawed freeze and a mirror that is not retired. The restoring feed for a thawed freeze goes on to the mirror condition."
+    source := "jinaga/jinaga.js#368"
+    spec := spec [("p1", "Tenant")]
+      [unknown "a" "Account" [path [r "tenant" "Tenant"] "p1",
+        notExists [unknown "f" "Freeze" [path [r "account" "Account"] "a",
+          notExists [unknown "u" "Unfreeze" [path [r "freeze" "Freeze"] "f"]]]],
+        exists' [unknown "m" "Mirror" [path [r "account" "Account"] "a",
+          notExists [unknown "x" "Retired" [path [r "mirror" "Mirror"] "m"]]]]]]
+      (fact "a")
+    givens := [("p1", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Account", [("tenant", 0)]⟩, ⟨2, "Freeze", [("account", 1)]⟩,
+      ⟨3, "Unfreeze", [("freeze", 2)]⟩, ⟨4, "Mirror", [("account", 1)]⟩] },
+  { name := "predecessors-only"
+    description := "Every match walks to predecessors. The feed is dropped: a replica holding the given holds the results."
+    source := "jinaga.js traversesSuccessors"
+    spec := spec [("p", "Post")]
+      [unknown "a" "Author" [path [] "p" [r "author" "Author"]]]
+      (fact "a")
+    givens := [("p", 1)]
+    graph := [⟨0, "Author", []⟩, ⟨1, "Post", [("author", 0)]⟩] },
+  { name := "two-givens"
+    description := "Messages in a channel that a user has not read. The excluding feed takes both givens."
+    source := "jinaga/jinaga-spec#8"
+    spec := spec [("p1", "User"), ("p2", "Channel")]
+      [unknown "m" "Message" [path [r "channel" "Channel"] "p2",
+        notExists [unknown "rd" "Read" [path [r "message" "Message"] "m", path [r "user" "User"] "p1"]]]]
+      (fact "m")
+    givens := [("p1", 0), ("p2", 1)]
+    graph := [⟨0, "User", []⟩, ⟨1, "Channel", []⟩, ⟨2, "Message", [("channel", 1)]⟩,
+      ⟨3, "Message", [("channel", 1)]⟩, ⟨4, "Read", [("message", 2), ("user", 0)]⟩] }]
+
+def FeedCase.env (c : FeedCase) : Env := c.spec.bindGivens (c.spec.given.map fun l => (c.givens.lookup l.name).getD 0)
+
+end JinagaSpec

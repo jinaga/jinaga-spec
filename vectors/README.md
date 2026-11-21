@@ -167,6 +167,42 @@ vector:
 3. Today's `invertSpecification`, for information: on which vectors its "add"
    inverses miss a gained row, or its "remove" inverses a lost one.
 
+## `feeds/<name>.json`
+
+The feeds `buildFeeds` makes of a specification (`JinagaSpec/Feeds.lean`), and
+what they deliver on a graph a replicator holds. Generated from
+`JinagaSpec/FeedCases.lean` (named cases) and a fixed random seed (`random-<n>`:
+specifications shaped like an application's, on graphs where a restoring feed
+delivers a result).
+
+```jsonc
+{
+  "name": "not-exists-cancelled-twice",
+  "description": "...", "source": "...",
+  "specification": { ... }, "text": "...",
+  "rowLabels": ["e", "n"],
+  "givens": { "t": 0 },
+  "graph": [ { "id": 0, "type": "Tenant", "predecessors": [] }, ... ],
+  "expected": {
+    "feeds": [ { "specification": { ... }, "text": "..." } ],  // in order
+    "delivered": [1, 2, 3, 4, 5],     // every fact a tuple of a feed binds to one of its unknowns
+    "results": [ [1, 5] ]             // the specification read on `graph`
+  }
+}
+```
+
+A feed has a composite projection with no components, and its givens are the
+specification's givens its path conditions name, in the order they first name
+them. A feed is read from the subscription's givens, by name, as the replicator
+reads `GET /feeds/{hash}`. `delivered` does not list the givens.
+
+A port of `buildFeeds` passes a vector when its feeds equal `expected.feeds`,
+and, whatever its feeds, when a replica holding the givens, what its feeds
+deliver on `graph`, and the predecessors of each, reads `expected.results`
+(`FeedsCover`). The second is what eventual consistency needs; the first pins
+the algorithm. `lake exe vectors` refuses to write a vector whose results the
+reference's own feeds do not cover.
+
 ## `cascade/<name>.json`
 
 A pipeline of `@jinaga/cascade-core`, the operations a caller performs, orders

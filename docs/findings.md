@@ -949,6 +949,68 @@ The output keeps an item's key tagged where the TypeScript keeps it plain. The
 vectors never compare keys, so the difference is not observable in them. No
 cascade-core runtime test scoped a `flatten` before these vectors; they pass.
 
+## Feeds: what a replica needs to converge
+
+A replica reads a specification's feeds page by page, loads what they name with
+its predecessors, and runs the specification on what it holds. Eventual
+consistency is the claim that once every feed's page comes back empty, it reads
+what the replicator reads. It splits into two parts.
+
+**Paging loses nothing** (`Cursor.lean`, `Proofs/Cursor.lean`). A tuple's
+position is its fact ids, largest first, compared lexicographically, as
+jinaga-server's `sort(array[...], 'desc')`. `Caught` (every tuple at or before
+the bookmark has been delivered) holds from the start, after every page, and
+after every batch the replicator saves, and an empty page then means every
+tuple is delivered. Two tuples at one position hold the same facts, so a
+`LIMIT` that cuts between them loses nothing. The growth step rests on two
+things. `feed_antitone`: a feed's conditions are only path conditions and
+negative conditions over path conditions (`buildFeeds_shape`), so a tuple that
+appears after a batch binds a fact of the batch. And `IdsIncrease`: that fact's
+id is larger than every id the replica's bookmark names. jinaga-server assigns
+`fact_id` from a sequence before commit, and its saves take no lock, so two
+saves can commit out of id order and a bookmark can pass a fact that commits
+later. That is jinaga/jinaga-server#203, reproduced there against replicator
+3.8.0, and #207.
+
+**The feeds cover the specification** (`FeedsCover`). A replica holding the
+givens, every fact the feeds deliver, their predecessors, and any other facts
+of the graph reads what the replicator reads. `feed_converges` proves eventual
+consistency from it. It is stated and checked (`check-feeds`, on 600 random
+specifications and 18,000 graphs per seed), not proved.
+
+Checking it found two defects in `jinaga.js`'s `buildFeeds`, both in the Lean
+definition until the check refuted them:
+
+- **A restoring feed asks too much of the fact it restores.** An excluded fact
+  is cancelled when any one of its negative conditions fails. `jinaga.js`'s
+  restoring branch for one of them keeps the stripped conditions its excluding
+  feed already attached, and applies the conditions still waiting on the fact.
+  A delete that is both restored and undone is then restored by no feed, and
+  what follows the condition (the event's name) reaches the replica through
+  none (`not-exists-cancelled-twice`). The correction drops the attached
+  conditions (`unattach`), which the mutants show correctness needs, and skips
+  the rest of the excluded condition (`afterStop`), which makes fewer feeds:
+  2,377 rather than 2,828 on seed 1. jinaga/jinaga.js#368 fixed the conditions
+  waiting on the match at the even level, which a restoring branch does need;
+  the same rule reached the odd level too.
+- **A positive condition inside a negative one replaces it.**
+  `buildExistentialCondition` builds the inner positive condition from its own
+  matches, doubled, and assigns it over the outer one. The main feed of
+  `!E { d: Delete [..., E { a: Approval [a->delete = d] }] }` becomes
+  `E { a, a }`, which names `d` without binding it; jinaga.js's own
+  `MemoryStore` throws reading it (`exists-inside-not-exists`).
+
+The TypeScript reference, `ports/typescript/feed-builder.ts`, passes every feed
+vector. `jinaga.js` misses a result on four of the fifteen; its `MemoryStore`
+reads the vectors' feeds as the Lean definition does on all of them.
+
+A specification that reuses a name an existential condition declared, which
+`WellFormed` allows, can give a feed two matches with the same label (52 feeds
+in 600 specifications with reuse). The coverage check still holds, because the
+semantics shadows, but the SQL a feed becomes names its labels by name.
+`buildFeeds_shape` proves each feed's labels distinct when the specification's
+are (`DistinctLabels`).
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -984,6 +1046,8 @@ cascade-core runtime test scoped a `flatten` before these vectors; they pass.
 | `Proofs/Cascade/Sources.lean` | Each source's correct pipeline, run on its own tree, is correct for the sources; a correct join composes with what comes before and after it, and its output does not depend on how the sources' events interleave. |
 | `Proofs/Cascade/Enrich.lean` | `enrich` is correct for any event in either source, and its copies depend only on what the secondary holds. |
 | `Proofs/Cascade/Pipeline.lean` | A five-step pipeline is correct and independent of arrival order, from the steps' theorems alone. |
+| `Proofs/Feeds.lean` | Every feed has `FeedShape`, and distinct labels when the specification does; a tuple new to a feed binds a new fact. |
+| `Proofs/Cursor.lean` | Paging by bookmark keeps a replica caught up from the first page to an empty one while the graph grows; eventual consistency, given `FeedsCover`. |
 
 The redesign changed the proofs less than it changed the definitions. The
 derivation of the tail's givens fell from 386 lines to 344, and no longer needs
@@ -1000,5 +1064,6 @@ became 350, with the check included.
 not modelled. In the cascade model: `groupBy`,
 `filter` and `flatten` below the root; and the caches of the steps other than
 `groupBy`, the aggregates and `defineProperty`. Conditions on givens are modelled for the inverse algorithm and
-the stream, not for the split. `buildFeeds`, skeleton canonicity
-and distribution soundness are not started.
+the stream, not for the split. `FeedsCover` is checked and not proved. Skeleton
+canonicity (feed hashes), the stream session's wake-ups (liveness), and
+distribution soundness are not started.
