@@ -6,11 +6,15 @@
 // JSON file, or a .jinaga file holding specification text.
 //
 // Checks:
-//   wellformed    jinaga.js wellFormedErrors / assertWellFormed, and the parser for text
+//   wellformed    jinaga.js validateSpecification and wellFormedErrors (together,
+//                 what assertWellFormed checks), and the parser for text
 //   disconnected  jinaga.js detectDisconnectedSpecification
 //   feeds         jinaga.js buildFeeds, printed as specification text
 //   sql           jinaga-server sqlFromFeed on each feed (FEEDS=jinaga: jinaga.js's
 //                 buildFeeds; default: the vector's expected.feeds, else buildFeeds)
+//
+// Exits 1 if any specification reports a problem: for `wellformed` on a
+// directory of ill-formed vectors, that is the expected result.
 //
 // JINAGA_JS and JINAGA_SERVER default to sibling checkouts of jinaga-spec.
 // Run it from ports/typescript (for tsx), passing this script's path.
@@ -31,7 +35,9 @@ const js = await import(pathToFileURL(join(jsDir, "src/index.ts")).href);
 const parse = (text: string) => {
   const p = new js.SpecificationParser(text);
   p.skipWhitespace();
-  return p.parseSpecification();
+  const spec = p.parseSpecification();
+  p.expectEnd();
+  return spec;
 };
 
 type Item = { name: string; spec: any; text?: string; feeds?: any[] };
@@ -62,9 +68,9 @@ for (const { name, spec, text, feeds } of items) {
   try {
     switch (check) {
       case "wellformed": {
-        const errors = js.wellFormedErrors(spec);
-        if (errors.length) report(name, `wellFormedErrors ${JSON.stringify(errors)}`);
-        else console.log(`${name}: wellFormedErrors accepts it`);
+        const errors = [...js.validateSpecification(spec), ...js.wellFormedErrors(spec)];
+        if (errors.length) report(name, `rejected ${JSON.stringify(errors)}`);
+        else console.log(`${name}: validateSpecification and wellFormedErrors accept it`);
         if (text) console.log(`${name}: parser accepts it`);
         break;
       }
@@ -104,3 +110,4 @@ for (const { name, spec, text, feeds } of items) {
   }
 }
 console.log(`${items.length} specification(s), ${problems} problem(s)`);
+if (problems > 0) process.exitCode = 1;

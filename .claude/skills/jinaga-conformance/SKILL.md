@@ -28,14 +28,14 @@ jinaga-server. Its input is a vector directory, one vector file, or a
 ```bash
 cd ports/typescript
 P=../../.claude/skills/jinaga-conformance/scripts/probe.mts
-npx tsx $P wellformed ../../vectors/well-formed     # wellFormedErrors on each
+npx tsx $P wellformed ../../vectors/well-formed     # validateSpecification + wellFormedErrors
 npx tsx $P disconnected ../../vectors/feeds         # detectDisconnectedSpecification
 npx tsx $P feeds my-spec.jinaga                     # jinaga.js buildFeeds, as text
 npx tsx $P sql ../../vectors/feeds                  # jinaga-server SQL for the vectors' feeds
 FEEDS=jinaga npx tsx $P sql ../../vectors/feeds     # ...for jinaga.js's own feeds
 ```
 
-`JINAGA_JS` and `JINAGA_SERVER` default to sibling checkouts. The `sql`
+`JINAGA_JS` and `JINAGA_SERVER` default to sibling checkouts. The probe exits 1 when it reports any problem, and a `.jinaga` file must hold one specification and nothing after it. The `sql`
 check runs jinaga-server's SQL builder only. It doesn't run a database, so a
 query that builds may still return wrong rows. Say so when you report it.
 
