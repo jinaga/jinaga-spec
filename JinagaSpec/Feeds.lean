@@ -84,9 +84,7 @@ mutual
       ∀ {ms : List Match} {m : Match}, m ∈ flattenMatches lift ms → ∀ ns ∈ m.negatives, sizeOf ns < sizeOf ms
     | [], _, h, _, _ => by simp [flattenMatches] at h
     | .mk u cs :: rest, m, h, ns, hns => by
-      have hfl : flattenMatches lift (.mk u cs :: rest) =
-          .mk u (flattenConditions lift cs).1 :: ((flattenConditions lift cs).2 ++ flattenMatches lift rest) := by
-        rw [flattenMatches]; rcases flattenConditions lift cs with ⟨k, l⟩; rfl
+      have hfl := flattenMatches_cons lift u cs rest
       have hcs : sizeOf cs < sizeOf (Match.mk u cs :: rest) := by simp; omega
       have hrest : sizeOf rest < sizeOf (Match.mk u cs :: rest) := by simp; omega
       rw [hfl] at h
@@ -241,7 +239,9 @@ def traversesSuccessors (feed : Specification) : Bool :=
     | .path pc => !pc.rolesLeft.isEmpty
     | .existential .. => false
 
-/-- The feeds of a specification. -/
+/-- The feeds of a specification. Its theorems assume `DistinctLabels`: every
+label is declared once, so that a feed binds each of its labels once. A port
+rejects a specification that repeats a label (`ports/typescript/feed-builder.ts`). -/
 def buildFeeds (s : Specification) : List Specification :=
   ((levelFeeds (fun P => [P]) [] s.matchList).map fun ms =>
     { given := usedGivens s.given ms, matchList := ms, projection := .composite [] }).filter traversesSuccessors

@@ -20,11 +20,6 @@ namespace JinagaSpec
 
 /-! ## Flattening every positive condition -/
 
-theorem flattenMatches_cons (lift : List Match → Bool) (u : Label) (cs : List Condition) (rest : List Match) :
-    flattenMatches lift (.mk u cs :: rest) =
-      .mk u (flattenConditions lift cs).1 :: ((flattenConditions lift cs).2 ++ flattenMatches lift rest) := by
-  rw [flattenMatches]; rcases flattenConditions lift cs with ⟨k, l⟩; rfl
-
 theorem flattenConditions_cons (c : Condition) (cs : List Condition) :
     flattenConditions (fun _ => true) (c :: cs) = match c with
       | .existential true ms => ((flattenConditions (fun _ => true) cs).1, flatten ms ++ (flattenConditions (fun _ => true) cs).2)

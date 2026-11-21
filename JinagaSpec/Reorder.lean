@@ -72,6 +72,11 @@ mutual
       | c => (c :: keep, lifted)
 end
 
+theorem flattenMatches_cons (lift : List Match → Bool) (u : Label) (cs : List Condition) (rest : List Match) :
+    flattenMatches lift (.mk u cs :: rest) =
+      .mk u (flattenConditions lift cs).1 :: ((flattenConditions lift cs).2 ++ flattenMatches lift rest) := by
+  rw [flattenMatches]; rcases flattenConditions lift cs with ⟨k, l⟩; rfl
+
 /-! ## Ordering from the new fact -/
 
 /-- A path condition written on `home`. -/

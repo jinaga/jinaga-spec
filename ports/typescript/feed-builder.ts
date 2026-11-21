@@ -96,7 +96,17 @@ const traversesSuccessors = (feed: Specification) =>
 const named = (matches: Match[]): string[] => matches.flatMap(m => m.conditions.flatMap(c =>
     isPath(c) ? [c.labelRight] : named(c.matches)));
 
+/** Every label the matches declare, at any depth. */
+const declared = (matches: Match[]): string[] => matches.flatMap(m => [m.unknown.name,
+    ...m.conditions.flatMap(c => isPath(c) ? [] : declared(c.matches))]);
+
 export function buildFeeds(specification: Specification): Specification[] {
+    // Joining positive conditions into one level would bind a label that two
+    // sibling conditions both declare twice (`DistinctLabels`, JinagaSpec/Feeds.lean).
+    const labels = declared(specification.matches);
+    const repeated = labels.find((l, i) => labels.indexOf(l) !== i);
+    if (repeated !== undefined)
+        throw new Error(`Rename the label "${repeated}": feeds need every label to be declared once.`);
     return levelFeeds(feed => [feed], [], specification.matches)
         .map(matches => ({
             given: specification.given

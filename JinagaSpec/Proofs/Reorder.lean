@@ -209,9 +209,7 @@ theorem flattenConditions_keep_scoped {inner outer : List Name} :
 theorem mem_names_flatten {x : Name} : ∀ {ms : List Match}, x ∈ names ms → x ∈ names (flattenMatches lift ms)
   | [], h => by simpa [flattenMatches] using h
   | .mk u cs :: rest, h => by
-    have hflat : flattenMatches lift (.mk u cs :: rest) =
-        .mk u (flattenConditions lift cs).1 :: ((flattenConditions lift cs).2 ++ flattenMatches lift rest) := by
-      rw [flattenMatches]; rcases flattenConditions lift cs with ⟨k, l⟩; rfl
+    have hflat := flattenMatches_cons lift u cs rest
     rw [hflat]
     simp only [names, List.map_cons, List.mem_cons, Match.unknown_mk, List.map_append,
       List.mem_append] at h ⊢
@@ -233,9 +231,7 @@ mutual
         fun σ h => ⟨σ, h, fun _ h => by simp [names] at h⟩⟩
     | .mk u cs :: rest, S, env, ⟨hcs, hrest⟩, hnd, hdis => by
       -- The flattened list: `u` with the conditions kept, the lifted matches, then `rest` flattened.
-      have hflat : flattenMatches lift (.mk u cs :: rest) =
-          .mk u (flattenConditions lift cs).1 :: ((flattenConditions lift cs).2 ++ flattenMatches lift rest) := by
-        rw [flattenMatches]; rcases flattenConditions lift cs with ⟨k, l⟩; rfl
+      have hflat := flattenMatches_cons lift u cs rest
       rw [hflat] at hnd hdis ⊢
       simp only [names, List.map_cons, List.map_append, List.nodup_cons, Match.unknown_mk,
         List.mem_append, not_or] at hnd
