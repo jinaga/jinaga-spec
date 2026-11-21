@@ -336,7 +336,7 @@ mutual
       have hwu : Within (names (P ++ level [m]) ++ (negativesOf [m]).flatMap declaredMatches)
           (names P ++ declaredMatches (m :: rest)) := by
         intro x; have := within_level [m] x; have := declared_cons m rest x
-        simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+        simp only [names_append, List.count_append] at *
         omega
       have hdisU : ∀ x ∈ names (level [m]), x ∉ names P := by
         have : Within (names P ++ names (level [m])) (names (P ++ level [m]) ++ (negativesOf [m]).flatMap declaredMatches) := by
@@ -360,7 +360,7 @@ mutual
               · exact List.mem_append_right _ (by rw [names_append]; exact List.mem_append_left _ hx)
           have hwr : Within (names (P ++ level [m]) ++ names (level rest)) (names P ++ declaredMatches (m :: rest)) := by
             intro x; have := within_level [m] x; have := within_level rest x; have := declared_cons m rest x
-            simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+            simp only [names_append, List.count_append] at *
             omega
           have hdis := disjoint_of_nodup hwr (by simpa using h.nodup)
           have hdisQ1 : ∀ x ∈ names (level rest), x ∉ names Q1 := by
@@ -382,7 +382,7 @@ mutual
             · exact hQ'.grows x (by rw [names_append]; exact List.mem_append_right _ hx)
           · intro x; have := hQ'.within x; have := hQ1.within x; have := within_level [m] x
             have := declared_cons m rest x
-            simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+            simp only [names_append, List.count_append] at *
             omega
           · rw [hlevel]
             refine es.trans hQ'.ext fun x hx => ?_
@@ -417,7 +417,7 @@ mutual
         · refine Or.inr ⟨fun x => ?_, eQ1.trans hext fun x hx => hQ1.grows x (by
             rw [names_append]; exact List.mem_append_left _ hx)⟩
           have := hloc x; have := hQ1.within x; have := within_level [m] x; have := declared_cons m rest x
-          simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+          simp only [names_append, List.count_append] at *
           omega
       · exact Or.inr ⟨hloc.trans hwu, eU.trans hext fun x hx => by rw [names_append]; exact List.mem_append_left _ hx⟩
   termination_by _ ms => (sizeOf ms, 0)

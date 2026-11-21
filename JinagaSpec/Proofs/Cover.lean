@@ -404,6 +404,24 @@ theorem distinct_of_hygieneN {G0 : List Name} {Q : List Match} {negs : List (Lis
   · exact h.ordinary x (mem_within hw (List.mem_append_right _ hx)) hxS
   · exact (List.nodup_append.mp hnd).2.2 x hxS x hx rfl
 
+/-- Restoring through a witness `x` of the first pending condition, with a valid
+fact `y` of one of its own negative conditions. -/
+theorem restore_prep {G : Graph} {env : Env} {G0 : List Name} {Q N N' : List Match} {rest : List (List Match)}
+    {τ x y : Env} (h : Hygiene G0 Q (N :: rest)) (hτ : τ ∈ evalMatches G env Q)
+    (hx : x ∈ evalMatches G τ (level N)) (hN' : N' ∈ negativesOf N) (hvy : ValidL G y N') :
+    Hygiene G0 (Q ++ level N) [N'] ∧ x ∈ evalMatches G env (Q ++ level N) ∧
+      (∀ N'' ∈ negativesOf N', Choosable G y N'') ∧ Agree (G0 ++ names Q) τ x := by
+  have hr := hygiene_restore h hN'
+  have hwl : Within (names Q ++ names (level N)) (names Q ++ (N :: rest).flatMap declaredMatches) := by
+    intro z; have := within_level N z; simp only [List.flatMap_cons, List.count_append] at *; omega
+  refine ⟨hr, mem_evalMatches_append.mpr ⟨τ, hτ, hx⟩, fun N'' hN'' =>
+    choosable_of_holds (scoped_negativesOf (hr.inScope N' (List.mem_singleton_self _)) hN'')
+      (by simpa [List.append_assoc] using distinct_of_hygiene hr hN'') (hvy N'' hN''),
+    fun z hz => (evalMatches_frame hx z fun hm => ?_).symm⟩
+  rcases List.mem_append.mp hz with hz | hz
+  · exact h.ordinary z (mem_within hwl (List.mem_append_right _ hm)) hz
+  · exact disjoint_of_nodup hwl h.nodup z hm hz
+
 /-! ## The walk completes a context it can pass -/
 
 section Complete
@@ -437,7 +455,7 @@ theorem unit_split {G : Graph} {env : Env} {G0 : List Name} {P : List Match} {m 
   obtain ⟨σ1, hσ1, hσr⟩ := mem_evalMatches_append.mp hσ
   have hwr : Within (names (P ++ level [m]) ++ names (level rest)) (names P ++ declaredMatches (m :: rest)) := by
     intro x; have := within_level [m] x; have := within_level rest x; have := declared_cons m rest x
-    simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+    simp only [names_append, List.count_append] at *
     omega
   have hnd : (names P ++ declaredMatches (m :: rest)).Nodup := by simpa using h.nodup
   have hdisR := disjoint_of_nodup hwr hnd
@@ -506,7 +524,7 @@ mutual
           ((c1.agree x hx1).trans (c2.agree x (c1.grows x hx1)))
       · exact c2.grows x (c1.grows x (by rw [names_append]; exact List.mem_append_left _ hx))
       · have := c2.within x; have := c1.within x; have := within_level [m] x; have := declared_cons m rest x
-        simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+        simp only [names_append, List.count_append] at *
         omega
       · rcases hlev hx with hx | hx
         · rw [evalMatches_frame hσr x fun hm => hdisR x hm (hmid x hx)]
@@ -531,35 +549,22 @@ mutual
       ∃ Q' τ', Reached Out k Q' rest ∧ Hygiene G0 Q' rest ∧ Q' ≠ [] ∧ τ' ∈ evalMatches G env Q' ∧
         Agree (G0 ++ names Q) τ τ' ∧ (∀ x ∈ names Q, x ∈ names Q') ∧
         Within (names Q' ++ rest.flatMap declaredMatches) (names Q ++ (N :: rest).flatMap declaredMatches) := by
-    have hwl : Within (names (Q ++ level N)) (names Q ++ (N :: rest).flatMap declaredMatches) := by
-      intro x; have := within_level N x
-      simp only [names_append, List.flatMap_cons, List.count_append] at *; omega
-    have hdisL : ∀ x ∈ names (level N), x ∉ names Q := by
-      rw [names_append] at hwl
-      exact disjoint_of_nodup hwl h.nodup
     rcases hch with hn | ⟨x, hx, N', hN', y, hy, hvy⟩
     · have hQf : addLast (.existential false (level N)) Q ≠ [] := fun he =>
         names_ne_nil hQ (by rw [← names_addLast (.existential false (level N)) Q, he]; rfl)
       refine ⟨_, τ, hR.filter, hygiene_filter h, hQf, mem_addLast_of hτ hn, fun _ _ => rfl,
         fun x hx => by rwa [names_addLast], fun x => ?_⟩
       rw [names_addLast]; simp only [List.flatMap_cons, List.count_append]; omega
-    · have hr := hygiene_restore h hN'
-      have hxQ : x ∈ evalMatches G env (Q ++ level N) := mem_evalMatches_append.mpr ⟨τ, hτ, hx⟩
-      have hscN' := hr.inScope N' (List.mem_singleton_self _)
-      have hchN' : ∀ N'' ∈ negativesOf N', Choosable G y N'' := fun N'' hN'' =>
-        choosable_of_holds (scoped_negativesOf hscN' hN'') (by
-          have := distinct_of_hygiene hr hN''
-          simpa [List.append_assoc] using this) (hvy N'' hN'')
+    · obtain ⟨hr, hxQ, hchN', agx⟩ := restore_prep h hτ hx hN' hvy
       obtain ⟨Q'', τ'', c1, -, -⟩ := walk_level G0 _ _ N' x y (hR.restore hN') hr hxQ hy hchN'
       have hgQ : ∀ z ∈ names Q, z ∈ names Q'' := fun z hz =>
         c1.grows z (by rw [names_append]; exact List.mem_append_left _ hz)
       have h2 := hygiene_after_restore h hN' c1.within hgQ
       refine ⟨Q'', τ'', c1.reached, h2, ne_nil_of_names hQ hgQ, c1.mem, fun z hz => ?_, hgQ, fun z => ?_⟩
-      · rcases List.mem_append.mp hz with hz | hz
+      · rcases List.mem_append.mp hz with hz' | hz'
         · exact agree_outside hτ c1.mem (fun w hw => h.ordinary w (List.mem_append_left _ hw))
-            (fun w hw => h2.ordinary w (List.mem_append_left _ hw)) z hz
-        · exact (evalMatches_frame hx z fun hm => hdisL z hm hz).symm.trans
-            (c1.agree z (by rw [names_append]; exact List.mem_append_left _ hz))
+            (fun w hw => h2.ordinary w (List.mem_append_left _ hw)) z hz'
+        · exact (agx z hz).trans (c1.agree z (by rw [names_append]; exact List.mem_append_left _ hz'))
       · have := c1.within z; have := within_level N z; have := within_negative hN' z
         simp only [names_append, List.flatMap_cons, List.count_append] at *; omega
   termination_by (maxSize (N :: rest), 0)
@@ -877,7 +882,7 @@ mutual
       have hwU : Within (names (P ++ level [m]) ++ (negativesOf [m]).flatMap declaredMatches ++
           (declaredMatches rest ++ Dk)) T := by
         intro z; have := hw z; have := within_level [m] z; have := declared_cons m rest z
-        simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *; omega
+        simp only [names_append, List.count_append] at *; omega
       rw [pd_iff]
       intro N hN
       rw [negativesOf_cons] at hN
@@ -895,7 +900,7 @@ mutual
         have hpd := pd_level G0 T hT hTo H henv k A ρ Dk hk Q1 rest τ1 σ' c1.reached h2
           (fun z => by
             have := c1.within z; have := hw z; have := within_level [m] z; have := declared_cons m rest z
-            simp only [names_append, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.count_append] at *
+            simp only [names_append, List.count_append] at *
             omega)
           c1.mem (agree_A hAU agσ1 hag1) (fun x hx => (hAU x hx).imp id (c1.grows x))
           hσ' (validL_agree ag' hscRN hvR)
@@ -923,29 +928,11 @@ mutual
       -- The continuation after this condition walks the rest, then hands on to `k`.
       have kc := kdone_neg hT hTo henv hk hQ (fun x hx => h.ordinary x (List.mem_append_left _ hx)) hscRest
         (fun n hn => hholds n (List.mem_cons_of_mem _ hn)) agτ hAQ
-      have hwl : Within (names (Q ++ level N)) (names Q ++ (N :: rest).flatMap declaredMatches) := by
-        intro x; have := within_level N x
-        simp only [names_append, List.flatMap_cons, List.count_append] at *; omega
-      have hdisL : ∀ x ∈ names (level N), x ∉ names Q := by
-        rw [names_append] at hwl
-        exact disjoint_of_nodup hwl h.nodup
       rcases List.mem_cons.mp hN₀ with h0 | hN₀
       · -- At this condition: each valid canceller of each witness is delivered.
         subst N₀
         intro x hx N' hN' y hy hvy
-        have hr := hygiene_restore h hN'
-        have hxQ : x ∈ evalMatches G env (Q ++ level N) := mem_evalMatches_append.mpr ⟨τ, hτ, hx⟩
-        have hscN' := hr.inScope N' (List.mem_singleton_self _)
-        have hchN' : ∀ N'' ∈ negativesOf N', Choosable G y N'' := fun N'' hN'' =>
-          choosable_of_holds (scoped_negativesOf hscN' hN'') (by
-            have := distinct_of_hygiene hr hN''
-            simpa [List.append_assoc] using this) (hvy N'' hN'')
-        have agx : Agree (G0 ++ names Q) τ x := fun z hz => by
-          rcases List.mem_append.mp hz with hz | hz
-          · exact (evalMatches_frame hx z fun hm => h.ordinary z (by
-              have := mem_within hwl (by rw [names_append]; exact List.mem_append_right _ hm)
-              simpa using this) hz).symm
-          · exact (evalMatches_frame hx z fun hm => hdisL z hm hz).symm
+        obtain ⟨hr, hxQ, hchN', agx⟩ := restore_prep h hτ hx hN' hvy
         have hwr : Within (names (Q ++ level N) ++ declaredMatches N' ++ (rest.flatMap declaredMatches ++ Dk)) T := by
           intro z; have := hw z; have := within_level N z; have := within_negative hN' z
           simp only [names_append, List.flatMap_cons, List.count_append] at *; omega
