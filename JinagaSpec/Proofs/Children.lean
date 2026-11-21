@@ -158,9 +158,10 @@ negative conditions.
 So a new client is not sent the details of an entity excluded by a fact that
 nothing has tried to cancel, a child specification's facts about it included:
 the names of a deleted menu item, while no restore of its delete exists.
-Exactness is not possible: `restore-revoked-and-unrevoked` (`FeedCases.lean`)
-is an entity still excluded whose details a feed must carry, because telling
-it apart needs a nested negative condition. -/
+No feeds can do better. `restore-revoked-and-unrevoked` (`FeedCases.lean`) is
+an entity excluded, its one witness standing, whose details these feeds carry,
+and any consistent, append-only feeds carry them on such a graph
+(`exact_deferral_impossible`, `Proofs/Contested.lean`). -/
 theorem feeds_defer {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d)
     (hd : ∀ d ∈ s.descendants, DistinctLabels d) (G : Graph) (env : Env) :
     ∀ f ∈ buildFeeds s, ∃ d ∈ s.descendants, (∀ x ∈ names f.matchList, x ∈ declaredMatches d.matchList) ∧

@@ -228,4 +228,4 @@
      "given": [{"label": {"type": "Tenant", "name": "t"}, "conditions": []}]}}],
   "delivered": [1, 2, 3, 4, 5, 6, 7]},
  "description":
- "A delete restored, whose restore is revoked twice, one revocation itself undone. The event stays deleted, but the restoring feed through the undone revocation still delivers its name: withholding it would need a nested negative condition, which append-only forbids. Deferral is guaranteed only when no witness of the exclusion has a cancelling fact."}
+ "A delete restored, whose restore is revoked twice, one revocation itself undone. The event stays deleted, but the restoring feed through the undone revocation still delivers its name. No consistent, append-only feeds withhold it on every such graph (exact_deferral_impossible). Deferral is guaranteed only when no witness of the exclusion has a cancelling fact."}

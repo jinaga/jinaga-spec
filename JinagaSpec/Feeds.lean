@@ -23,7 +23,10 @@ what the feeds are:
 3. **Deferral.** A new client is not sent the details of an entity that is
    excluded by a negative condition none of whose facts has been cancelled: a
    deleted menu item's names, until it is restored, whether they are later
-   matches or a child specification's (`feeds_defer`).
+   matches or a child specification's (`feeds_defer`). No consistent,
+   append-only feeds can withhold every excluded entity's details: a contested
+   exclusion, a restore revoked twice and one revocation undone, defeats any of
+   them (`exact_deferral_impossible`).
 
 ## The feeds
 

@@ -24,6 +24,10 @@ specifications and graphs, the requirements of chapter 12:
 A third of the specifications have child specifications, two deep at most
 (`genChildSpec`).
 
+Exact deferral is impossible (`exact_deferral_impossible`): `checkExact` tries
+feed sets that withhold a contested exclusion's details, and each must break
+consistency or append-only on the theorem's graphs.
+
 Each mutant changes one rule of `buildFeeds`. Every one must be caught by one
 of the checks, or the check is not testing that rule. The mutants are one
 builder, `buildFeedsWith`, parameterized over the rule that varies;
@@ -254,6 +258,73 @@ def antitoneHolds (f : Specification) (g : Graph) (B : List Fact) (env : Env) : 
   let before := f.tuples g env
   (f.tuples (g ++ B) env).all fun t => t.any (fun id => B.any (·.id == id)) || before.contains t
 
+/-! ## Exact deferral
+
+`exact_deferral_impossible`: no feeds of `contested` are consistent,
+append-only, and withhold the name of an event whose one delete stands. Each
+candidate below tries to withhold it, and must break one of the other two on
+the theorem's graphs: an event, its delete, a restore, `N` revokes of the
+restore, and an unrevoke of each, but for one. -/
+
+open Build in
+/-- The restore filtered by its whole condition: a nested negative condition. -/
+def wholeRestore : Specification :=
+  spec [("t", "Tenant")]
+    [unknown "e" "Event" [path [role "tenant" "Tenant"] "t"],
+     unknown "d" "Delete" [path [role "event" "Event"] "e"],
+     unknown "x" "Restore" [path [role "delete" "Delete"] "d", notExists Contested.vs],
+     unknown "n" "Name" [path [role "event" "Event"] "e"]]
+    (.composite [])
+
+open Build in
+/-- The unrevokes, without the name. -/
+def unrevokes : Specification :=
+  spec [("t", "Tenant")]
+    [unknown "e" "Event" [path [role "tenant" "Tenant"] "t"],
+     unknown "d" "Delete" [path [role "event" "Event"] "e"],
+     unknown "x" "Restore" [path [role "delete" "Delete"] "d"],
+     unknown "v" "Revoke" [path [role "restore" "Restore"] "x"],
+     unknown "z" "Unrevoke" [path [role "revoke" "Revoke"] "v"]]
+    (.composite [])
+
+/-- `buildFeeds` without the restoring feed that delivers the name through an
+unrevoke, which is also the feed that delivers the unrevokes. -/
+def withoutRestore : List Specification :=
+  (buildFeeds contested).filter fun f => !((names f.matchList).contains "z" && (names f.matchList).contains "n")
+
+def exactCandidates : List (String × List Specification) := [
+  ("buildFeeds", buildFeeds contested),
+  ("no restoring feed through an unrevoke", unrevokes :: withoutRestore),
+  ("the restore filtered by its whole condition", wholeRestore :: unrevokes :: withoutRestore)]
+
+/-- Whether the feeds are consistent, append-only and exact on the theorem's
+graphs with `N` revokes. -/
+def exactOn (Fs : List Specification) (N : Nat) : Bool × Bool × Bool := Id.run do
+  let env := Contested.env0
+  let all := List.range N
+  let full := Contested.graph N all ++ [Contested.name]
+  let mut consistent := coverHolds contested full env (deliver Fs full env) []
+  let mut appendOnly := Fs.all fun f => antitoneHolds f (Contested.graph N all) [Contested.name] env
+  let mut exact := true
+  for i in all do
+    let G := Contested.graph N (all.erase i) ++ [Contested.name]
+    consistent := consistent && coverHolds contested G env (deliver Fs G env) []
+    appendOnly := appendOnly && Fs.all fun f => antitoneHolds f G [Contested.unrevoke i] env
+    exact := exact && !(deliver Fs G env).contains Contested.name.id
+  return (consistent, appendOnly, exact)
+
+/-- Each candidate must break consistency, append-only or exactness. -/
+def checkExact : IO Bool := do
+  let mut ok := true
+  for (label, Fs) in exactCandidates do
+    let rs := [1, 2, 3].map (exactOn Fs)
+    let c := rs.all (·.1)
+    let a := rs.all (·.2.1)
+    let e := rs.all (·.2.2)
+    IO.println s!"exact deferral, {label}: consistent {c}, append-only {a}, exact {e}"
+    if c && a && e then ok := false
+  return ok
+
 structure Tally where
   specs : Nat := 0
   graphs : Nat := 0
@@ -343,6 +414,9 @@ def main (args : List String) : IO UInt32 := do
       found := (found.zip mutants).map fun (was, (_, mu)) => was || caughtOn mu s G env B extra
     caught := (caught.zip found).map fun (n, b) => if b then n + 1 else n
   measureDownload
+  unless (← checkExact) do
+    IO.println "a candidate defers exactly while consistent and append-only"
+    return 1
   IO.println s!"specifications {t.specs}, graphs {t.graphs}, feeds {t.feeds}, facts delivered {t.facts}"
   IO.println s!"shape: {t.shape} feeds wrong"
   IO.println s!"antitone: {t.antitone} wrong"

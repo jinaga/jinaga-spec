@@ -161,14 +161,8 @@ theorem mem_graph {f : Fact} : f ∈ graph N U ++ T ↔ f = tenant ∨ f = event
 theorem cases_graph (hT : ∀ f ∈ T, f = name) {f : Fact} (hf : f ∈ graph N U ++ T) :
     f = tenant ∨ f = event ∨ f = delete ∨ f = restore ∨ f = name ∨
       (∃ i < N, f = revoke i) ∨ (∃ j ∈ U, f = unrevoke j) := by
-  rcases mem_graph.mp hf with h | h | h | h | h | h | h
-  · exact Or.inl h
-  · exact Or.inr (Or.inl h)
-  · exact Or.inr (Or.inr (Or.inl h))
-  · exact Or.inr (Or.inr (Or.inr (Or.inl h)))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h)))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr h)))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl (hT f h)))))
+  rcases mem_graph.mp hf with h | h | h | h | h | h | h <;>
+    first | simp only [h, true_or, or_true] | simp only [hT f h, true_or, or_true]
 
 theorem idsUnique (hT : ∀ f ∈ T, f = name) : (graph N U ++ T).IdsUnique := by
   intro a ha b hb h
@@ -364,23 +358,12 @@ theorem exact_deferral_impossible (Fs : List Specification) (hc : Consistent con
     intro i hi
     refine Classical.byContradiction fun hz => hno ?_
     have hU : i ∉ (List.range N).erase i := fun h => (List.nodup_range.mem_erase_iff.mp h).1 rfl
+    have hperm : ((List.range N).map unrevoke).Perm (((List.range N).erase i).map unrevoke ++ [unrevoke i]) :=
+      ((List.perm_cons_erase (List.mem_range.mpr hi)).map _).trans (List.perm_append_singleton _ _).symm
     have hmem : ∀ x, x ∈ graph N (List.range N) ++ [name] ↔
-        x ∈ graph N ((List.range N).erase i) ++ [name] ++ [unrevoke i] := by
-      intro x
-      simp only [graph, List.mem_append, List.mem_map, List.mem_singleton, List.nodup_range.mem_erase_iff,
-        List.mem_range]
-      by_cases hx : x = unrevoke i
-      · subst hx; simp only [or_true, iff_true]; exact Or.inl (Or.inr ⟨i, hi, rfl⟩)
-      · simp only [hx, or_false]
-        constructor
-        · rintro ((h | ⟨a, ha, rfl⟩) | h)
-          · exact Or.inl (Or.inl h)
-          · exact Or.inl (Or.inr ⟨a, ⟨fun h => hx (h ▸ rfl), ha⟩, rfl⟩)
-          · exact Or.inr h
-        · rintro ((h | ⟨a, ⟨-, ha⟩, rfl⟩) | h)
-          · exact Or.inl (Or.inl h)
-          · exact Or.inl (Or.inr ⟨a, ha, rfl⟩)
-          · exact Or.inr h
+        x ∈ graph N ((List.range N).erase i) ++ [name] ++ [unrevoke i] := fun x => by
+      simp only [graph, List.mem_append, hperm.mem_iff]
+      simp only [or_assoc, or_comm, or_left_comm]
     have ht' := ha f hf _ [unrevoke i] env0 (fresh_unrevoke hT hU) (settled (by simp [unrevoke]))
       t ((tuples_congr hmem (idsUnique hT) f env0 t).mp ht)
       (fun id hid b hb => by rw [List.mem_singleton.mp hb]; exact fun h => hz (h ▸ hid))

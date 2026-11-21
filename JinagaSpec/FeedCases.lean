@@ -115,13 +115,21 @@ def feedCases : List FeedCase := [
       ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Undo", [("delete", 2)]⟩, ⟨5, "Revoke", [("undo", 4)]⟩,
       ⟨6, "Name", [("event", 1)]⟩] },
   { name := "restore-revoked-and-unrevoked"
-    description := "A delete restored, whose restore is revoked twice, one revocation itself undone. The event stays deleted, but the restoring feed through the undone revocation still delivers its name: withholding it would need a nested negative condition, which append-only forbids. Deferral is guaranteed only when no witness of the exclusion has a cancelling fact."
+    description := "A delete restored, whose restore is revoked twice, one revocation itself undone. The event stays deleted, but the restoring feed through the undone revocation still delivers its name. No consistent, append-only feeds withhold it on every such graph (exact_deferral_impossible). Deferral is guaranteed only when no witness of the exclusion has a cancelling fact."
     source := "feeds_defer"
     spec := contested
     givens := [("t", 0)]
     graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
       ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Revoke", [("restore", 3)]⟩, ⟨5, "Revoke", [("restore", 3)]⟩,
       ⟨6, "Unrevoke", [("revoke", 5)]⟩, ⟨7, "Name", [("event", 1)]⟩] },
+  { name := "restore-revoked-and-both-unrevoked"
+    description := "restore-revoked-and-unrevoked with the other revocation undone too. The restore stands, the delete is cancelled, and the name is a result, delivered through the restoring feed. Its tuple binds an unrevoke. A tuple that binds no unrevoke would have been there before the last one arrived, while the event was deleted, so withholding the name in restore-revoked-and-unrevoked would take a tuple binding every unrevoke (exact_deferral_impossible)."
+    source := "exact_deferral_impossible"
+    spec := contested
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Delete", [("event", 1)]⟩,
+      ⟨3, "Restore", [("delete", 2)]⟩, ⟨4, "Revoke", [("restore", 3)]⟩, ⟨5, "Revoke", [("restore", 3)]⟩,
+      ⟨6, "Unrevoke", [("revoke", 5)]⟩, ⟨7, "Name", [("event", 1)]⟩, ⟨8, "Unrevoke", [("revoke", 4)]⟩] },
   { name := "exists-inside-not-exists"
     description := "notExists { exists }: an event with no approved delete. The filter is the delete's level, with the approval joined in. jinaga.js replaces the condition with its positive one, which names a label it does not bind."
     source := "check-feeds"
