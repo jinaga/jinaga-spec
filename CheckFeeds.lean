@@ -251,7 +251,7 @@ def feedShape (ms : List Match) : Bool :=
     | .existential true _ => false
 
 def coverHolds (s : Specification) (g : Graph) (env : Env) (D extra : List FactId) : Bool :=
-  sameResults (readsOf s (replica s g env D extra) env) (readsOf s g env)
+  sameResults (s.readsOf (replica s g env D extra) env) (s.readsOf g env)
 
 /-- Tuples of `f` after `B` whose facts were all in `g` were tuples before. -/
 def antitoneHolds (f : Specification) (g : Graph) (B : List Fact) (env : Env) : Bool :=

@@ -1228,10 +1228,33 @@ rates both declare `next`, and the Entity List vector keeps that.
 ### What a replica reads, at every depth
 
 A result now holds each child specification's results (`Result`). They are
-compared as sets at every depth. `Projection.Reads` says a result is read when
-some solution projects to its row, and each child's list holds, as a set,
-exactly the child's results from that solution. `feeds_cover` concludes
-`∀ r, s.Reads g env r ↔ s.Reads (g ++ B) env r`.
+compared as sets at every depth. `Projection.ReadsAt` says a result is read
+from one solution σ when σ projects to its row and, for each child
+specification, each listed result is read from some solution of the child's
+matches from σ, and each such solution has some listed result read from it.
+`Projection.Reads` reads a result from some solution of the matches.
+`feeds_cover` concludes `∀ r, s.Reads g env r ↔ s.Reads (g ++ B) env r`.
+
+A replica that holds the givens reads a result from every solution, at any
+depth (`reads_of_solution`). The result is `Projection.resultsAt`: one result
+per solution of each child, as `SpecificationRunner.read` builds it.
+`Specification.readsOf` lists one per solution (`reads_of_mem_readsOf`), and
+it is what `check-feeds`, `check-content` and the feed vectors'
+`nestedResults` compute, so they test the definition, not a stand-in.
+
+The first definition (jinaga/jinaga-spec#53) said each child's list holds,
+as a set, exactly the child's results from the solution: `r ∈ cs ↔ Reads r`.
+A list with duplicates has the same members, so a document with one comment
+had infinitely many results (`[c]`, `[c, c]`, …), and no finite list held them
+all. Two levels down, every solution was dropped and `Reads` was empty, so
+`feeds_cover`'s iff held between two empty sets: it said nothing about the
+child results it was meant to cover. The proofs went through all the same,
+since their content is that the solutions agree along every path. The test
+library's `readsOf` built one list per solution, as intended, and nothing
+connected it to `Reads`, so no check noticed. `twoDeep_reads` is that
+counterexample, now read as `.mk [] [[.mk [] [[.mk [some 3] []]]]]`.
+A lemma that every solution has a result, now `reads_of_solution`, would have
+caught it.
 
 The flat proof had shown that the replica's and the replicator's solutions
 agree on the unknowns. Two solutions from the same environment that agree on
@@ -1399,7 +1422,7 @@ Decisions the statements forced:
   means the nested reading: the givens are held, and a solution of the
   matches, then of a child specification's matches from it and so on down,
   projects the fact (`Projection.Names`). `check-content` also compares it
-  with the test library's `readsOf` on every read.
+  with `Specification.readsOf` on every read.
 - **A given absent from the store is 403, not 400.** RR-1's 400 is for a proof
   with the wrong number of givens or an ill-formed specification. A missing
   given makes `read` empty (`Specification.read`), so the proof yields nothing.

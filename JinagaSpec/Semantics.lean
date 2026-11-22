@@ -122,16 +122,39 @@ projection names, and, for each child specification, its results. -/
 inductive Result where
   | mk (row : List (Option FactId)) (children : List (List Result))
 
-/-- `r` is a result of the matches `ms` with the projection `p`, read on `g`
-from `env`: some solution projects to its row, and each child specification's
-results are, as a set, exactly those read from that solution. So results are
-compared as sets at every depth. -/
-def Projection.Reads (g : Graph) : Projection → List Match → Env → Result → Prop
-  | p, ms, env, .mk row cs => ∃ σ ∈ evalMatches g env ms, row = p.labels.map σ ∧
-      cs.length = p.children.length ∧
-      ∀ x ∈ p.children.attach.zip cs, ∀ r, r ∈ x.2 ↔ x.1.1.2.Reads g x.1.1.1 σ r
+/-- `r` is a result of the projection `p` read on `g` from the one solution
+`σ`: `σ` projects to its row, and for each child specification, each listed
+result is read from some solution of the child's matches, and each such
+solution has some listed result read from it. So results are compared as sets
+at every depth: neither the order of a child's results, nor a repeated one,
+nor which of two equal results is listed, matters. A child's list needs only
+one result per solution, so a finite one always exists (`readsAt_resultsAt`). -/
+def Projection.ReadsAt (g : Graph) : Projection → Env → Result → Prop
+  | p, σ, .mk row cs => row = p.labels.map σ ∧ cs.length = p.children.length ∧
+      ∀ x ∈ p.children.attach.zip cs,
+        (∀ r ∈ x.2, ∃ τ ∈ evalMatches g σ x.1.1.1, x.1.1.2.ReadsAt g τ r) ∧
+        (∀ τ ∈ evalMatches g σ x.1.1.1, ∃ r ∈ x.2, x.1.1.2.ReadsAt g τ r)
 termination_by p => sizeOf p
-decreasing_by exact Projection.sizeOf_children x.1.2
+decreasing_by all_goals exact Projection.sizeOf_children x.1.2
+
+/-- `r` is a result of the matches `ms` with the projection `p`, read on `g`
+from `env`: it is read (`ReadsAt`) from some solution of the matches. -/
+def Projection.Reads (g : Graph) (p : Projection) (ms : List Match) (env : Env) (r : Result) : Prop :=
+  ∃ σ ∈ evalMatches g env ms, p.ReadsAt g σ r
+
+/-- The result read from the solution `σ`, child specifications included: one
+result for each solution of each child's matches, in the order `evalMatches`
+finds them, as jinaga.js's `SpecificationRunner.read` builds it. It is a
+result in the sense of `ReadsAt` (`readsAt_resultsAt`). -/
+def Projection.resultsAt (g : Graph) : Projection → Env → Result
+  | p, σ => .mk (p.labels.map σ) (p.children.attach.map fun c => (evalMatches g σ c.1.1).map (c.1.2.resultsAt g))
+termination_by p => sizeOf p
+decreasing_by exact Projection.sizeOf_children c.2
+
+/-- The results of the matches `ms` with the projection `p`: one for each
+solution. Each is a result in the sense of `Reads` (`reads_of_mem_resultsOf`). -/
+def Projection.resultsOf (g : Graph) (p : Projection) (ms : List Match) (env : Env) : List Result :=
+  (evalMatches g env ms).map (p.resultsAt g)
 
 /-- The label is bound to a fact of `g` of the label's type. -/
 def Graph.has (g : Graph) (env : Env) (l : Label) : Bool :=
@@ -150,6 +173,12 @@ def Specification.read (s : Specification) (g : Graph) (env : Env) : List (List 
 given is a fact it holds, as for `read`. -/
 def Specification.Reads (s : Specification) (g : Graph) (env : Env) (r : Result) : Prop :=
   s.given.all (g.has env) = true ∧ s.projection.Reads g s.matchList env r
+
+/-- What a replica reads, child specifications included, as a list: nothing
+until every given is a fact it holds, then `Projection.resultsOf`. Each is a
+result in the sense of `Specification.Reads` (`reads_of_mem_readsOf`). -/
+def Specification.readsOf (s : Specification) (g : Graph) (env : Env) : List Result :=
+  if s.given.all (g.has env) then s.projection.resultsOf g s.matchList env else []
 
 /-- The paths from a projection to each of its child specifications, at every
 depth, and to itself: the matches on the way, and the projection reached. -/

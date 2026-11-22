@@ -181,7 +181,7 @@ partial def resultsToJson (rs : List Result) : Json :=
 def feedVector (c : FeedCase) : Json :=
   let env := c.env
   let nested := if c.spec.projection.children.isEmpty then []
-    else [("nestedResults", resultsToJson (readsOf c.spec c.graph env))]
+    else [("nestedResults", resultsToJson (c.spec.readsOf c.graph env))]
   Json.mkObj [
     ("name", c.name),
     ("description", c.description),
@@ -722,8 +722,8 @@ def main (args : List String) : IO Unit := do
       throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
     -- The vector's results are what a replica holding what the feeds deliver
     -- reads (`feeds_cover`), child specifications' included.
-    unless sameResults (readsOf c.spec (replica c.spec c.graph c.env (delivered c.spec c.graph c.env) []) c.env)
-        (readsOf c.spec c.graph c.env) do
+    unless sameResults (c.spec.readsOf (replica c.spec c.graph c.env (delivered c.spec c.graph c.env) []) c.env)
+        (c.spec.readsOf c.graph c.env) do
       throw <| IO.userError s!"feed case {c.name}: a replica holding what the feeds deliver reads something else"
     IO.FS.writeFile (feedsDir / s!"{c.name}.json") ((feedVector c).pretty ++ "\n")
   CascadeVectors.checkMutants

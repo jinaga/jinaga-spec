@@ -27,7 +27,8 @@ A third:
   every requirement holds of a specification's feeds because it holds of each
   of its descendants' (`mem_buildFeeds`). A replica holding what they deliver
   reads what the replicator reads, the child specifications' results included
-  at every depth (`feeds_cover`). A tuple is never
+  at every depth (`feeds_cover`), and it reads a result from every solution
+  (`reads_of_solution`). A tuple is never
   inserted behind a bookmark (`feed_antitone`). And a new client is not sent
   the details of an entity whose exclusion nothing has cancelled, a child
   specification's facts about it included (`feeds_defer`). No feeds do better:
