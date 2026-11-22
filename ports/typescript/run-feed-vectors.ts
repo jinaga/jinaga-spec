@@ -17,9 +17,8 @@
 //       every depth (`feeds_cover`), and
 //    c. they deliver no fact the vector's feeds do not: a new client is not
 //       sent what the specification defers (`feeds_defer`).
-//    With PORT all must pass. Against jinaga.js they are reported: 2b fails on
-//    the vectors named in `jinagaMisses`, until jinaga.js builds its feeds as
-//    feed-builder.ts does.
+//    With PORT all must pass. Against jinaga.js, 2b must pass except on the
+//    vectors named in `jinagaMisses`, and 2a and 2c are reported.
 import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -38,8 +37,11 @@ const implementation = strict
     ? await import(pathToFileURL(resolve(process.env.PORT!)).href)
     : await load("src/specification/feed-builder.ts");
 
-/** The vectors jinaga.js's `buildFeeds` is expected to miss a result on. */
-const jinagaMisses = new Set(["not-exists-cancelled-twice", "not-exists-cancelled-by-second", "exists-inside-not-exists", "random-2"]);
+/**
+ * The vectors jinaga.js's `buildFeeds` is expected to miss a result on. None
+ * since jinaga/jinaga.js#429 and #432 (docs/findings.md).
+ */
+const jinagaMisses = new Set<string>();
 
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
 const key = (row: unknown) => JSON.stringify(row);
