@@ -45,6 +45,7 @@ import JinagaSpec.GivenConditions
 import JinagaSpec.Proofs.GivenConditions
 import JinagaSpec.Content
 import JinagaSpec.Proofs.Content
+import JinagaSpec.ContentCases
 import JinagaSpec.Cascade.CMap
 import JinagaSpec.Cascade.Json
 import JinagaSpec.Cascade.Tree

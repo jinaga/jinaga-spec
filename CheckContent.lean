@@ -1,4 +1,5 @@
 import CheckGen
+import ContentMutants
 
 /-!
 # Randomized check of the content store
@@ -19,80 +20,6 @@ histories, by the statement named in its label.
 open JinagaSpec
 
 instance : Inhabited Replicator := ⟨.empty⟩
-
-/-! ## The mutant family
-
-One read handler and one write handler, parameterized over the rule each
-mutant changes. With no field changed they are `Replicator.read` and
-`Replicator.write`, which the check confirms on every request. The
-specification's own handlers stay unparameterized. -/
-
-structure Mutant where
-  /-- How a read finds the object for a key. -/
-  lookup : Policy → Replicator → FactId → Option Bytes := fun _ r k => r.objects.lookup k
-  /-- Whether the rules admit a reader. -/
-  admits : Policy → Graph → User → FactId → Proof → Bool := Policy.admits
-  /-- Answer 404 before checking the proof. -/
-  existenceFirst : Bool := false
-  /-- Whether the writer may create the fact. -/
-  mayCreate : Policy → User → Graph → Fact → Bool := Policy.mayCreate
-  /-- Compare the uploaded bytes with the content hash. -/
-  checkHash : Bool := true
-  /-- Bytes that do not match take the stored bytes of the same hash instead. -/
-  hashShortcut : Bool := false
-
-def readWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (key : FactId) (p : Proof) :
-    Response :=
-  match user with
-  | none => .unauthenticated
-  | some u =>
-    if !p.bound then .badRequest
-    else if m.existenceFirst && (m.lookup P r key).isNone then .notUploaded
-    else if !m.admits P r.store u key p then .forbidden
-    else match m.lookup P r key with
-      | none => .notUploaded
-      | some o => .ok o
-
-def writeWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (key : FactId) (o : Bytes) :
-    Replicator × Response :=
-  match user with
-  | none => (r, .unauthenticated)
-  | some u =>
-    match r.store.factOf key with
-    | none => (r, .factMissing)
-    | some f =>
-      match P.contentHash f with
-      | none => (r, .unprocessable)
-      | some h =>
-        let known := if m.hashShortcut then (r.objects.find? fun (_, b) => P.hash b == h).map (·.2) else none
-        let o := if P.hash o != h then known.getD o else o
-        if !m.mayCreate P u r.store f then (r, .forbidden)
-        else if m.checkHash && P.hash o != h then (r, .unprocessable)
-        else if !P.fits f o then (r, .tooLarge)
-        else match r.objects.lookup key with
-          | some _ => (r, .alreadyStored)
-          | none => ({ r with objects := (key, o) :: r.objects }, .stored)
-
-def stepWith (m : Mutant) (P : Policy) (r : Replicator) : Event → Replicator
-  | .save f => { r with store := r.store ++ [f] }
-  | .write u key o => (writeWith m P r u key o).1
-
-/-- The spoof: any object stored under a key whose fact has the same content
-hash. -/
-def byContentHash (P : Policy) (r : Replicator) (k : FactId) : Option Bytes :=
-  match (r.store.factOf k).bind P.contentHash with
-  | none => none
-  | some h => (r.objects.find? fun (k', _) => (r.store.factOf k').bind P.contentHash == some h).map (·.2)
-
-def mutants : List (String × Mutant) := [
-  ("SEC-1: no yields check", { admits := fun P g u _ p => P.distributes u p.spec p.givens g }),
-  ("SEC-1: no distribution check", { admits := fun _ g _ key p => p.yields g key }),
-  ("SEC-2: store bytes without hashing them", { checkHash := false }),
-  ("SEC-3: authorize the fact's presence, not the writer", { mayCreate := fun _ _ _ _ => true }),
-  ("SEC-3: map a key to stored bytes of the same hash", { hashShortcut := true }),
-  ("SEC-4: look an object up by its content hash", { lookup := byContentHash }),
-  ("SEC-5: answer 404 before checking the proof", { existenceFirst := true })
-]
 
 /-! ## The statements, as the theorems state them -/
 
@@ -118,6 +45,12 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
         | none => false
       | _ => false
     unless witnessed do out := "SEC-3" :: out
+  -- SEC-5, for uploads: to a writer the rules refuse, the same answer with no objects.
+  for (e, s) in evs.zip states do
+    if let .write (some u) k o := e then
+      let refused := match s.store.factOf k with | some f => !P.mayCreate u s.store f | none => true
+      if refused && (writeWith m P s (some u) k o).2 != (writeWith m P { s with objects := [] } (some u) k o).2 then
+        out := "SEC-5" :: out
   for (user, key, p) in reads do
     let resp := readWith m P r user key p
     if let .ok o := resp then

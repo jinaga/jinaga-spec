@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import JinagaSpec
 import CheckGen
+import ContentMutants
 
 /-!
 # Conformance vectors
@@ -570,6 +571,109 @@ def vector (c : JinagaSpec.Cascade.Case) : Lean.Json :=
 
 end CascadeVectors
 
+/-! ## Content vectors -/
+
+def JinagaSpec.Response.status : Response → Nat
+  | .ok _ | .alreadyStored => 200
+  | .stored => 201
+  | .badRequest => 400
+  | .unauthenticated => 401
+  | .forbidden => 403
+  | .notUploaded | .factMissing => 404
+  | .tooLarge => 413
+  | .unprocessable => 422
+
+def JinagaSpec.Response.code : Response → String
+  | .ok _ => "ok"
+  | .stored => "stored"
+  | .alreadyStored => "already_stored"
+  | .badRequest => "bad_request"
+  | .unauthenticated => "unauthenticated"
+  | .forbidden => "forbidden"
+  | .notUploaded => "not_uploaded"
+  | .factMissing => "fact_missing"
+  | .tooLarge => "too_large"
+  | .unprocessable => "unprocessable"
+
+def responseToJson (r : Response) : Json :=
+  Json.mkObj ([("status", Json.num r.status), ("code", r.code)] ++
+    match r with | .ok o => [("bytes", Json.str o)] | _ => [])
+
+def userToJson : Option User → Json
+  | some u => Json.num u
+  | none => Json.null
+
+/-- Each step's response (none for a save), and the state at the end, with the
+handlers `m` makes. -/
+def JinagaSpec.ContentCase.runWith (c : ContentCase) (m : Mutant) : List (Option Response) × Replicator :=
+  c.steps.foldl (fun (out, r) step => match step with
+    | .event (.save f) => (out ++ [none], { r with store := r.store ++ [f] })
+    | .event (.write u k o) => let (r', resp) := writeWith m c.policy r u k o; (out ++ [some resp], r')
+    | .read u k gs => (out ++ [some (readWith m c.policy r u k { spec := documentsInGroup, givens := gs })], r))
+    ([], .empty)
+
+def contentVector (c : ContentCase) : Json := Id.run do
+  let P := c.policy
+  let mut r : Replicator := .empty
+  let mut steps : Array Json := #[]
+  for step in c.steps do
+    match step with
+    | .event (.save f) =>
+      steps := steps.push (Json.mkObj [("save", factToJson f)])
+      r := r.step P (.save f)
+    | .event (.write u k o) =>
+      let (r', resp) := r.write P u k o
+      steps := steps.push (Json.mkObj [
+        ("write", Json.mkObj [("user", userToJson u), ("key", Json.num k), ("bytes", Json.str o)]),
+        ("expected", responseToJson resp)])
+      r := r'
+    | .read u k gs =>
+      let p : Proof := { spec := documentsInGroup, givens := gs }
+      steps := steps.push (Json.mkObj [
+        ("read", Json.mkObj [("user", userToJson u), ("key", Json.num k),
+          ("givens", Json.arr (gs.map fun (g : Nat) => Json.num g).toArray)]),
+        ("yields", p.yields r.store k),
+        ("expected", responseToJson (r.read P u k p))])
+  return Json.mkObj [
+    ("name", c.name),
+    ("description", c.description),
+    ("source", c.source),
+    ("specification", specificationToJson documentsInGroup),
+    ("text", describeSpecification documentsInGroup),
+    ("policy", Json.mkObj [
+      ("content", Json.arr (c.content.map fun (k, h, n) =>
+        Json.mkObj [("fact", Json.num k), ("hash", Json.str h), ("maxLength", Json.num n)]).toArray),
+      ("writers", Json.arr (c.writers.map fun (u, k) => Json.mkObj [("user", Json.num u), ("fact", Json.num k)]).toArray),
+      ("readers", Json.arr (c.readers.map fun (u, gs) =>
+        Json.mkObj [("user", Json.num u), ("givens", Json.arr (gs.map fun (g : Nat) => Json.num g).toArray)]).toArray)]),
+    ("steps", Json.arr steps),
+    ("expected", Json.mkObj [("objects", Json.arr (r.objects.reverse.map fun (k, o) =>
+      Json.mkObj [("key", Json.num k), ("bytes", Json.str o)]).toArray)])]
+
+/-- The mutant family with no rule changed answers as the specification's
+handlers do; each case catches the mutants it names; every mutant is caught by
+some case. -/
+def checkContentCases : IO Unit := do
+  for c in contentCases do
+    let real := c.runWith {}
+    let mut r : Replicator := .empty
+    let mut oracle := []
+    for step in c.steps do
+      match step with
+      | .event (.save f) => oracle := oracle ++ [none]; r := r.step c.policy (.save f)
+      | .event (.write u k o) => let (r', resp) := r.write c.policy u k o; oracle := oracle ++ [some resp]; r := r'
+      | .read u k gs => oracle := oracle ++ [some (r.read c.policy u k { spec := documentsInGroup, givens := gs })]
+    unless real.1 == oracle do
+      throw <| IO.userError s!"content case {c.name}: the mutant family differs from the specification's handlers"
+    for label in c.catches do
+      let some (_, m) := mutants.find? (·.1 == label)
+        | throw <| IO.userError s!"content case {c.name}: no mutant named {label}"
+      if (c.runWith m).1 == oracle then
+        throw <| IO.userError s!"content case {c.name} does not catch the mutant \"{label}\""
+  for (label, _) in mutants do
+    unless contentCases.any (·.catches.contains label) do
+      throw <| IO.userError s!"no content vector catches the mutant \"{label}\""
+
 def main (args : List String) : IO Unit := do
   let root : System.FilePath := args.headD "vectors"
   let splitDir := root / "split"
@@ -577,6 +681,11 @@ def main (args : List String) : IO Unit := do
   let inverseDir := root / "inverse"
   let cascadeDir := root / "cascade"
   let feedsDir := root / "feeds"
+  let contentDir := root / "content"
+  IO.FS.createDirAll contentDir
+  checkContentCases
+  for c in contentCases do
+    IO.FS.writeFile (contentDir / s!"{c.name}.json") ((contentVector c).pretty ++ "\n")
   IO.FS.createDirAll feedsDir
   IO.FS.createDirAll splitDir
   IO.FS.createDirAll wfDir
@@ -621,4 +730,4 @@ def main (args : List String) : IO Unit := do
   for c in JinagaSpec.Cascade.cases do
     CascadeVectors.check c
     IO.FS.writeFile (cascadeDir / s!"{c.name}.json") ((CascadeVectors.vector c).pretty ++ "\n")
-  IO.println s!"wrote {cases.length} split vectors to {splitDir}, {wellFormedCases.length} well-formedness vectors to {wfDir}, {inverseAll.length} inverse vectors to {inverseDir}, and {feedAll.length} feed vectors to {feedsDir}"
+  IO.println s!"wrote {cases.length} split vectors to {splitDir}, {wellFormedCases.length} well-formedness vectors to {wfDir}, {inverseAll.length} inverse vectors to {inverseDir}, {feedAll.length} feed vectors to {feedsDir}, and {contentCases.length} content vectors to {contentDir}"

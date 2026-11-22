@@ -109,7 +109,13 @@ deriving DecidableEq, Repr
 /-- `PUT /content/{key}`: store `o` under `key`. The user is the one behind the
 token, if it is valid. The writer must be authorized to create the fact
 (RW-4), and the bytes must hash to the fact's content hash (RW-5), before
-anything is stored. A repeat upload leaves the stored object in place (RW-8). -/
+anything is stored. A repeat upload leaves the stored object in place (RW-8).
+
+The writer is checked as soon as the fact is found, so a writer who may not
+create it learns only that it is in the store (which naming its key implies
+they know), not whether its type is content-bearing or an object is stored.
+Only the fact being missing (RW-2) is answered first: there is no fact to
+authorize. -/
 def Replicator.write (P : Policy) (r : Replicator) (user : Option User) (key : FactId) (o : Bytes) :
     Replicator × Response :=
   match user with
@@ -118,11 +124,11 @@ def Replicator.write (P : Policy) (r : Replicator) (user : Option User) (key : F
     match r.store.factOf key with
     | none => (r, .factMissing)
     | some f =>
-      match P.contentHash f with
+      if !P.mayCreate u r.store f then (r, .forbidden)
+      else match P.contentHash f with
       | none => (r, .unprocessable)
       | some h =>
-        if !P.mayCreate u r.store f then (r, .forbidden)
-        else if P.hash o != h then (r, .unprocessable)
+        if P.hash o != h then (r, .unprocessable)
         else if !P.fits f o then (r, .tooLarge)
         else match r.objects.lookup key with
           | some _ => (r, .alreadyStored)
@@ -145,7 +151,10 @@ def Replicator.read (P : Policy) (r : Replicator) (user : Option User) (key : Fa
       | some o => .ok o
 
 /-- What changes the replicator's state: a fact saved through the normal path,
-or an upload. A read changes nothing. -/
+or an upload. A read changes nothing. A save appends any fact, unchecked: the
+fact store's own authorization is not modelled, so the theorems hold against
+every store. Facts are content-addressed, so a second fact with an id already
+stored would be the same fact; `factOf` finds the first. -/
 inductive Event where
   | save (f : Fact)
   | write (user : Option User) (key : FactId) (o : Bytes)

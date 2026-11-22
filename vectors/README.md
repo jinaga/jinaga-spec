@@ -319,3 +319,57 @@ mutated.
 `ports/typescript/run-cascade-vectors.ts` (`npm run cascade`, with
 `CASCADE_CORE` pointing at a checkout) runs them.
 
+## `content/<name>.json`
+
+The content store (`JinagaSpec/Content.lean`): a history of saves, uploads
+and reads, with every upload's and read's response from `Replicator.write`
+and `Replicator.read`, and the objects stored at the end. Generated from
+`JinagaSpec/ContentCases.lean`. Each case names the mutants of
+`ContentMutants.lean` it catches (a store that breaks that rule answers
+differently somewhere in the history), and `lake exe vectors` refuses a set of
+cases that leaves a mutant uncaught.
+
+The policy is data, so that a test harness can supply it in place of a
+model's content declarations, authorization rules, distribution rules and
+hash function:
+
+- the hash of an object is `"#"` followed by its bytes;
+- `content` lists the content-bearing facts, each with its content hash and
+  the maximum length of its object in characters; a fact not listed is not
+  content-bearing;
+- the authorization rules let a user create exactly the facts `writers` pairs
+  them with, on any store;
+- the distribution rules let a user run the specification with exactly the
+  givens `readers` pairs them with.
+
+Each read carries `yields`: whether running the specification with its givens
+on the store at that step yields the key (`Proof.yields`). A harness without a
+specification engine uses it; one with an engine can check its engine against it.
+
+```jsonc
+{
+  "name": "spoof-same-hash",
+  "description": "...", "source": "ST-1, SEC-4",
+  "specification": { ... }, "text": "(g: Group) { ... } => d",
+  "policy": {
+    "content": [ { "fact": 10, "hash": "#plan", "maxLength": 100 } ],
+    "writers": [ { "user": 100, "fact": 10 } ],
+    "readers": [ { "user": 100, "givens": [1] } ]
+  },
+  "steps": [
+    { "save": { "id": 1, "type": "Group", "predecessors": [] } },
+    { "write": { "user": 100, "key": 10, "bytes": "plan" },          // user null: no valid token
+      "expected": { "status": 201, "code": "stored" } },
+    { "read": { "user": 101, "key": 11, "givens": [2] }, "yields": true,
+      "expected": { "status": 404, "code": "not_uploaded" } }      // "ok" responses carry "bytes"
+  ],
+  "expected": { "objects": [ { "key": 10, "bytes": "plan" } ] }  // in the order they were stored
+}
+```
+
+The codes and statuses: `ok` and `already_stored` 200, `stored` 201,
+`bad_request` 400, `unauthenticated` 401, `forbidden` 403, `not_uploaded` 404,
+`fact_missing` 404, `too_large` 413, `unprocessable` 422. The requirements
+give no status for an upload whose fact is not in the store (RW-2); 404
+`fact_missing` is this model's choice.
+

@@ -35,14 +35,9 @@ variable {store : Graph} {f : Fact}
 theorem factOf_authGraph_of_mem {id : FactId} (h : InStore store id) :
     (Graph.authGraph store f).factOf id = store.factOf id := by
   obtain ⟨ff, hff, rfl⟩ := h
-  unfold Graph.authGraph Graph.factOf
-  rw [List.find?_append]
-  cases hs : store.find? (fun x => x.id == ff.id) with
-  | none =>
-    exfalso
-    rw [List.find?_eq_none] at hs
-    exact hs ff hff (by simp)
-  | some x => simp
+  cases hs : store.factOf ff.id with
+  | none => simp [Graph.factOf, List.find?_eq_none] at hs; exact absurd rfl (hs ff hff)
+  | some x => exact Graph.factOf_append hs _
 
 /-- Every raw predecessor id a step considers, before its own type filter, is
 the id of a fact in a closed store. -/

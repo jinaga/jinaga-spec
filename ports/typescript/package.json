@@ -8,7 +8,8 @@
     "audit": "tsx audit-jinaga.ts",
     "inverse": "tsx run-inverse-vectors.ts",
     "cascade": "tsx run-cascade-vectors.ts",
-    "feeds": "tsx run-feed-vectors.ts"
+    "feeds": "tsx run-feed-vectors.ts",
+    "content": "tsx run-content-vectors.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

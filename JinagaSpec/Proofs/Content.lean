@@ -1,4 +1,5 @@
 import JinagaSpec.Content
+import JinagaSpec.Proofs.Basic
 
 /-!
 # The content store's security invariants
@@ -20,25 +21,18 @@ SEC-5 hold of `read` on every state.
 * `read_isolated` (SEC-4): a read keyed by `F` depends on the object stored
   under `F` alone, so never on bytes stored under another key, whatever their
   content hash.
-* `read_noninterference` (SEC-5): to a user the rules do not admit, the answer
-  does not depend on which objects are stored.
+* `read_noninterference` and `write_noninterference` (SEC-5): to a reader the
+  rules do not admit, or a writer they refuse, the answer does not depend on
+  which objects are stored.
+
+SEC-1 to SEC-5 only say when the replicator may serve or store. The success
+path is `read_admitted` and `write_accepted`: an admitted reader is served, or
+told nothing is stored, and an authorized, matching upload is stored.
 
 `CheckContent.lean` tests each statement as written against mutants of the
 handlers, one per way of breaking it.
 -/
 namespace JinagaSpec
-
-theorem Graph.factOf_append {g : Graph} (h : g.factOf k = some f) (g' : Graph) :
-    (g ++ g').factOf k = some f := by
-  simp [Graph.factOf, List.find?_append] at h ⊢; simp [h]
-
-theorem List.mem_of_lookup_eq_some {l : List (FactId × Bytes)} (h : l.lookup k = some o) :
-    (k, o) ∈ l := by
-  induction l with
-  | nil => simp at h
-  | cons x l ih =>
-    simp only [List.lookup] at h
-    split at h <;> simp_all [Prod.ext_iff]
 
 theorem Replicator.write_store (P : Policy) (r : Replicator) (u : Option User) (k : FactId) (o : Bytes) :
     (r.write P u k o).1.store = r.store := by
@@ -69,21 +63,11 @@ theorem Replicator.mem_step {P : Policy} {r : Replicator} {e : Event}
     rcases user with _ | u
     · exact .inl h
     simp only [step, write] at h
-    cases hf : r.store.factOf key with
-    | none => simp only [hf] at h; exact .inl h
-    | some f =>
-      cases hc : P.contentHash f with
-      | none => simp only [hf, hc] at h; exact .inl h
-      | some hsh =>
-        simp only [hf, hc] at h
-        split at h; · exact .inl h
-        split at h; · exact .inl h
-        split at h; · exact .inl h
-        split at h; · exact .inl h
-        rcases List.mem_cons.1 h with h | h
-        · simp only [Prod.mk.injEq] at h; obtain ⟨rfl, rfl⟩ := h
-          exact .inr ⟨u, f, rfl, hf, by simp_all, by simp_all⟩
-        · exact .inl h
+    repeat' split at h <;> try exact .inl h
+    rcases List.mem_cons.1 h with h | h
+    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+      exact .inr ⟨u, _, rfl, by assumption, by simp_all, by simp_all⟩
+    · exact .inl h
 
 /-- An object stored after a history of events, from any state, was there
 already, or was accepted at some point in the history. -/
@@ -127,7 +111,9 @@ theorem read_integrity {P : Policy} {evs : List Event}
     (h : (Replicator.run P evs).read P user key p = .ok o) :
     ∃ f, (Replicator.run P evs).store.factOf key = some f ∧ P.contentHash f = some (P.hash o) := by
   obtain ⟨_, _, _, hl⟩ := Replicator.read_ok h
-  obtain ⟨pre, post, _, f, rfl, hf, _, hh⟩ := stored_authorized (List.mem_of_lookup_eq_some hl)
+  have hmem : (key, o) ∈ (Replicator.run P evs).objects := by
+    obtain ⟨_, _, he, _⟩ := List.lookup_eq_some_iff.1 hl; rw [he]; simp
+  obtain ⟨pre, post, _, f, rfl, hf, _, hh⟩ := stored_authorized hmem
   obtain ⟨g, hg⟩ := Replicator.store_grows P (.write _ key o :: post) (Replicator.run P pre)
   simp only [Replicator.run, List.foldl_append] at hg ⊢
   exact ⟨f, hg ▸ Graph.factOf_append hf g, hh⟩
@@ -145,5 +131,38 @@ theorem read_noninterference {P : Policy} {r : Replicator}
   cases user with
   | none => rfl
   | some u => simp [Replicator.read, hu u rfl]
+
+/-- SEC-5, for uploads: to a writer the authorization rules refuse, the
+answer does not depend on which objects are stored. -/
+theorem write_noninterference {P : Policy} {r : Replicator}
+    (hu : ∀ u f, user = some u → r.store.factOf key = some f → P.mayCreate u r.store f = false)
+    (objects : List (FactId × Bytes)) :
+    (r.write P user key o).2 = ({ r with objects }.write P user key o).2 := by
+  cases user with
+  | none => rfl
+  | some u =>
+    cases hf : r.store.factOf key with
+    | none => simp [Replicator.write, hf]
+    | some f => simp [Replicator.write, hf, hu u f rfl hf]
+
+/-- An admitted reader with a bound proof gets the object stored under the
+key, or 404 `not_uploaded` if there is none (RR-7). With SEC-1, this fixes
+every answer `read` gives an authenticated user. -/
+theorem read_admitted {P : Policy} {r : Replicator} (hb : p.bound = true)
+    (ha : P.admits r.store u key p = true) :
+    r.read P (some u) key p = match r.objects.lookup key with
+      | none => .notUploaded
+      | some o => .ok o := by
+  simp only [Replicator.read, hb, ha]; cases r.objects.lookup key <;> rfl
+
+/-- An authorized writer's upload of matching bytes within the constraints is
+stored, unless the key already holds an object (RW-8). -/
+theorem write_accepted {P : Policy} {r : Replicator} (hf : r.store.factOf key = some f)
+    (hm : P.mayCreate u r.store f = true) (hh : P.contentHash f = some (P.hash o))
+    (hfit : P.fits f o = true) :
+    r.write P (some u) key o = match r.objects.lookup key with
+      | some _ => (r, .alreadyStored)
+      | none => ({ r with objects := (key, o) :: r.objects }, .stored) := by
+  simp [Replicator.write, hf, hm, hh, hfit]; cases r.objects.lookup key <;> rfl
 
 end JinagaSpec
