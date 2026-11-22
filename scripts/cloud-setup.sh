@@ -9,7 +9,10 @@
 #
 #       #!/bin/bash
 #       s="$(find / -maxdepth 5 -path '*/jinaga-spec/scripts/cloud-setup.sh' 2>/dev/null | head -1)"
-#       [ -n "$s" ] && bash "$s" || true
+#       [ -z "$s" ] || bash "$s"
+#
+# A failed install fails the script, so a broken environment is never
+# snapshotted as if it were ready.
 #
 # Locally (CLAUDE_CODE_REMOTE unset) it does nothing.
 set -euo pipefail
@@ -31,9 +34,15 @@ elan toolchain install "$(cat lean-toolchain)"
 
 # The TypeScript port, and any checkout verify.sh or probe.mts will run against
 # (sibling directories, or the JINAGA_JS / CASCADE_CORE / JINAGA_SERVER paths).
-(cd ports/typescript && npm ci --silent)
-for d in "${JINAGA_JS:-../jinaga.js}" "${CASCADE_CORE:-../jinaga-cascade-core}" "${JINAGA_SERVER:-../jinaga-server}"; do
-  if [ -f "$d/package-lock.json" ] && ! [ -d "$d/node_modules" ]; then
-    (cd "$d" && npm ci --silent) || echo "npm ci failed in $d" >&2
+# npm ci deletes node_modules, so run it only when the lock file is newer than
+# the last install.
+install() {
+  if [ "$1/package-lock.json" -nt "$1/node_modules/.package-lock.json" ]; then
+    (cd "$1" && npm ci --silent)
   fi
+}
+install ports/typescript
+for d in "${JINAGA_JS:-../jinaga.js}" "${CASCADE_CORE:-../jinaga-cascade-core}" "${JINAGA_SERVER:-../jinaga-server}"; do
+  [ -f "$d/package-lock.json" ] && install "$d"
 done
+exit 0
