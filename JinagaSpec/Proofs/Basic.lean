@@ -98,6 +98,20 @@ theorem Graph.mem_of_factOf_eq_some {g : Graph} {id : FactId} {fact : Fact}
   unfold Graph.factOf at h
   exact List.mem_of_find?_eq_some h
 
+theorem factOf_of_mem {g : Graph} (hu : g.IdsUnique) {f : Fact} (hf : f ∈ g) : g.factOf f.id = some f := by
+  unfold Graph.factOf
+  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp
+    (List.find?_isSome (p := fun x : Fact => x.id == f.id) |>.mpr ⟨f, hf, beq_self_eq_true _⟩)
+  rw [ha, hu a (List.mem_of_find?_eq_some ha) f hf (by simpa using List.find?_some ha)]
+
+/-- A member's length is at most the whole `flatMap`'s. -/
+theorem length_le_flatMap {α β : Type} (g : α → List β) : ∀ {l : List α} {a : α}, a ∈ l → (g a).length ≤ (l.flatMap g).length
+  | b :: l, a, h => by
+    rw [List.flatMap_cons, List.length_append]
+    rcases List.mem_cons.mp h with rfl | h
+    · omega
+    · have := length_le_flatMap g h; omega
+
 mutual
   theorem Condition.eq_of_beq : ∀ {a b : Condition}, Condition.beq a b = true → a = b
     | .path _, .path _, h => by simp [Condition.beq] at h; rw [h]
@@ -129,6 +143,13 @@ theorem holds_exists {G : Graph} {env : Env} {u : Name} {ms : List Match} :
     holds G env u (.existential true ms) = true ↔ ∃ σ, σ ∈ evalMatches G env ms := by
   simp only [holds]
   cases h : evalMatches G env ms <;> simp
+
+/-- `notExists ms` holds exactly when `ms` has no solution. -/
+theorem holds_notExists {G : Graph} {env : Env} {u : Name} {ms : List Match} :
+    holds G env u (.existential false ms) = true ↔ ∀ σ, σ ∉ evalMatches G env ms := by
+  simp only [holds]
+  cases h : evalMatches G env ms <;> simp
+  exact ⟨_, fun h => (h rfl).elim⟩
 
 /-- Functions that agree on a list's members give the same `flatMap`. -/
 theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g x = h x) :

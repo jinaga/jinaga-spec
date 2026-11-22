@@ -23,7 +23,10 @@ what the feeds are:
 3. **Deferral.** A new client is not sent the details of an entity that is
    excluded by a negative condition none of whose facts has been cancelled: a
    deleted menu item's names, until it is restored, whether they are later
-   matches or a child specification's (`feeds_defer`).
+   matches or a child specification's (`feeds_defer`). No consistent,
+   append-only feeds can withhold every excluded entity's details: a contested
+   exclusion, a restore revoked twice and one revocation undone, defeats any of
+   them (`exact_deferral_impossible`).
 
 ## The feeds
 
@@ -274,9 +277,12 @@ unknowns, in order. These are what a page of the feed names. -/
 def Specification.tuples (f : Specification) (g : Graph) (env : Env) : List (List FactId) :=
   (evalMatches g env f.matchList).map fun e => (f.matchList.map (·.unknown.name)).filterMap e
 
+/-- Every fact the feeds `Fs` deliver on `g`. -/
+def deliver (Fs : List Specification) (g : Graph) (env : Env) : List FactId :=
+  Fs.flatMap fun f => (f.tuples g env).flatten
+
 /-- Every fact the feeds of `s` deliver on `g`. -/
-def delivered (s : Specification) (g : Graph) (env : Env) : List FactId :=
-  (buildFeeds s).flatMap fun f => (f.tuples g env).flatten
+def delivered (s : Specification) (g : Graph) (env : Env) : List FactId := deliver (buildFeeds s) g env
 
 mutual
   /-- Every label the matches declare, at any depth. -/

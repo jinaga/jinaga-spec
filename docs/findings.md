@@ -1019,10 +1019,85 @@ that binds a label after a match `m`, and any tuple of it. Then every negative
 condition of `m` is *passed* at a context the tuple extends: either the
 condition has no witness, or some witness has a fact of one of its own negative
 conditions. A stronger statement, that a feed is withheld while every witness
-stands, is false four levels deep. A delete that is revoked, then unrevoked,
-has a canceller whose own exclusion has been cancelled. The vector
-`restore-revoked-and-unrevoked` shows it, and exact deferral of a contested
-exclusion is not attempted.
+stands, is false four levels deep. A restore that is revoked twice, one
+revocation undone, has a canceller whose own exclusion has been cancelled. The
+vector `restore-revoked-and-unrevoked` shows it.
+
+**No feeds can do better** (`exact_deferral_impossible`,
+`Proofs/Contested.lean`). The theorem quantifies over any list of feeds, each
+any specification, with any nesting of conditions. A feed delivers the facts
+its matches bind, at the specification's givens (`Specification.tuples`); its
+projection, and any child specification in it, deliver nothing. The theorem
+holds two requirements fixed, each stated as the conclusion of the theorem
+that proves it of `buildFeeds`:
+
+- `Consistent s Fs` is `feeds_cover`'s conclusion, under its hypotheses on the
+  graphs: a replica that holds the givens and what the feeds deliver reads what
+  the replicator reads.
+- `AppendOnly f` is `feed_antitone`'s conclusion, for a batch whose ids are
+  larger than the graph's (`IdsIncrease`): a tuple found after it, none of
+  whose facts is in it, was found before. That is exactly what paging by
+  bookmark needs of a feed (`caught_grow`, `feed_grow`).
+
+`FeedShape` is not assumed. It is how `buildFeeds` meets append-only, not the
+requirement itself. So the class is every feed set a replicator could page.
+`buildFeeds` is in it (`buildFeeds_consistent`, `buildFeeds_appendOnly`), on
+the counterexample too (`contested_feasible`), so the hypotheses can be met.
+
+The specification is `contested`: an event's names, unless its delete stands;
+a delete stands unless restored, a restore unless revoked, a revoke unless
+unrevoked. The graphs are `graph N U ++ [name]`: the event, its one delete, a
+restore, `N` revokes of the restore, an unrevoke of each revoke in `U`, and
+the event's name. The conclusion names one with a revoke not unrevoked, on
+which the event reads no result, so its one delete stands, and the feeds
+deliver the name. That refutes "withheld while every witness stands", and so
+also "withheld while excluded". The proof is a count:
+
+1. Take `N` revokes of the restore, more than all the feeds have matches. With
+   every revoke unrevoked, the delete is cancelled and the name is a result.
+   A replica holding everything but the name would read nothing, so
+   consistency forces some feed's tuple to deliver it.
+2. Take away the last unrevoke, which has the largest id. The delete stands
+   and the event is excluded. The unrevoke is a batch with larger ids than the
+   graph, so append-only says the tuple was there before it arrived, unless it
+   binds that unrevoke. If no such tuple binds it, the name is delivered while
+   the event is excluded.
+3. A specification sees ids only for equality, so renaming them renames the
+   tuples (`tuples_rename`, `Proofs/Rename.lean`). Swapping any revoke and its
+   unrevoke with the last keeps the graph, so the tuple binds every one of the
+   `N` unrevokes. A tuple binds one fact per match, and no feed has `N`
+   matches.
+
+So `feeds_defer`'s weaker form is the most a feed design can promise for a
+contested exclusion, not a limitation of this walk. Exact deferral is possible
+only by giving up append-only, so that a tuple could appear behind a bookmark
+and be missed, or consistency. The vector
+`restore-revoked-and-both-unrevoked` is the other side of the count: the name,
+delivered through an unrevoke once every revocation is undone.
+
+The same count works two levels deep, for chapter 12's restorable deletes: an
+event deleted `N` times, each delete restored, then one restore taken away.
+There the witnesses are the deletes, so it refutes only "withheld while
+excluded", which at two levels `feeds_defer` does not claim: "withheld while
+every witness stands" is what it says there. It takes four levels to refute
+that. The two-level case is not separately proved.
+
+`check-feeds` tries three feed sets on the theorem's graphs, `N` from 1 to 3:
+
+| Feeds | consistent | append-only | exact |
+| --- | --- | --- | --- |
+| `buildFeeds` | yes | yes | no |
+| `buildFeeds` without the restoring feed through an unrevoke, plus a feed of the unrevokes | no | yes | yes |
+| the same, plus a feed of the name filtered by the restore's whole condition | yes | no | yes |
+
+The second withholds the name once every revocation is undone. The third
+defers exactly with a nested negative condition, and a tuple of it appears,
+binding no new fact, when the last unrevoke arrives. The check fails if any
+feed set is all three. The proof is about 400 lines, and renaming ids
+(`Proofs/Rename.lean`, which holds for any specification) about 95 more. The
+count is about 60 lines, and swapping two revokes about 70. The rest
+evaluates `contested` on a graph with a variable number of revokes, one level
+at a time (`zs_iff` to `ds_iff`).
 
 The cost is measured on chapter 12's case: 50 events of 10 names each, 30
 deleted, and 10 of those restored. A new client downloads 391 of the graph's
@@ -1069,19 +1144,20 @@ defects:
   restoring branch for one of them keeps the other conditions its excluding feed
   attached. A delete that is both restored and undone is then restored by no
   feed, and the event's name reaches the replica through none
-  (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`).
-  jinaga/jinaga.js#368 fixed the conditions waiting at the even level, which a
+  (`not-exists-cancelled-twice`, `not-exists-cancelled-by-second`;
+  jinaga/jinaga.js#427). jinaga/jinaga.js#368 fixed the conditions waiting at the even level, which a
   restoring branch does need; the same rule reached the odd level too.
 - **A positive condition inside a negative one replaces it.**
   `buildExistentialCondition` builds the inner positive condition from its own
   matches, doubled, and assigns it over the outer one. The main feed of
   `!E { d: Delete [..., E { a: Approval [a->delete = d] }] }` becomes
   `E { a, a }`, which names `d` without binding it. jinaga.js's own
-  `MemoryStore` throws reading it (`exists-inside-not-exists`).
+  `MemoryStore` throws reading it, and so does jinaga-server's `sqlFromFeed`
+  (`exists-inside-not-exists`; jinaga/jinaga.js#425).
 
 `ports/typescript/feed-builder.ts` corrects both and drops the filter inside
 the excluding feed. It matches every vector and sends no fact the vector's
-feeds withhold. `jinaga.js` misses a result on four of the 19 vectors.
+feeds withhold. `jinaga.js` misses a result on four of the 20 vectors.
 
 Both are fixed in `jinaga.js`: jinaga/jinaga.js#429 (from #425) joins a positive
 condition into its negative condition's level, and #432 (from #427) restores an
@@ -1089,7 +1165,7 @@ excluded fact through each of its cancellers with none of the others attached.
 Fixing the first exposed a third case of the same rule, a canceller reached
 through a positive condition on the excluded fact
 (`d [ E { y [ !E { z } ] } !E { u } ]`), which #432 covers too. `jinaga.js`'s
-feeds now cover all 19 vectors.
+feeds now cover all 20 vectors.
 
 ### Levels, and why they were set aside
 
@@ -1228,7 +1304,9 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   `detectDisconnectedSpecification` accepts the specification. But the child's
   first feeds are a product of two chains, and jinaga-server's `generateJoins`
   throws `Neither predecessor nor successor fact has been written` for them.
-  It does so for jinaga.js's feeds and for the vector's alike.
+  It does so for jinaga.js's feeds and for the vector's alike. The cause is
+  wider than child feeds: a top-level specification whose two givens each have
+  their own chain fails the same way (jinaga/jinaga-server#233).
 - **`assertWellFormed` does not look inside a child specification.**
   `wellFormedErrors` checks scope only for the top-level matches, and
   `projectedLabels` skips specification components. A child specification

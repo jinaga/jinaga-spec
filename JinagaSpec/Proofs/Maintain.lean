@@ -108,24 +108,28 @@ mutual
       simp only [holds, this]
 end
 
+/-- Two graphs holding the same facts, one id naming at most one of them, find
+the same fact by id. -/
+theorem factOf_congr {g g' : Graph} (hmem : ∀ x, x ∈ g ↔ x ∈ g') (huniq : g.IdsUnique) :
+    g.factOf = g'.factOf := by
+  funext id
+  simp only [Graph.factOf]
+  cases h : g.find? (·.id == id) with
+  | none =>
+    exact (List.find?_eq_none.mpr fun x hx => List.find?_eq_none.mp h x ((hmem x).mpr hx)).symm
+  | some a =>
+    have ha := List.mem_of_find?_eq_some h
+    obtain ⟨b, hb⟩ := Option.isSome_iff_exists.mp
+      (List.find?_isSome.mpr ⟨a, (hmem a).mp ha, List.find?_some h⟩)
+    rw [hb, huniq b ((hmem b).mpr (List.mem_of_find?_eq_some hb)) a ha
+      (by have := List.find?_some hb; have := List.find?_some h; simp_all)]
+
 /-- Two graphs holding the same facts, in any order and with any repetition,
 give the same results. -/
 theorem evaluate_congr {g g' : Graph} (hmem : ∀ x, x ∈ g ↔ x ∈ g') (huniq : g.IdsUnique)
     (s : Specification) (env : Env) (r : Row) :
     r ∈ s.evaluate g env ↔ r ∈ s.evaluate g' env := by
-  have hfactOf : g.factOf = g'.factOf := by
-    funext id
-    simp only [Graph.factOf]
-    cases h : g.find? (·.id == id) with
-    | none =>
-      exact (List.find?_eq_none.mpr fun x hx => List.find?_eq_none.mp h x ((hmem x).mpr hx)).symm
-    | some a =>
-      have ha := List.mem_of_find?_eq_some h
-      obtain ⟨b, hb⟩ := Option.isSome_iff_exists.mp
-        (List.find?_isSome.mpr ⟨a, (hmem a).mp ha, List.find?_some h⟩)
-      rw [hb, huniq b ((hmem b).mpr (List.mem_of_find?_eq_some hb)) a ha
-        (by have := List.find?_some hb; have := List.find?_some h; simp_all)]
-  simp only [Specification.evaluate, List.mem_map, evalMatches_congr hmem hfactOf]
+  simp only [Specification.evaluate, List.mem_map, evalMatches_congr hmem (factOf_congr hmem huniq)]
 
 /-- Two replicas holding the same facts agree, whatever order the facts arrived in. -/
 theorem evaluate_perm {g g' : Graph} (hperm : g.Perm g') (huniq : g.IdsUnique)

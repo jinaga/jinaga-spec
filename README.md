@@ -30,7 +30,9 @@ A third:
   at every depth (`feeds_cover`). A tuple is never
   inserted behind a bookmark (`feed_antitone`). And a new client is not sent
   the details of an entity whose exclusion nothing has cancelled, a child
-  specification's facts about it included (`feeds_defer`). Paging by bookmark loses nothing while the graph grows,
+  specification's facts about it included (`feeds_defer`). No feeds do better:
+  any that are consistent and append-only send, on some graph, the details of
+  an entity whose one delete stands (`exact_deferral_impossible`). Paging by bookmark loses nothing while the graph grows,
   provided ids increase in commit order (`Cursor.lean`;
   jinaga/jinaga-server#203). So a replica that pages every feed to an empty
   page converges (`feed_converges`).
@@ -60,7 +62,7 @@ and the libraries now port from it:
 | `JinagaSpec/Maintain.lean` | A stream that re-checks candidates after each batch. |
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
-| `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm. |
+| `JinagaSpec/Proofs/` | The proofs. `Hoist.lean` and `Store.lean` for the split, `Stream.lean`, `Exact.lean` and `GivenConditions.lean` for the inverse algorithm, `Cover.lean`, `Defer.lean`, `Children.lean` and `Contested.lean` for feeds. |
 | `JinagaSpec/Cascade/` | A model of `@jinaga/cascade-core`'s incremental pipeline: finite maps and JSON values (`CMap.lean`, `Json.lean`), the output tree and the protocol its events keep (`Tree.lean`), steps and their composition (`Step.lean`), the steps themselves (`Steps.lean`), the input (`Input.lean`), the output session (`Session.lean`), what each step declares can change (`Sig.lean`), the steps' caches (`Cache.lean`), `flatten` (`Flatten.lean`), the steps over ordered siblings (`Ordered.lean`), named sources and joins (`Sources.lean`), `enrich` (`Enrich.lean`), and a step below the root (`Within.lean`). |
 | `JinagaSpec/Proofs/Cascade/` | The proofs that those steps are correct, that correct steps compose, and that a pipeline's output does not depend on the order its rows arrive. |
 | `JinagaSpec/Cases.lean`, `InverseCases.lean`, `Vectors.lean` | Named cases, and the program that writes the vectors from the definitions. |
