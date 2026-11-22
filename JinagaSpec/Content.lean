@@ -58,16 +58,20 @@ structure Proof where
   spec : Specification
   givens : List FactId
 
-/-- Every given is bound, and the specification is well formed (RR-1). A proof
-that leaves a given unbound says nothing about which facts its reader can
-reach. -/
+/-- Every given is bound, and the specification and each of its child
+specifications are well formed (RR-1). A proof that leaves a given unbound
+says nothing about which facts its reader can reach. -/
 def Proof.bound (p : Proof) : Bool :=
-  p.givens.length == p.spec.given.length && isWellFormed p.spec
+  p.givens.length == p.spec.given.length && isWellFormedDeep p.spec
 
 /-- Running the proof's specification with its givens on `g` yields the fact
-`key`: some result names it (RR-4). -/
+`key`: some result names it, at any depth of child specifications (RR-4, CR-1).
+A child specification's results under some solution of its parent are the
+results of the descendant whose matches go on from the parent's
+(`Specification.descendants`), so a fact a client reached through a nested
+query is yielded. -/
 def Proof.yields (p : Proof) (g : Graph) (key : FactId) : Bool :=
-  (p.spec.read g (p.spec.bindGivens p.givens)).any (·.contains (some key))
+  p.spec.descendants.any fun d => (d.read g (d.bindGivens p.givens)).any (·.contains (some key))
 
 /-- The distribution rules let `u` run the proof, and it yields `key`. -/
 def Policy.admits (P : Policy) (g : Graph) (u : User) (key : FactId) (p : Proof) : Bool :=

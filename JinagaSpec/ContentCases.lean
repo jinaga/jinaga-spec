@@ -4,8 +4,9 @@ import JinagaSpec.Content
 /-!
 # Named cases for the content store
 
-Each is a history of saves, uploads and reads on one model: documents in
-groups, `(g: Group) { d: Document [ d->group: Group = g ] } => d`. `lake exe
+Each is a history of saves, uploads and reads on one model, documents in
+groups: `(g: Group) { d: Document [ d->group: Group = g ] } => d`, or the same
+documents as a child specification of their group. `lake exe
 vectors` writes one content vector per case (`vectors/content/`): every
 upload's and read's response from `Replicator.write` and `Replicator.read`, and
 the objects stored at the end. Each case names the mutants of
@@ -31,6 +32,15 @@ inductive ContentStep where
   | event (e : Event)
   | read (user : Option User) (key : FactId) (givens : List FactId)
 
+def documentsInGroup : Specification :=
+  spec [("g", "Group")] [unknown "d" "Document" [path [role "group" "Group"] "g"]] (fact "d")
+
+/-- The same documents, as a child specification of their group:
+`(g: Group) { } => { documents = { d: Document [ d->group: Group = g ] } => d }`. -/
+def groupWithDocuments : Specification :=
+  spec [("g", "Group")] []
+    (.composite [.specification "documents" [unknown "d" "Document" [path [role "group" "Group"] "g"]] (fact "d")])
+
 structure ContentCase where
   name : String
   description : String
@@ -39,12 +49,11 @@ structure ContentCase where
   content : List (FactId × Hash × Nat)
   writers : List (User × FactId)
   readers : List (User × List FactId)
+  /-- The specification every read's proof runs. -/
+  spec : Specification := documentsInGroup
   steps : List ContentStep
   /-- Labels of the mutants (`ContentMutants.lean`) this case must catch. -/
   catches : List String
-
-def documentsInGroup : Specification :=
-  spec [("g", "Group")] [unknown "d" "Document" [path [role "group" "Group"] "g"]] (fact "d")
 
 def ContentCase.policy (c : ContentCase) : Policy where
   hash b := "#" ++ b
@@ -80,9 +89,9 @@ def write (u : Option User) (key : FactId) (o : Bytes) : ContentStep := .event (
 /-- Alice's plan saved and uploaded. -/
 def planStored : List ContentStep := [save groupA, save plan, write alice 10 "plan"]
 
-def make (name description source : String) (steps : List ContentStep) (catches : List String := []) :
-    ContentCase :=
-  { name, description, source, content, writers, readers, steps, catches }
+def make (name description source : String) (steps : List ContentStep) (catches : List String := [])
+    (spec : Specification := documentsInGroup) : ContentCase :=
+  { name, description, source, content, writers, readers, spec, steps, catches }
 
 end ContentCases
 
@@ -148,6 +157,12 @@ def contentCases : List ContentCase := [
     "RR-5, SEC-5"
     (planStored ++ [save notes, .read eve 10 [1], .read eve 12 [1]])
     ["SEC-5: answer 404 before checking the proof"],
+  make "child-specification-yields"
+    "Alice's proof reaches the plan through a child specification of its group, as a client's nested query does. It yields the plan, so she gets the bytes; the same proof for group B does not."
+    "RR-4, CR-1"
+    (planStored ++ [save groupB, .read alice 10 [1], .read mallory 10 [2]])
+    ["read_admitted: yields ignores child specifications"]
+    groupWithDocuments,
   make "unbound-given"
     "A proof that binds fewer givens than the specification declares is refused with 400."
     "RR-1"

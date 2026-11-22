@@ -1383,14 +1383,19 @@ Decisions the statements forced:
   object is consulted. Only a missing fact (RW-2) is answered first, because
   there is no fact to authorize; that answer reveals only the fact store,
   which the writer named.
-- **"Yields" is any top-level projected fact.** A proof yields `F` when some
-  result names it, at any position: a reader the rules admit may see
-  everything the specification returns. Child specifications' results are not
-  consulted. That is safe, because it only refuses more, but it is a
-  functional gap: a document a client reached through a child specification
-  (`group => { documents = { ... } }`) gets a recorded proof (CR-1) that the
-  replicator refuses. `Proof.bound` checks `isWellFormed`, not
-  `isWellFormedDeep`, which is harmless only while children are ignored.
+- **"Yields" is any projected fact, at any depth.** A proof yields `F` when
+  some result names it, at any position: a reader the rules admit may see
+  everything the specification returns. A child specification counts: its
+  results under a solution of its parent are the results of the descendant
+  whose matches go on from the parent's (`Specification.descendants`, as for
+  feeds), so `Proof.yields` asks whether any descendant's rows name `F`, and
+  `Proof.bound` checks `isWellFormedDeep`. A first draft read the top level
+  only. That is safe, since it only refuses more, but it refused the recorded
+  proof (CR-1) of a document a client reached through a nested query
+  (Copilot's review of jinaga/jinaga-spec#51). No security theorem notices
+  that mutant; `read_admitted` does. `check-content` confirms on every read
+  that `Proof.yields` agrees with `Specification.Reads`, results at every
+  depth. That agreement is checked, not proved.
 - **A given absent from the store is 403, not 400.** RR-1's 400 is for a proof
   with the wrong number of givens or an ill-formed specification. A missing
   given makes `read` empty (`Specification.read`), so the proof yields nothing.
@@ -1413,20 +1418,22 @@ handlers break none (they are proved). Seed 1:
 
 | mutant | caught on | by |
 |---|---|---|
-| no yields check | 1055 | SEC-1, SEC-5 |
-| no distribution check | 32 | SEC-1, SEC-5 |
-| store bytes without hashing them | 564 | SEC-2, SEC-3 |
-| authorize the fact's presence, not the writer (RW-4) | 733 | SEC-3, SEC-5 |
-| map a key to stored bytes of the same hash (ST-3) | 21 | SEC-3 |
-| look an object up by its content hash (ST-1) | 41 | SEC-4 |
-| answer 404 before checking the proof (RR-5) | 1090 | SEC-5 |
-| answer a repeat upload before checking the writer (RW-8) | 135 | SEC-5 |
+| no yields check | 1067 | SEC-1, SEC-5 |
+| yields ignores child specifications | 14 | `read_admitted` |
+| no distribution check | 55 | SEC-1, SEC-5 |
+| store bytes without hashing them | 556 | SEC-2, SEC-3 |
+| authorize the fact's presence, not the writer (RW-4) | 662 | SEC-3, SEC-5 |
+| map a key to stored bytes of the same hash (ST-3) | 24 | SEC-3 |
+| look an object up by its content hash (ST-1) | 47 | SEC-4, `read_admitted` |
+| answer 404 before checking the proof (RR-5) | 1109 | SEC-5 |
+| answer a repeat upload before checking the writer (RW-8) | 122 | SEC-5 |
 
-Random specifications rarely yield a document, so only 77 of 80000 random
+One history in three has child specifications (`genChildSpec`).
+Random specifications rarely yield a document, so only 111 of 80000 random
 reads are served, and the success path is thin there. The vectors cover it:
-`vectors/content/` holds fifteen named histories on one documents-in-groups
-model. Each is checked to catch the mutants it names, and together they
-catch all eight. `ports/typescript/content-store.ts` is a reference port that
+`vectors/content/` holds sixteen named histories on one documents-in-groups
+model, one of them reading the documents as a child specification. Each is
+checked to catch the mutants it names, and together they catch all nine. `ports/typescript/content-store.ts` is a reference port that
 passes them.
 
 Not covered: the reactive hold (RR-6, SEC-6), revocation and the proof cache

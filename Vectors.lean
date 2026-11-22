@@ -609,7 +609,7 @@ def JinagaSpec.ContentCase.runWith (c : ContentCase) (m : Mutant) : List (Option
   c.steps.foldl (fun (out, r) step => match step with
     | .event (.save f) => (out ++ [none], { r with store := r.store ++ [f] })
     | .event (.write u k o) => let (r', resp) := writeWith m c.policy r u k o; (out ++ [some resp], r')
-    | .read u k gs => (out ++ [some (readWith m c.policy r u k { spec := documentsInGroup, givens := gs })], r))
+    | .read u k gs => (out ++ [some (readWith m c.policy r u k { spec := c.spec, givens := gs })], r))
     ([], .empty)
 
 def contentVector (c : ContentCase) : Json := Id.run do
@@ -628,7 +628,7 @@ def contentVector (c : ContentCase) : Json := Id.run do
         ("expected", responseToJson resp)])
       r := r'
     | .read u k gs =>
-      let p : Proof := { spec := documentsInGroup, givens := gs }
+      let p : Proof := { spec := c.spec, givens := gs }
       steps := steps.push (Json.mkObj [
         ("read", Json.mkObj [("user", userToJson u), ("key", Json.num k),
           ("givens", Json.arr (gs.map fun (g : Nat) => Json.num g).toArray)]),
@@ -638,8 +638,8 @@ def contentVector (c : ContentCase) : Json := Id.run do
     ("name", c.name),
     ("description", c.description),
     ("source", c.source),
-    ("specification", specificationToJson documentsInGroup),
-    ("text", describeSpecification documentsInGroup),
+    ("specification", specificationToJson c.spec),
+    ("text", describeSpecification c.spec),
     ("policy", Json.mkObj [
       ("content", Json.arr (c.content.map fun (k, h, n) =>
         Json.mkObj [("fact", Json.num k), ("hash", Json.str h), ("maxLength", Json.num n)]).toArray),
@@ -662,7 +662,7 @@ def checkContentCases : IO Unit := do
       match step with
       | .event (.save f) => oracle := oracle ++ [none]; r := r.step c.policy (.save f)
       | .event (.write u k o) => let (r', resp) := r.write c.policy u k o; oracle := oracle ++ [some resp]; r := r'
-      | .read u k gs => oracle := oracle ++ [some (r.read c.policy u k { spec := documentsInGroup, givens := gs })]
+      | .read u k gs => oracle := oracle ++ [some (r.read c.policy u k { spec := c.spec, givens := gs })]
     unless real.1 == oracle do
       throw <| IO.userError s!"content case {c.name}: the mutant family differs from the specification's handlers"
     for label in c.catches do

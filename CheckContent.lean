@@ -4,7 +4,7 @@ import ContentMutants
 /-!
 # Randomized check of the content store
 
-`lake exe check-content [seed]` tests SEC-1 to SEC-5 (`Proofs/Content.lean`), as
+`lake exe check-content [seed]` tests SEC-1 to SEC-5 and `read_admitted` (`Proofs/Content.lean`), as
 the theorems state them, on random histories of saves and uploads: a random
 well-formed specification, a graph for it, uploads by random users to random
 keys interleaved with the saves, then reads by every user of every key with
@@ -67,7 +67,19 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
     let admitted := match user with | some u => P.admits r.store u key p | none => false
     unless admitted || resp == readWith m P { r with objects := [] } user key p do
       out := "SEC-5" :: out
+    -- read_admitted: an admitted reader with a bound proof is served, or told nothing is stored.
+    if admitted && p.bound then
+      unless resp == (match r.objects.lookup key with | none => .notUploaded | some o => .ok o) do
+        out := "read_admitted" :: out
   return out.eraseDups
+
+/-- A proof yields `key` by the reference semantics: some result, at any depth
+of child specifications, names it (`Specification.Reads`, read by `readsOf`). -/
+partial def resultNames (key : FactId) : Result → Bool
+  | .mk row children => row.contains (some key) || children.any (·.any (resultNames key))
+
+def yieldsByReads (p : Proof) (g : Graph) (key : FactId) : Bool :=
+  (readsOf p.spec g (p.spec.bindGivens p.givens)).any (resultNames key)
 
 /-! ## Random histories -/
 
@@ -113,12 +125,15 @@ def main (args : List String) : IO UInt32 := do
   let mut served := 0
   let mut stored := 0
   let mut real := 0
+  let mut disagree := 0
   let mut first : Option String := none
   let mut caught : List (Nat × List String) := mutants.map fun _ => (0, [])
   for _ in [0:histories] do
     let ((g, evs, rs), gen') := (do
-      let s ← genSpec
-      let g ← genGraph s 6
+      -- One history in three has child specifications.
+      let children ← chance 1 3
+      let s ← if children then genChildSpec else genSpec
+      let g ← if children then genFeedGraph s 6 else genGraph s 6
       let evs ← genHistory g
       let mut rs := []
       for key in List.range 8 do
@@ -134,6 +149,8 @@ def main (args : List String) : IO UInt32 := do
       unless r.read policy user key p == readWith {} policy r user key p do
         throw <| IO.userError "the mutant family's read differs from Replicator.read"
       if let .ok _ := r.read policy user key p then served := served + 1
+      -- `Proof.yields`, by descendants, agrees with the reference semantics.
+      if p.yields r.store key != yieldsByReads p r.store key then disagree := disagree + 1
     reads := reads + rs.length
     stored := stored + r.objects.length
     let v := violations {} policy evs rs
@@ -144,9 +161,10 @@ def main (args : List String) : IO UInt32 := do
       let v := violations mu policy evs rs
       if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
   IO.println s!"histories {histories}, objects stored {stored}, reads {reads}, served {served}"
-  IO.println s!"real handlers: {real} histories break a statement"
+  IO.println s!"real handlers: {real} histories break a statement; yields disagrees with Specification.Reads on {disagree} reads"
   for ((label, _), (n, by_)) in mutants.zip caught do
     IO.println s!"  mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
+  if disagree > 0 then return 1
   match first with
   | some f => IO.println s!"\nFIRST FAILURE\n{f}"; return 1
   | none =>

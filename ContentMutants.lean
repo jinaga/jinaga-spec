@@ -73,8 +73,13 @@ def byContentHash (P : Policy) (r : Replicator) (k : FactId) : Option Bytes :=
   | none => none
   | some h => (r.objects.find? fun (k', _) => (r.store.factOf k').bind P.contentHash == some h).map (·.2)
 
+/-- The first draft's yields: the top-level results only. -/
+def topLevelYields (p : Proof) (g : Graph) (key : FactId) : Bool :=
+  (p.spec.read g (p.spec.bindGivens p.givens)).any (·.contains (some key))
+
 def mutants : List (String × Mutant) := [
   ("SEC-1: no yields check", { admits := fun P g u _ p => P.distributes u p.spec p.givens g }),
+  ("read_admitted: yields ignores child specifications", { admits := fun P g u key p => P.distributes u p.spec p.givens g && topLevelYields p g key }),
   ("SEC-1: no distribution check", { admits := fun _ g _ key p => p.yields g key }),
   ("SEC-2: store bytes without hashing them", { checkHash := false }),
   ("SEC-3: authorize the fact's presence, not the writer", { mayCreate := fun _ _ _ _ => true }),
