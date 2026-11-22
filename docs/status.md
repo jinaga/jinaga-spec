@@ -18,12 +18,15 @@ last checked; check the issue before acting on one.
   file it again.
 - **Proof simplicity** is in `CLAUDE.md`.
 
-## Open work (checked 2026-11-21)
+## Open work (checked 2026-11-22)
 
-- jinaga-spec#9: feeds carry every relevant fact and replicas converge.
-  R1–R4 are proved (PRs #42, #43, #46).
 - jinaga-spec#45: the random feed vectors are not filtered for connectivity
   (random-2 has an unused given).
+- jinaga-spec#18: the given-conditions label rule's wording in
+  `vectors/README.md` and `GivenConditions.lean`, and a regression check; the
+  code was fixed in `287ef39`.
+- jinaga-spec#13: exactness when a batch's reads see later batches.
+- jinaga-spec#20: purge and purge compliance.
 - jinaga-server#233: both SQL builders seed `FROM` with only the first edge's
   given.
 - jinaga.net: its vectors are pinned to an older jinaga-spec commit and need

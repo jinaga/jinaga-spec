@@ -1157,7 +1157,8 @@ defects:
 
 `ports/typescript/feed-builder.ts` corrects both and drops the filter inside
 the excluding feed. It matches every vector and sends no fact the vector's
-feeds withhold. `jinaga.js` misses a result on four of the 20 vectors.
+feeds withhold. Before the fixes below, `jinaga.js` missed a result on four of
+the 20 vectors.
 
 Both are fixed in `jinaga.js`: jinaga/jinaga.js#429 (from #425) joins a positive
 condition into its negative condition's level, and #432 (from #427) restores an
