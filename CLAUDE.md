@@ -1,5 +1,8 @@
 # Working conventions for jinaga-spec
 
+Read `docs/status.md` for standing decisions, open work, and what differs in
+a Claude Code cloud session.
+
 ## Simplicity applies to the theorem *and* the proof
 
 Prefer the simplest theorem that is still true and useful: minimal hypotheses,

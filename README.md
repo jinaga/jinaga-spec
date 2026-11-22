@@ -84,7 +84,8 @@ and runs the TypeScript ports if it finds `../jinaga.js` (or `JINAGA_JS`). CI
 runs everything but the TypeScript step, which depends on a `jinaga.js`
 checkout. It needs [`elan`](https://github.com/leanprover/elan); the
 toolchain is pinned in `lean-toolchain`, and there is no other Lean dependency
-(no Mathlib).
+(no Mathlib). To run it in Claude Code cloud sessions, see
+[`docs/status.md`](docs/status.md#cloud-sessions).
 
 ## The split
 

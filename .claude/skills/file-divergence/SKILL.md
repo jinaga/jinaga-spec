@@ -26,6 +26,16 @@ what gets filed.
    gh pr list -R jinaga/<repo> --state all --search "<function name>" --limit 10
    ```
 
+   In a Claude Code cloud session `gh issue` and `gh pr` fail: the GitHub proxy
+   blocks GraphQL. Use the REST search instead, which covers issues and PRs
+   (the target repository must be attached to the session, or the proxy
+   answers 403):
+
+   ```bash
+   gh api -X GET search/issues -f q='repo:jinaga/<repo> <function name> <symptom>' \
+     --jq '.items[] | "#\(.number) \(.state) \(if .pull_request then "PR" else "issue" end) \(.title)"'
+   ```
+
    Search by function name and by error text. If a match exists, draft a
    comment that adds the new repro instead of a new issue.
 
@@ -56,5 +66,6 @@ what gets filed.
 
 5. **Hand the drafts back to the user** with the search results for each, and
    ask which to file. After they approve one, file it with
-   `gh issue create -R jinaga/<repo> --title ... --body-file ...`, then put
+   `gh issue create -R jinaga/<repo> --title ... --body-file ...` (in a cloud
+   session: `gh api repos/jinaga/<repo>/issues -f title=... -F body=@<file>`), then put
    the issue number into `docs/findings.md` next to the finding.
