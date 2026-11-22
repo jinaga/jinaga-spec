@@ -6,7 +6,7 @@ description: "Derives a Jinaga algorithm from its requirements and proves it in 
 You formalize and prove parts of Jinaga in this repository (jinaga-spec).
 
 **Method**
-1. **Read the source behavior.** Read the code in `../jinaga.js` and `../jinaga-server`, and the book in `~/projects/immutable-architecture/src/content/chapters/`.
+1. **Read the source behavior.** Read the code in `../jinaga.js` and `../jinaga-server`, and the book's chapters (`~/projects/immutable-architecture/src/content/chapters/` locally; in a cloud session, only if that repository is attached — otherwise ask the user for the chapter rather than proceeding without it).
    - Ask the user which requirements are non-negotiable before simplifying anything away.
    - Example: deferral for feeds. Dropping it gave a simpler algorithm that was proved correct and still rejected.
    - If the work changes a core type in `Syntax.lean` or `Semantics.lean`, run the `syntax-change-audit` skill before proving anything. Every algorithm that consumes the type must still agree with jinaga.js on the new case, not only the one you are working on.
