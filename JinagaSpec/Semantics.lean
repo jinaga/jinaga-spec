@@ -122,6 +122,23 @@ projection names, and, for each child specification, its results. -/
 inductive Result where
   | mk (row : List (Option FactId)) (children : List (List Result))
 
+theorem Result.sizeOf_lt {row : List (Option FactId)} {cs cs' : List (List Result)} {x : List Result × List Result}
+    {a : Result} (hx : x ∈ cs.zip cs') (ha : a ∈ x.1) : sizeOf a < sizeOf (Result.mk row cs) := by
+  have h1 := List.sizeOf_lt_of_mem ha
+  have h2 := List.sizeOf_lt_of_mem (List.of_mem_zip hx).1
+  simp only [Result.mk.sizeOf_spec]; omega
+
+/-- Two results are equal as sets at every depth: the same row, and for each
+child specification, each result of one list is `SetEq` to some result of the
+other, both ways. Neither order nor repetition matters. -/
+def Result.SetEq : Result → Result → Prop
+  | .mk row cs, .mk row' cs' => row = row' ∧ cs.length = cs'.length ∧
+      ∀ x ∈ cs.zip cs', (∀ a ∈ x.1, ∃ b ∈ x.2, a.SetEq b) ∧ ∀ b ∈ x.2, ∃ a : {a // a ∈ x.1}, a.1.SetEq b
+termination_by r => sizeOf r
+decreasing_by
+  · exact Result.sizeOf_lt ‹_› ‹_›
+  · exact Result.sizeOf_lt ‹_› a.2
+
 /-- `r` is a result of the projection `p` read on `g` from the one solution
 `σ`: `σ` projects to its row, and for each child specification, each listed
 result is read from some solution of the child's matches, and each such

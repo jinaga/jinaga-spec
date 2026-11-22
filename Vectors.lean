@@ -721,7 +721,9 @@ def main (args : List String) : IO Unit := do
     unless feedReady c.spec do
       throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
     -- The vector's results are what a replica holding what the feeds deliver
-    -- reads (`feeds_cover`), child specifications' included.
+    -- reads (`feeds_cover`), child specifications' included. `readsOf` lists
+    -- exactly the results `Reads` gives, up to `Result.SetEq`
+    -- (`reads_iff_readsOf`); `sameResults` compares them by `Result.key`.
     unless sameResults (c.spec.readsOf (replica c.spec c.graph c.env (delivered c.spec c.graph c.env) []) c.env)
         (c.spec.readsOf c.graph c.env) do
       throw <| IO.userError s!"feed case {c.name}: a replica holding what the feeds deliver reads something else"

@@ -250,6 +250,10 @@ def feedShape (ms : List Match) : Bool :=
     | .existential false ns => ns.all (·.conditions.all (·.isPath))
     | .existential true _ => false
 
+/-- `feeds_cover`'s conclusion on one graph: a replica holding what the feeds
+deliver reads what the replicator reads. `readsOf` lists exactly the results
+`Specification.Reads` gives, up to `Result.SetEq` (`reads_iff_readsOf`), and
+`sameResults` compares the two lists by `Result.key`. -/
 def coverHolds (s : Specification) (g : Graph) (env : Env) (D extra : List FactId) : Bool :=
   sameResults (s.readsOf (replica s g env D extra) env) (s.readsOf g env)
 

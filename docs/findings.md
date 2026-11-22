@@ -1238,9 +1238,14 @@ matches from σ, and each such solution has some listed result read from it.
 A replica that holds the givens reads a result from every solution, at any
 depth (`reads_of_solution`). The result is `Projection.resultsAt`: one result
 per solution of each child, as `SpecificationRunner.read` builds it.
-`Specification.readsOf` lists one per solution (`reads_of_mem_readsOf`), and
-it is what `check-feeds`, `check-content` and the feed vectors'
-`nestedResults` compute, so they test the definition, not a stand-in.
+`Specification.readsOf` lists one per solution, and it is complete:
+`s.Reads g env r ↔ ∃ r' ∈ s.readsOf g env, r.SetEq r'` (`reads_iff_readsOf`),
+where `Result.SetEq` is equality as sets at every depth. That rests on
+uniqueness: a result read from σ is `SetEq` to `resultsAt`'s
+(`setEq_resultsAt`). `readsOf` is what `check-feeds`, `check-content` and the
+feed vectors' `nestedResults` compute, so they test the definition, not a
+stand-in. They compare lists with `sameResults`, through `Result.key`, which
+is meant to identify results up to `SetEq`; that is not proved.
 
 The first definition (jinaga/jinaga-spec#53) said each child's list holds,
 as a set, exactly the child's results from the solution: `r ∈ cs ↔ Reads r`.
