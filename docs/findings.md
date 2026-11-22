@@ -1355,6 +1355,7 @@ theorem holds for every policy.
 | SEC-2 | `read_integrity` | after any history, a read returns only bytes whose hash is the content fact's content hash |
 | SEC-3 | `stored_authorized` | every stored object was uploaded, those bytes, for that key, by a user the authorization rules let create the fact at the moment the upload was accepted |
 | SEC-4 | `read_isolated` | a read keyed by `F` depends on the object under `F` alone |
+| | `yields_iff` | a proof yields a fact exactly when the givens are held and the specification names the fact at some depth of child specifications |
 | SEC-5 | `read_noninterference`, `write_noninterference` | to a reader the rules do not admit, or a writer they refuse, the answer does not depend on which objects are stored |
 | | `read_admitted`, `write_accepted` | an admitted reader with a bound proof gets the object, or 404 `not_uploaded`; an authorized upload of matching bytes within the constraints is stored, or answered 200 if the key already holds one |
 
@@ -1393,9 +1394,11 @@ Decisions the statements forced:
   only. That is safe, since it only refuses more, but it refused the recorded
   proof (CR-1) of a document a client reached through a nested query
   (Copilot's review of jinaga/jinaga-spec#51). No security theorem notices
-  that mutant; `read_admitted` does. `check-content` confirms on every read
-  that `Proof.yields` agrees with `Specification.Reads`, results at every
-  depth. That agreement is checked, not proved.
+  that mutant; `read_admitted` does. `yields_iff` proves that `Proof.yields`
+  means the nested reading: the givens are held, and a solution of the
+  matches, then of a child specification's matches from it and so on down,
+  projects the fact (`Projection.Names`). `check-content` also compares it
+  with the test library's `readsOf` on every read.
 - **A given absent from the store is 403, not 400.** RR-1's 400 is for a proof
   with the wrong number of givens or an ill-formed specification. A missing
   given makes `read` empty (`Specification.read`), so the proof yields nothing.

@@ -73,8 +73,9 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
         out := "read_admitted" :: out
   return out.eraseDups
 
-/-- A proof yields `key` by the reference semantics: some result, at any depth
-of child specifications, names it (`Specification.Reads`, read by `readsOf`). -/
+/-- A proof yields `key` as the test library reads nested results (`readsOf`):
+some result, at any depth of child specifications, names it. `yields_iff`
+proves `Proof.yields` is the nested reading; this checks `readsOf` agrees. -/
 partial def resultNames (key : FactId) : Result → Bool
   | .mk row children => row.contains (some key) || children.any (·.any (resultNames key))
 
@@ -149,7 +150,7 @@ def main (args : List String) : IO UInt32 := do
       unless r.read policy user key p == readWith {} policy r user key p do
         throw <| IO.userError "the mutant family's read differs from Replicator.read"
       if let .ok _ := r.read policy user key p then served := served + 1
-      -- `Proof.yields`, by descendants, agrees with the reference semantics.
+      -- `Proof.yields` agrees with the test library's nested reading.
       if p.yields r.store key != yieldsByReads p r.store key then disagree := disagree + 1
     reads := reads + rs.length
     stored := stored + r.objects.length
@@ -161,7 +162,7 @@ def main (args : List String) : IO UInt32 := do
       let v := violations mu policy evs rs
       if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
   IO.println s!"histories {histories}, objects stored {stored}, reads {reads}, served {served}"
-  IO.println s!"real handlers: {real} histories break a statement; yields disagrees with Specification.Reads on {disagree} reads"
+  IO.println s!"real handlers: {real} histories break a statement; yields disagrees with readsOf on {disagree} reads"
   for ((label, _), (n, by_)) in mutants.zip caught do
     IO.println s!"  mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
   if disagree > 0 then return 1

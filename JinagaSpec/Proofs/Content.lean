@@ -1,5 +1,6 @@
 import JinagaSpec.Content
 import JinagaSpec.Proofs.Basic
+import JinagaSpec.Proofs.Children
 
 /-!
 # The content store's security invariants
@@ -24,6 +25,10 @@ SEC-5 hold of `read` on every state.
 * `read_noninterference` and `write_noninterference` (SEC-5): to a reader the
   rules do not admit, or a writer they refuse, the answer does not depend on
   which objects are stored.
+
+`yields_iff` says what `Proof.yields` means: a solution of the matches,
+then of a child specification's matches from it, and so on down, names the
+fact (`Projection.Names`), which is what RR-4 and CR-1 ask.
 
 SEC-1 to SEC-5 only say when the replicator may serve or store. The success
 path is `read_admitted` and `write_accepted`: an admitted reader is served, or
@@ -165,4 +170,47 @@ theorem write_accepted {P : Policy} {r : Replicator} (hf : r.store.factOf key = 
       | none => ({ r with objects := (key, o) :: r.objects }, .stored) := by
   simp [Replicator.write, hf, hm, hh, hfit]; cases r.objects.lookup key <;> rfl
 
+/-- Running the matches `ms` from `env`, the projection `p` names `key`: some
+solution projects it, or names it through a child specification, read from
+that solution. The nested reading of a specification's results, as
+`Projection.Reads` reads them, without comparing result sets. -/
+def Projection.Names (g : Graph) (key : FactId) : Projection → List Match → Env → Prop
+  | p, ms, env => ∃ σ ∈ evalMatches g env ms,
+      some key ∈ p.labels.map σ ∨ ∃ c ∈ p.children.attach, c.1.2.Names g key c.1.1 σ
+termination_by p => sizeOf p
+decreasing_by exact Projection.sizeOf_children c.2
+
+/-- The nested reading is the flat one: some path to a child specification, at
+any depth, has a solution of the matches on the way that projects `key`. -/
+theorem Projection.names_iff_paths (g : Graph) (key : FactId) (p : Projection) (ms : List Match) (env : Env) :
+    p.Names g key ms env ↔ ∃ x ∈ p.paths, ∃ σ ∈ evalMatches g env (ms ++ x.1), some key ∈ x.2.labels.map σ := by
+  rw [Projection.Names]
+  constructor
+  · rintro ⟨σ, hσ, h | ⟨⟨c, hc⟩, _, hn⟩⟩
+    · exact ⟨([], p), mem_paths.2 (.inl rfl), σ, by simpa using hσ, h⟩
+    · obtain ⟨y, hy, τ, hτ, hk⟩ := (names_iff_paths g key c.2 c.1 σ).1 hn
+      exact ⟨(c.1 ++ y.1, y.2), mem_paths.2 (.inr ⟨c, hc, y, hy, rfl⟩), τ,
+        by rw [mem_evalMatches_append]; exact ⟨σ, hσ, hτ⟩, hk⟩
+  · rintro ⟨x, hx, τ, hτ, hk⟩
+    rcases mem_paths.1 hx with rfl | ⟨c, hc, y, hy, rfl⟩
+    · exact ⟨τ, by simpa using hτ, .inl hk⟩
+    · rw [mem_evalMatches_append] at hτ
+      obtain ⟨σ, hσ, hτ⟩ := hτ
+      exact ⟨σ, hσ, .inr ⟨⟨c, hc⟩, List.mem_attach _ _,
+        (names_iff_paths g key c.2 c.1 σ).2 ⟨y, hy, τ, hτ, hk⟩⟩⟩
+termination_by sizeOf p
+decreasing_by all_goals exact Projection.sizeOf_children hc
+
+/-- A proof yields a fact exactly when the replica holds its givens and its
+specification names the fact at some depth (RR-4, CR-1). -/
+theorem yields_iff (p : Proof) (g : Graph) (key : FactId) :
+    p.yields g key = true ↔ p.spec.given.all (g.has (p.spec.bindGivens p.givens)) = true ∧
+      p.spec.projection.Names g key p.spec.matchList (p.spec.bindGivens p.givens) := by
+  rw [Projection.names_iff_paths]
+  simp [Proof.yields, Specification.descendants, Specification.read, Specification.evaluate]
+  constructor
+  · rintro ⟨a, b, hab, _, ⟨hg, σ, hσ, rfl⟩, hk⟩
+    exact ⟨hg, a, b, hab, σ, hσ, by simpa using hk⟩
+  · rintro ⟨hg, a, b, hab, σ, hσ, l, hl, hk⟩
+    exact ⟨a, b, hab, _, ⟨hg, σ, hσ, rfl⟩, List.mem_map.2 ⟨l, hl, hk⟩⟩
 end JinagaSpec
