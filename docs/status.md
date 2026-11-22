@@ -38,9 +38,10 @@ the SessionStart hook in `.claude/settings.json`. Paste the snippet in its
 header comment into the environment's setup script so that the install is
 snapshotted. Things that differ from a local session:
 
-- The default network allowlist covers GitHub and npm. If elan fails with
-  "host not allowed", add the host it names (likely `releases.lean-lang.org`)
-  to the environment's allowed domains.
+- The default network allowlist covers GitHub and npm but not Lean: elan
+  downloads toolchains from `release.lean-lang.org`. Add that host to the
+  environment's allowed domains (Limited network access). Without it, elan
+  fails with "Could not resolve host: release.lean-lang.org".
 - `verify.sh`'s TypeScript and cascade steps, and the `jinaga-conformance`
   probes, need jinaga.js, jinaga-cascade-core and jinaga-server checkouts. A
   session reaches only the repositories attached to it, so attach them and set
