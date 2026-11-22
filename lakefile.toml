@@ -23,3 +23,7 @@ root = "CheckInverse"
 [[lean_exe]]
 name = "check-feeds"
 root = "CheckFeeds"
+
+[[lean_exe]]
+name = "check-content"
+root = "CheckContent"
