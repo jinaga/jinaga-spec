@@ -1,0 +1,42 @@
+{"text":
+ "(g: Group) {\n    d: Document [\n        d->group: Group = g\n    ]\n} => d\n",
+ "steps":
+ [{"save": {"type": "Group", "predecessors": [], "id": 1}},
+  {"save":
+   {"type": "Document",
+    "predecessors": [{"role": "group", "id": 1}],
+    "id": 10}},
+  {"write": {"user": 100, "key": 10, "bytes": "plam"},
+   "expected": {"status": 422, "code": "unprocessable"}},
+  {"yields": true,
+   "read": {"user": 100, "key": 10, "givens": [1]},
+   "expected": {"status": 404, "code": "not_uploaded"}}],
+ "specification":
+ {"projection": {"type": "fact", "label": "d"},
+  "matches":
+  [{"unknown": {"type": "Document", "name": "d"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Group", "name": "group"}],
+      "labelRight": "g"}]}],
+  "given": [{"label": {"type": "Group", "name": "g"}, "conditions": []}]},
+ "source": "RW-5, SEC-2",
+ "policy":
+ {"writers":
+  [{"user": 100, "fact": 10},
+   {"user": 100, "fact": 12},
+   {"user": 100, "fact": 20},
+   {"user": 101, "fact": 11}],
+  "readers":
+  [{"user": 100, "givens": [1]},
+   {"user": 100, "givens": [3]},
+   {"user": 101, "givens": [2]}],
+  "content":
+  [{"maxLength": 100, "hash": "#plan", "fact": 10},
+   {"maxLength": 100, "hash": "#plan", "fact": 11},
+   {"maxLength": 4, "hash": "#notes!", "fact": 12}]},
+ "name": "bytes-do-not-match",
+ "expected": {"objects": []},
+ "description":
+ "Bytes whose hash is not the content hash are refused with 422, and nothing is stored."}

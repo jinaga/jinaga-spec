@@ -1340,6 +1340,110 @@ mirrors it.
 
 No issue was found for any of the three.
 
+## Content storage: SEC-1 to SEC-5
+
+The content store of "Distribution-Based Content Storage: Functional
+Requirements" (Nov 20, 2026) is modelled in `Content.lean`. A replicator holds
+the fact store and objects by content key; `write` stores an upload, `read`
+serves one, and a history is a list of saves and uploads (`Replicator.run`).
+A `Policy` supplies what a fact's fields hold, the hash, the declared
+constraints, the authorization rules and the distribution rules, and every
+theorem holds for every policy.
+
+| | theorem | statement |
+|---|---|---|
+| SEC-1 | `read_authorized` | a read returns an object only to an authenticated user whom the distribution rules let run the proof, and whose proof yields the content fact |
+| SEC-2 | `read_integrity` | after any history, a read returns only bytes whose hash is the content fact's content hash |
+| SEC-3 | `stored_authorized` | every stored object was uploaded, those bytes, for that key, by a user the authorization rules let create the fact at the moment the upload was accepted |
+| SEC-4 | `read_isolated` | a read keyed by `F` depends on the object under `F` alone |
+| | `yields_iff` | a proof yields a fact exactly when the givens are held and the specification names the fact at some depth of child specifications |
+| SEC-5 | `read_noninterference`, `write_noninterference` | to a reader the rules do not admit, or a writer they refuse, the answer does not depend on which objects are stored |
+| | `read_admitted`, `write_accepted` | an admitted reader with a bound proof gets the object, or 404 `not_uploaded`; an authorized upload of matching bytes within the constraints is stored, or answered 200 if the key already holds one |
+
+SEC-1 to SEC-5 only say when the replicator may serve or store. A handler that
+never serves, or answers 403 where RR-7 wants 404, meets all five. The last
+row pins down the success path. The vectors pin down every response.
+
+Decisions the statements forced:
+
+- **`read` does not hash again.** SEC-2 holds of every reachable state because
+  `write` verified the bytes and the fact store only grows, so a key's fact
+  never changes (`stored_authorized`, `store_grows`). Purging (ST-4) is not
+  modelled. With purging, SEC-2 holds only if a purge removes the key's
+  mapping along with its fact.
+- **SEC-3 names the bytes.** "Some upload for `F` by an authorized user" is
+  met by the shortcut "I already have this hash" (ST-3): the writer is
+  authorized to create the fact they minted. The statement must say the stored
+  object is the one that upload carried.
+- **SEC-4 is what rules out the spoof.** Looking an object up by content hash
+  breaks neither SEC-1 (the reader is admitted for `F`) nor SEC-2 (the hash
+  matches). Only key isolation catches it.
+- **SEC-5 covers uploads too.** Answering a repeat upload (RW-8) before
+  checking the writer tells a refused writer which keys hold an object, and no
+  theorem about `read` notices. So `write` checks the writer as soon as the
+  fact is found, before the content-bearing check (RW-3) and before any
+  object is consulted. Only a missing fact (RW-2) is answered first, because
+  there is no fact to authorize; that answer reveals only the fact store,
+  which the writer named.
+- **"Yields" is any projected fact, at any depth.** A proof yields `F` when
+  some result names it, at any position: a reader the rules admit may see
+  everything the specification returns. A child specification counts: its
+  results under a solution of its parent are the results of the descendant
+  whose matches go on from the parent's (`Specification.descendants`, as for
+  feeds), so `Proof.yields` asks whether any descendant's rows name `F`, and
+  `Proof.bound` checks `isWellFormedDeep`. A first draft read the top level
+  only. That is safe, since it only refuses more, but it refused the recorded
+  proof (CR-1) of a document a client reached through a nested query
+  (Copilot's review of jinaga/jinaga-spec#51). No security theorem notices
+  that mutant; `read_admitted` does. `yields_iff` proves that `Proof.yields`
+  means the nested reading: the givens are held, and a solution of the
+  matches, then of a child specification's matches from it and so on down,
+  projects the fact (`Projection.Names`). `check-content` also compares it
+  with the test library's `readsOf` on every read.
+- **A given absent from the store is 403, not 400.** RR-1's 400 is for a proof
+  with the wrong number of givens or an ill-formed specification. A missing
+  given makes `read` empty (`Specification.read`), so the proof yields nothing.
+- **Saves are unchecked.** `save` appends any fact, so the theorems hold
+  against every store. The fact store's own authorization, and RW-2's
+  combined fact-and-object request, are not modelled.
+
+**The obligation on distribution rules.** SEC-1 says the replicator asks the
+distribution engine and checks yields, and nothing more. A proof that names
+the content fact as its own given, `(d: Document) { } => d` with `d := F`, is
+well formed and yields `F` on every store. For that proof, yields is vacuous
+and SEC-1 is only as strong as the engine's verdict. So the engine must not
+authorize a specification just because it has no feeds to check, the way a
+check that authorizes each of a specification's feeds would. This is the first
+thing to prove once distribution rules have a model.
+
+`check-content` runs each statement as written on 2000 random histories per
+seed, with a policy in which a content hash is one of three values. The real
+handlers break none (they are proved). Seed 1:
+
+| mutant | caught on | by |
+|---|---|---|
+| no yields check | 1067 | SEC-1, SEC-5 |
+| yields ignores child specifications | 14 | `read_admitted` |
+| no distribution check | 55 | SEC-1, SEC-5 |
+| store bytes without hashing them | 556 | SEC-2, SEC-3 |
+| authorize the fact's presence, not the writer (RW-4) | 662 | SEC-3, SEC-5 |
+| map a key to stored bytes of the same hash (ST-3) | 24 | SEC-3 |
+| look an object up by its content hash (ST-1) | 47 | SEC-4, `read_admitted` |
+| answer 404 before checking the proof (RR-5) | 1109 | SEC-5 |
+| answer a repeat upload before checking the writer (RW-8) | 122 | SEC-5 |
+
+One history in three has child specifications (`genChildSpec`).
+Random specifications rarely yield a document, so only 111 of 80000 random
+reads are served, and the success path is thin there. The vectors cover it:
+`vectors/content/` holds sixteen named histories on one documents-in-groups
+model, one of them reading the documents as a child specification. Each is
+checked to catch the mutants it names, and together they catch all nine. `ports/typescript/content-store.ts` is a reference port that
+passes them.
+
+Not covered: the reactive hold (RR-6, SEC-6), revocation and the proof cache
+(SEC-7, NF-2), purging (ST-4), chunked uploads, notifications and the batch
+status endpoint (RR-10, RR-11), and the client (SEC-8).
+
 ## Where the proof effort went
 
 | file | what it proves |
@@ -1378,6 +1482,7 @@ No issue was found for any of the three.
 | `Proofs/Feeds.lean` | A feed has only path conditions, so a tuple new to a feed binds a new fact. |
 | `Proofs/Cursor.lean` | Paging by bookmark keeps a replica caught up from the first page to an empty one while the graph grows. |
 | `Proofs/Cover.lean` | A flat level, then any level, agrees on a replica holding what its feeds deliver; every flat feed is scoped and binds each label once; a replica holding what the flat feeds deliver finds the replicator's solutions. |
+| `Proofs/Content.lean` | The content store's read and write meet SEC-1 to SEC-5 for every policy, after any history of saves and uploads; an admitted reader is served and an authorized upload stored. |
 | `Proofs/Children.lean` | The feeds of a specification are the flat feeds of its descendants; so each requirement holds with child specifications, the replica reads their results at every depth, and a replica that has paged every feed converges. |
 
 The redesign changed the proofs less than it changed the definitions. The

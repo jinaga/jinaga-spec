@@ -158,4 +158,9 @@ theorem flatMap_congr {l : List α} {g h : α → List β} (he : ∀ x ∈ l, g 
   congr 1
   exact List.map_congr_left he
 
+/-- Appending to a graph keeps every lookup the graph already answers. -/
+theorem Graph.factOf_append {g : Graph} (h : g.factOf k = some f) (g' : Graph) :
+    (g ++ g').factOf k = some f := by
+  simp [Graph.factOf, List.find?_append] at h ⊢; simp [h]
+
 end JinagaSpec

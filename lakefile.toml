@@ -12,6 +12,9 @@ root = "Vectors"
 [[lean_lib]]
 name = "CheckGen"
 
+[[lean_lib]]
+name = "ContentMutants"
+
 [[lean_exe]]
 name = "check"
 root = "Check"
@@ -23,3 +26,7 @@ root = "CheckInverse"
 [[lean_exe]]
 name = "check-feeds"
 root = "CheckFeeds"
+
+[[lean_exe]]
+name = "check-content"
+root = "CheckContent"

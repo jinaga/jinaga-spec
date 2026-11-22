@@ -1,0 +1,42 @@
+{"text":
+ "(g: Group) {\n    d: Document [\n        d->group: Group = g\n    ]\n} => d\n",
+ "steps":
+ [{"save": {"type": "Group", "predecessors": [], "id": 1}},
+  {"save":
+   {"type": "Document",
+    "predecessors": [{"role": "group", "id": 1}],
+    "id": 10}},
+  {"write": {"user": null, "key": 10, "bytes": "plan"},
+   "expected": {"status": 401, "code": "unauthenticated"}},
+  {"yields": true,
+   "read": {"user": null, "key": 10, "givens": [1]},
+   "expected": {"status": 401, "code": "unauthenticated"}}],
+ "specification":
+ {"projection": {"type": "fact", "label": "d"},
+  "matches":
+  [{"unknown": {"type": "Document", "name": "d"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Group", "name": "group"}],
+      "labelRight": "g"}]}],
+  "given": [{"label": {"type": "Group", "name": "g"}, "conditions": []}]},
+ "source": "RW-1, RR-2",
+ "policy":
+ {"writers":
+  [{"user": 100, "fact": 10},
+   {"user": 100, "fact": 12},
+   {"user": 100, "fact": 20},
+   {"user": 101, "fact": 11}],
+  "readers":
+  [{"user": 100, "givens": [1]},
+   {"user": 100, "givens": [3]},
+   {"user": 101, "givens": [2]}],
+  "content":
+  [{"maxLength": 100, "hash": "#plan", "fact": 10},
+   {"maxLength": 100, "hash": "#plan", "fact": 11},
+   {"maxLength": 4, "hash": "#notes!", "fact": 12}]},
+ "name": "no-token",
+ "expected": {"objects": []},
+ "description":
+ "Without a valid token both endpoints answer 401, and nothing is stored."}
