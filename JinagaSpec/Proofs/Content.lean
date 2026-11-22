@@ -172,13 +172,13 @@ theorem write_accepted {P : Policy} {r : Replicator} (hf : r.store.factOf key = 
 
 /-- Running the matches `ms` from `env`, the projection `p` names `key`: some
 solution projects it, or names it through a child specification, read from
-that solution. The nested reading of a specification's results, as
-`Projection.Reads` reads them, without comparing result sets. -/
+that solution: the nested reading of a specification's results, at every
+depth. -/
 def Projection.Names (g : Graph) (key : FactId) : Projection → List Match → Env → Prop
   | p, ms, env => ∃ σ ∈ evalMatches g env ms,
-      some key ∈ p.labels.map σ ∨ ∃ c ∈ p.children.attach, c.1.2.Names g key c.1.1 σ
+      some key ∈ p.labels.map σ ∨ ∃ c, ∃ _ : c ∈ p.children, c.2.Names g key c.1 σ
 termination_by p => sizeOf p
-decreasing_by exact Projection.sizeOf_children c.2
+decreasing_by exact Projection.sizeOf_children ‹_›
 
 /-- The nested reading is the flat one: some path to a child specification, at
 any depth, has a solution of the matches on the way that projects `key`. -/
@@ -186,18 +186,15 @@ theorem Projection.names_iff_paths (g : Graph) (key : FactId) (p : Projection) (
     p.Names g key ms env ↔ ∃ x ∈ p.paths, ∃ σ ∈ evalMatches g env (ms ++ x.1), some key ∈ x.2.labels.map σ := by
   rw [Projection.Names]
   constructor
-  · rintro ⟨σ, hσ, h | ⟨⟨c, hc⟩, _, hn⟩⟩
+  · rintro ⟨σ, hσ, h | ⟨c, hc, hn⟩⟩
     · exact ⟨([], p), mem_paths.2 (.inl rfl), σ, by simpa using hσ, h⟩
     · obtain ⟨y, hy, τ, hτ, hk⟩ := (names_iff_paths g key c.2 c.1 σ).1 hn
-      exact ⟨(c.1 ++ y.1, y.2), mem_paths.2 (.inr ⟨c, hc, y, hy, rfl⟩), τ,
-        by rw [mem_evalMatches_append]; exact ⟨σ, hσ, hτ⟩, hk⟩
+      exact ⟨(c.1 ++ y.1, y.2), mem_paths.2 (.inr ⟨c, hc, y, hy, rfl⟩), τ, mem_evalMatches_append.2 ⟨σ, hσ, hτ⟩, hk⟩
   · rintro ⟨x, hx, τ, hτ, hk⟩
     rcases mem_paths.1 hx with rfl | ⟨c, hc, y, hy, rfl⟩
     · exact ⟨τ, by simpa using hτ, .inl hk⟩
-    · rw [mem_evalMatches_append] at hτ
-      obtain ⟨σ, hσ, hτ⟩ := hτ
-      exact ⟨σ, hσ, .inr ⟨⟨c, hc⟩, List.mem_attach _ _,
-        (names_iff_paths g key c.2 c.1 σ).2 ⟨y, hy, τ, hτ, hk⟩⟩⟩
+    · obtain ⟨σ, hσ, hτ⟩ := mem_evalMatches_append.1 hτ
+      exact ⟨σ, hσ, .inr ⟨c, hc, (names_iff_paths g key c.2 c.1 σ).2 ⟨y, hy, τ, hτ, hk⟩⟩⟩
 termination_by sizeOf p
 decreasing_by all_goals exact Projection.sizeOf_children hc
 
