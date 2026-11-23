@@ -1303,7 +1303,8 @@ restoring mutant needs a restore that delivers a child's result. That is rarer,
 and it is caught on 6 and 9.
 
 There are six new vectors: `child-of-excluded`, `grandchild`,
-`child-uses-a-given` and three `random-children-*`. A vector with child
+`child-uses-a-given` and three `random-children-*` (two since jinaga-spec#55,
+which drops one). A vector with child
 specifications carries `expected.nestedResults`. `feed-builder.ts` passes all
 19. On every child vector, `jinaga.js`'s `buildFeeds` covers the results and
 sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
@@ -1417,30 +1418,66 @@ and `feeds_defer` hold as they are, with no new hypothesis.
 `ConnectedDescendants s` (`Connected.lean`), decided by `isConnectedDeep`
 (`isConnectedDeep_iff`), holds when:
 
-- each descendant, as a feed (its matches, with the givens they use), is
-  connected;
-- every given is used by some descendant; and
-- every feed `buildFeeds` emits is connected.
+1. each descendant, as a feed (its matches, with the givens they use), passes
+   `isConnected`;
+2. every given is used by some descendant; and
+3. every feed `buildFeeds` emits is joined (`isJoined`): its path conditions
+   alone, its negative conditions' filters dropped (`Match.paths`), join its
+   matches and the givens they use, and it passes `isConnected`.
 
-The last clause is stated over the emitted feeds, not over the prefixes where
-`buildFeeds` cuts. Those prefixes are the feeds: an excluding feed is the
-written prefix followed by the condition's matches, joined with path
-conditions only, so `isConnected` adds no link between the condition and its
-match. A restoring feed goes on through a canceller's matches. Stating the cuts
-separately would copy `levelFeeds` and `negFeeds` as a second walk, and its
-proof would need a description of `isConnected`'s reachability that nothing
-here has yet. In the port, the clause is one line over `buildFeeds` and
-`isConnected`.
+Clause 3 is what says no feed is a product. It is stated over the emitted
+feeds, not over the prefixes where `buildFeeds` cuts, because those prefixes
+are the feeds. An excluding feed is the written prefix followed by the
+condition's matches, which hold only path conditions, so they are joined to
+the rest by their own path conditions. A filtered feed keeps the condition as
+a filter on its last match (`addLast`), and `isConnected` counts every label a
+filter names as joined to that match. So `isConnected` alone accepts B,
+`(p1: R, p2: A) { u: U [u->r = p1]  x: X [x->a = p2, !E { e: E [e->u = u, e->x = x] }] } => x`,
+whose filtered feed `{ u, x [!E { e }] }` joins `u` and `x` only through the
+filter. `isJoined` checks the feed with its filters dropped, which refuses B.
 
-| theorem | statement | hypotheses |
-|---|---|---|
-| `isConnectedDeep_iff` | the check decides `ConnectedDescendants` | none |
-| `buildFeeds_connected` | every `f ∈ buildFeeds s` is connected, and `f.given = usedGivens s.given f.matchList` | `ConnectedDescendants s` |
-| `isConnected_of_connectedDescendants` | `isConnected s` | `ConnectedDescendants s`, and the top-level matches use every given |
+Two choices in `isJoined` are forced by vectors:
 
-`buildFeeds_connected` reads only `ConnectedDescendants`. It does not need
-`WellFormed`, `DistinctLabels` or `RootedMatches`, because the check reads the
-feeds `buildFeeds` makes.
+- **A given that only a filter names need not be joined by path conditions.**
+  The feed with its filters dropped takes only the givens its path conditions
+  use (`asFeed`). `two-givens`, the unread messages of a user in a channel,
+  has the filtered feed `(p1: User, p2: Channel) { m [m->channel = p2, !E { rd [rd->message = m, rd->user = p1] }] }`.
+  `p1` is a parameter of the filter, not a factor of a product. Keeping the
+  feed's own givens refuses it, and it is a named feed vector.
+- **The feed must pass `isConnected` too.** With its filters dropped, nothing
+  checks that a filter's matches are joined to the feed.
+  `negative-condition-joined-only-inside-its-own` has the filter `!E { e }`,
+  whose `e` only its own negative condition `!F { f [f->e = e, f->u = u] }`
+  joins to `u`. The filter keeps `e` without that condition, so the filter is
+  joined to nothing. Its excluding feed walks no successor and is dropped, and
+  its descendant passes `isConnected`, so only this conjunct refuses it.
+
+| theorem | statement | hypotheses | reads |
+|---|---|---|---|
+| `isConnectedDeep_iff` | the check decides `ConnectedDescendants` | none | all three clauses |
+| `isConnected_asFeed` | `isConnected (asFeed s.given s.matchList) = isConnected s` | the top-level matches use every given | that hypothesis |
+
+So clause 1, at the specification itself, makes the check at least as strict
+as `isConnected` on a specification whose top-level matches use every given.
+Nothing else is proved about the check, and the rest is refusal policy:
+
+- **Clause 3 is a definition.** `isJoined` is what "not a product" means here,
+  and no theorem derives it from anything else. An earlier
+  `buildFeeds_connected` concluded, from all of `ConnectedDescendants`, that
+  every feed passes `isConnected`, with the feed's givens
+  `usedGivens s.given f.matchList`. It read only clause 3, which stated it,
+  and the second conjunct held by `rfl` for every specification, so it was
+  dropped. "Every feed passes `isConnected`" is now half of clause 3.
+- **Clause 1 at a child specification** has no theorem behind it. It refuses P
+  (`child-joins-two-chains-only-in-a-grandchild`) through clause 3 too, and
+  `two-chains-of-predecessors`, which has no feeds, only through clause 1 at
+  the top level.
+- **Clause 2** is jinaga-spec#45's rule, and matches jinaga.js. No theorem
+  needs it: a feed takes only the givens it uses.
+
+The earlier `isConnected_of_connectedDescendants` assumed all of
+`ConnectedDescendants` and read only clause 1 at the specification itself; it
+is now `isConnected_asFeed`, with only the hypothesis it reads.
 
 **`ConnectedDescendants s → isConnected s` is false.** `child-uses-a-given`
 (chapter 12, Unused Givens) is the counterexample. Its post feed takes only the
@@ -1448,34 +1485,47 @@ blog, its comment feed the blog and the user, and both are connected.
 `isConnected` reads only the top-level matches, where nothing uses the user,
 so it refuses. The strongest form that holds adds the hypothesis that the
 top-level matches use every given. So `isConnected` and the new check are
-incomparable. `isConnected` accepts N and J!, and refuses
+incomparable. `isConnected` accepts N, J! and B, and refuses
 `child-uses-a-given`. Among specifications whose top-level matches use every
 given, the new check is strictly stricter, with N as the witness.
 
 ### Mutants
 
 Each mutant of the check (`connectedMutants`, `CheckGen.lean`) is caught by a
-well-formedness vector, and on random specifications in `check-feeds`:
+well-formedness vector, and on the random and named specifications of
+`check-feeds`, where `connectedBreaks` counts what each accepts that it should
+not:
 
-| mutant | breaks | caught on (seeds 1, 2) |
+| mutant | accepts | caught on (seeds 1, 2) |
 |---|---|---|
-| `isConnected` alone, the rule of jinaga/jinaga.js#436 | `buildFeeds_connected` (N, J!) | 48, 57 |
-| descendants only, no feed checked (#55's first statement) | `buildFeeds_connected` (N, J!) | 53, 66 |
-| feeds only, no descendant checked | `isConnected_of_connectedDescendants` (`two-chains-of-predecessors`, which has no feeds) | 2, 1 |
-| no given coverage | accepts an unused given (`unused-given`, jinaga-spec#45) | 53, 51 |
+| `isConnected` alone, the rule of jinaga/jinaga.js#436 | a product feed (N, J!, B) | 56, 67 |
+| descendants only, no feed checked (#55's first statement) | a product feed (N, J!, B) | 62, 78 |
+| feeds by `isConnected`, which a filter joins | a product feed (B) | 9, 12 |
+| feeds by their path conditions only | a feed `isConnected` refuses (`negative-condition-joined-only-inside-its-own`) | 1, 1 (the named vector only) |
+| feeds only, no descendant checked | a specification `isConnected` refuses (`two-chains-of-predecessors`, which has no feeds) | 2, 1 |
+| no given coverage | an unused given (`unused-given`, jinaga-spec#45) | 53, 51 |
 
-The real check breaks none. It refuses 117 and 125 of 600 random
-specifications on the two seeds.
+The real check refuses 125 and 136 of 600 random specifications on the two seeds.
+It accepts none of the four on any of them, but three of the four are its own
+clauses, so that zero only checks that `connectedWith {}` and `connectedBreaks`
+agree with `isConnectedDeep`; the fourth is `isConnected_asFeed`. What the
+table shows is that each mutant is caught.
 
 The negative vectors are `child-joins-two-chains-only-in-a-grandchild` (P),
 `negative-condition-before-the-join` (J!),
-`negative-condition-joins-another-given` (N), `unused-given` and
+`negative-condition-joins-another-given` (N),
+`negative-condition-joins-two-chains` (B),
+`negative-condition-joined-only-inside-its-own`, `unused-given` and
 `two-chains-of-predecessors`. Every named feed vector passes the check and
-keeps its feeds. Of the random feed vectors, `random-2` (an unused given) and
-`random-children-1` (P's shape) fail it and are no longer generated. The later
-ones move up a number, with the same contents. One split vector,
-`given-only-an-existential-uses`, is N's shape. `isConnected` accepts it, and
-the new check refuses it. It stays, since the split does not assume the check.
+keeps its feeds, byte for byte, with `isJoined` in place of `isConnected`.
+`existential-joins-a-sibling-conditions-match`, which is not well formed, now
+states `connected: false`: its second filter names `e1`, which is out of scope
+there, and with the filters dropped nothing joins it. Of the random feed
+vectors, `random-2` (an unused given) and `random-children-1` (P's shape) fail
+the check and are no longer generated. The later ones move up a number, with
+the same contents. One split vector, `given-only-an-existential-uses`, is N's
+shape. `isConnected` accepts it, and the new check refuses it. It stays, since
+the split does not assume the check.
 
 ### jinaga.js
 

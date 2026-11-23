@@ -54,8 +54,10 @@ def wellFormedCaseToJson (c : WellFormedCase) : Json :=
 
 /-- The vector's verdict comes from the oracle, but each case states which rules
 a reader expects it to violate, and a disagreement is an error, not a vector.
-A specification that is not well formed may be disconnected too, so `connected`
-is stated only for a well-formed one. -/
+Every vector states `connected`, the oracle's verdict, and a port is held to it
+on every vector. A case's intent is checked against it only when the case is
+well formed, since one that is not may be disconnected too, and its `violates`
+need not say so. -/
 def checkIntent (c : WellFormedCase) : IO Unit := do
   let wellFormed := c.violates.all (· == "connected")
   if isWellFormedDeep c.spec != wellFormed then

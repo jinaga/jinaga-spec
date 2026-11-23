@@ -53,8 +53,10 @@ The same envelope, for two checks. `wellFormed` is `isWellFormedDeep`:
 projection, each as a specification whose matches go on from its parent's.
 `connected` is `isConnectedDeep` (`JinagaSpec/Connected.lean`): each of those
 descendants, with the givens its matches use, passes `isConnected`; every
-given is used by some descendant; and every feed `buildFeeds` makes passes
-`isConnected`. A port of `buildFeeds` refuses a specification that fails
+given is used by some descendant; and every feed `buildFeeds` makes is joined
+(`isJoined`): it passes `isConnected`, and its path conditions alone, its
+negative conditions' filters dropped, join its matches and the givens they
+use. A port of `buildFeeds` refuses a specification that fails
 either.
 
 ```jsonc
@@ -70,9 +72,11 @@ either.
 A port passes when its checks return exactly `expected` for `specification`.
 The rules of `wellFormed` are the conditions in `docs/contracts.md`. Each case
 states the rules a reader expects it to violate, and the generator refuses to
-write a vector where the oracle disagrees. `connected` is stated only for a
-well-formed case: a specification that is not well formed may be disconnected
-too. `lake exe vectors` also refuses to write the vectors unless each mutant of
+write a vector where the oracle disagrees. `connected` is `isConnectedDeep`'s
+verdict, stated for every case, and `run-vectors.ts` holds the reference port
+to it on every vector. Only a well-formed case's `violates` is checked against
+it: a specification that is not well formed may be disconnected too, and its
+`violates` lists only the rules of `wellFormed` it breaks. `lake exe vectors` also refuses to write the vectors unless each mutant of
 the connectivity check (`connectedMutants`, `CheckGen.lean`) disagrees with
 `isConnectedDeep` on one of them.
 

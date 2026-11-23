@@ -28,11 +28,13 @@ last checked; check the issue before acting on one.
   are filtered for `isConnectedDeep` (`Connected.lean`), so `random-2` (an
   unused given) and `random-children-1` (a product, P's shape) are no longer
   generated. `isConnectedDeep_iff` proves the check decides
-  `ConnectedDescendants`. `buildFeeds_connected` proves every feed of a
-  specification that passes it connected, with the givens it uses.
-  `isConnected_of_connectedDescendants` proves such a specification passes
-  `isConnected` when its top-level matches use every given. Without that
-  hypothesis the implication is false (`child-uses-a-given`).
+  `ConnectedDescendants`, whose feed clause asks that each feed be joined
+  (`isJoined`): connected, and joined by its path conditions alone, not by a
+  negative condition's filter. `isConnected_asFeed` makes the descendant clause,
+  at the specification itself, at least as strict as `isConnected` when its
+  top-level matches use every given; without that hypothesis it is not
+  (`child-uses-a-given`). The other clauses are refusal policy, with no theorem
+  behind them (`docs/findings.md`).
 - jinaga-spec#18: the given-conditions label rule's wording in
   `vectors/README.md` and `GivenConditions.lean`, and a regression check; the
   code was fixed in `287ef39`.

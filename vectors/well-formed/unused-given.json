@@ -12,7 +12,7 @@
   "given":
   [{"label": {"type": "R", "name": "p1"}, "conditions": []},
    {"label": {"type": "A", "name": "p2"}, "conditions": []}]},
- "source": "jinaga/jinaga-spec#45, random-2",
+ "source": "jinaga/jinaga-spec#45, random-2 at 77aa47d",
  "name": "unused-given",
  "expected": {"wellFormed": true, "connected": false},
  "description":
