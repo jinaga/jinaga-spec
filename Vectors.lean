@@ -50,13 +50,29 @@ def wellFormedCaseToJson (c : WellFormedCase) : Json :=
     ("specification", specificationToJson c.spec),
     ("text", describeSpecification c.spec),
     ("violates", Json.arr (c.violates.map Json.str).toArray),
-    ("expected", Json.mkObj [("wellFormed", isWellFormedDeep c.spec)])]
+    ("expected", Json.mkObj [("wellFormed", isWellFormedDeep c.spec), ("connected", isConnectedDeep c.spec)])]
 
 /-- The vector's verdict comes from the oracle, but each case states which rules
-a reader expects it to violate, and a disagreement is an error, not a vector. -/
+a reader expects it to violate, and a disagreement is an error, not a vector.
+A specification that is not well formed may be disconnected too, so `connected`
+is stated only for a well-formed one. -/
 def checkIntent (c : WellFormedCase) : IO Unit := do
-  if isWellFormedDeep c.spec != c.violates.isEmpty then
+  let wellFormed := c.violates.all (· == "connected")
+  if isWellFormedDeep c.spec != wellFormed then
     throw <| IO.userError s!"{c.name}: the oracle says wellFormed={isWellFormedDeep c.spec}, but the case violates {c.violates}"
+  if wellFormed && isConnectedDeep c.spec == c.violates.contains "connected" then
+    throw <| IO.userError s!"{c.name}: the oracle says connected={isConnectedDeep c.spec}, but the case violates {c.violates}"
+
+/-- Each mutant of the connectivity check disagrees with `isConnectedDeep` on
+some well-formed vector, and `connectedWith {}` is `isConnectedDeep` on all of
+them. -/
+def checkConnectedMutants : IO Unit := do
+  for c in wellFormedCases do
+    if connectedWith {} c.spec != isConnectedDeep c.spec then
+      throw <| IO.userError s!"{c.name}: connectedWith differs from isConnectedDeep"
+  for (label, mu) in connectedMutants do
+    unless wellFormedCases.any (fun c => isWellFormedDeep c.spec && connectedWith mu c.spec != isConnectedDeep c.spec) do
+      throw <| IO.userError s!"no well-formedness vector catches the connectivity mutant \"{label}\""
 
 def rowToJson (row : Row) : Json :=
   Json.arr (row.map fun | some id => Json.num id | none => Json.null).toArray
@@ -215,7 +231,8 @@ def randomFeedCases (count : Nat) (gen : Gen Specification := genFeedSpec) (seed
     let results := s.read G env
     let feeds := buildFeeds s
     let missed := feeds.length ≥ 3 && feeds.all fun f => !(f.tuples G env).isEmpty
-    if !results.isEmpty && missed then
+    -- A port refuses a specification that is not `ConnectedDescendants`.
+    if !results.isEmpty && missed && isConnectedDeep s then
       out := out ++ [{ name := s!"{pfx}-{out.length + 1}"
                        description := "A random specification shaped like an application's, and a graph on which each of its levels delivers a fact."
                        source := s!"lake exe vectors, seed {seed}"
@@ -710,6 +727,7 @@ def main (args : List String) : IO Unit := do
     unless isWellFormed c.spec do
       throw <| IO.userError s!"split case {c.name} is not well-formed"
     IO.FS.writeFile (splitDir / s!"{c.name}.json") ((caseToJson c).pretty ++ "\n")
+  checkConnectedMutants
   for c in wellFormedCases do
     checkIntent c
     IO.FS.writeFile (wfDir / s!"{c.name}.json") ((wellFormedCaseToJson c).pretty ++ "\n")
@@ -720,6 +738,8 @@ def main (args : List String) : IO Unit := do
   for c in feedAll do
     unless feedReady c.spec do
       throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
+    unless isConnectedDeep c.spec do
+      throw <| IO.userError s!"feed case {c.name} has a disconnected feed or descendant, or an unused given"
     -- The vector's results are what a replica holding what the feeds deliver
     -- reads (`feeds_cover`), child specifications' included. `readsOf` lists
     -- exactly the results `Reads` gives, up to `Result.SetEq`

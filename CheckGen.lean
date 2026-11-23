@@ -294,6 +294,44 @@ def feedReady (s : Specification) : Bool :=
   isWellFormedDeep s && s.descendants.all fun d =>
     (declaredMatches d.matchList).eraseDups.length == (declaredMatches d.matchList).length
 
+/-! ## Mutants of the connectivity check
+
+Checks a port might write in place of `isConnectedDeep`, each wrong in one way
+(`mutant-first-statement`). They are one check, `connectedWith`, parameterized
+over which of `ConnectedDescendants`'s clauses it keeps, and `connectedWith {}`
+is checked to be `isConnectedDeep`. -/
+
+/-- Which clauses of `ConnectedDescendants` a check keeps. -/
+structure ConnectedMutant where
+  /-- Each descendant, as a feed, is connected. -/
+  descendants : Bool := true
+  /-- Every given is used by some descendant. -/
+  coverage : Bool := true
+  /-- Every feed `buildFeeds` emits is connected. -/
+  feeds : Bool := true
+  /-- Only `isConnected` of the specification, as the inverse checks it. -/
+  topLevel : Bool := false
+
+def connectedWith (mu : ConnectedMutant) (s : Specification) : Bool :=
+  if mu.topLevel then isConnected s else
+  (!mu.descendants || s.descendants.all fun d => isConnected (asFeed d.given d.matchList)) &&
+  (!mu.coverage || s.given.all fun l => s.descendants.any fun d => (usedGivens d.given d.matchList).contains l) &&
+  (!mu.feeds || (buildFeeds s).all isConnected)
+
+/-- Each is wrong in one way. The first two accept `N`, whose excluding feed is
+disconnected: they break `buildFeeds_connected`. The third accepts two chains
+of predecessors with no feed: it breaks `isConnected_of_connectedDescendants`.
+The last accepts an unused given (jinaga/jinaga-spec#45). -/
+def connectedMutants : List (String × ConnectedMutant) := [
+  ("isConnected alone, the rule of jinaga/jinaga.js#436", { topLevel := true }),
+  ("descendants only, no feed checked", { feeds := false }),
+  ("feeds only, no descendant checked", { descendants := false }),
+  ("no given coverage", { coverage := false })]
+
+/-- A disconnected feed of a specification a check accepts. -/
+def acceptsDisconnected (check : Specification → Bool) (s : Specification) : Bool :=
+  check s && (buildFeeds s).any (!isConnected ·)
+
 /-- The facts `ids` name, and all their predecessors. -/
 def closure (g : Graph) (ids : List FactId) : List FactId := Id.run do
   let mut out := ids.eraseDups
