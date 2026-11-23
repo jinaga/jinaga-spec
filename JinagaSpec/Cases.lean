@@ -343,6 +343,24 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u" "A" [path [role "a" "A"] "p2", notExists [unknown "e" "E" [path [role "r" "R"] "p1"]]]]
       (fact "u")
     violates := ["connected"] },
+  { name := "negative-condition-joins-two-chains"
+    description := "B. u joins only p1, and x only p2; the negative condition on x joins the two. The excluding feed is connected, but the filtered feed { u, x [!E { e }] } joins u and x only through its filter, so it is a product. isConnected accepts that feed, since it counts the labels a filter names as joined to its match."
+    source := "jinaga/jinaga-spec#55, review"
+    spec := spec [("p1", "R"), ("p2", "A")]
+      [unknown "u" "U" [path [role "r" "R"] "p1"],
+       unknown "x" "X" [path [role "a" "A"] "p2",
+         notExists [unknown "e" "E" [path [role "u" "U"] "u", path [role "x" "X"] "x"]]]]
+      (fact "x")
+    violates := ["connected"] },
+  { name := "negative-condition-joined-only-inside-its-own"
+    description := "The negative condition on u has a match e that only its own negative condition joins to u. The filtered feed keeps e without that condition, so the filter { e } is joined to nothing, and isConnected refuses the feed. Its path conditions alone join it, and the excluding feed walks no successor, so the feed is the only one that shows it."
+    source := "jinaga/jinaga-spec#55, review"
+    spec := spec [("p", "P")]
+      [unknown "u" "U" [path [] "p" [role "up" "U"],
+         notExists [unknown "e" "E" [notExists [unknown "f" "F" [path [role "e" "E"] "e", path [role "u" "U"] "u"]]]]],
+       unknown "x" "X" [path [role "u" "U"] "u"]]
+      (fact "x")
+    violates := ["connected"] },
   { name := "unused-given"
     description := "A given that no match uses, at any depth. Every feed is connected, since a feed takes only the givens it uses."
     source := "jinaga/jinaga-spec#45, random-2"

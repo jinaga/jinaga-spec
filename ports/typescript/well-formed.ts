@@ -16,11 +16,11 @@
 //
 // `isConnectedDeep` (JinagaSpec/Connected.lean) is the check `buildFeeds`
 // needs besides: every descendant, as a feed, is connected; every given is
-// used by some descendant; and every feed is connected, so no feed is a
+// used by some descendant; and every feed is joined, so no feed is a
 // product of two chains (jinaga/jinaga-spec#55). It reads the feeds from
 // ./feed-builder.ts, which is the one dependency of this file.
 
-import { asFeed, feedsOf } from "./feed-builder.ts";
+import { asFeed, feedsOf, paths } from "./feed-builder.ts";
 
 export interface Label { name: string; type: string }
 export interface Role { name: string; predecessorType: string }
@@ -153,13 +153,22 @@ export function usedGivens<G extends { label: Label }>(given: G[], matches: Matc
 }
 
 /**
+ * A feed is joined when its path conditions alone, its negative conditions'
+ * filters dropped, join its matches and the givens it uses, so it is not a
+ * product; and it passes `isConnected`, so each filter's matches are joined to
+ * it (`isJoined`).
+ */
+const isJoined = (f: Specification): boolean =>
+    isConnected(f) && isConnected(asFeed(f.given, f.matches.map(paths)));
+
+/**
  * Every descendant, as a feed, is connected; every given is used by some
- * descendant; and every feed `buildFeeds` emits is connected
+ * descendant; and every feed `buildFeeds` emits is joined
  * (`ConnectedDescendants`).
  */
 export function isConnectedDeep(specification: Specification): boolean {
     const ds = descendants(specification);
     return ds.every(d => isConnected(asFeed(d.given, d.matches))) &&
         specification.given.every(g => ds.some(d => usedGivens(d.given, d.matches).includes(g))) &&
-        feedsOf(specification as any).every(f => isConnected(f as any));
+        feedsOf(specification as any).every(isJoined);
 }

@@ -66,7 +66,7 @@ function flatten(matches: Match[]): Match[] {
     ]);
 }
 
-const paths = (m: Match): Match => ({ unknown: m.unknown, conditions: m.conditions.filter(isPath) });
+export const paths = (m: Match): Match => ({ unknown: m.unknown, conditions: m.conditions.filter(isPath) });
 
 /** A negative condition's level: its matches, positives joined, path conditions only. */
 const level = (matches: Match[]): Match[] => flatten(matches).map(paths);
@@ -163,6 +163,6 @@ export function buildFeeds(specification: Specification): Specification[] {
     // No feed is a product of two chains (`ConnectedDescendants`,
     // JinagaSpec/Connected.lean, jinaga/jinaga-spec#55).
     if (!isConnectedDeep(specification as any))
-        throw new Error("The specification is not connected: a feed, or a child specification, joins givens that nothing joins to each other, or a given is unused.");
+        throw new Error("The specification is not connected: a feed, or a child specification, joins givens that nothing joins to each other, a feed is joined only by a negative condition, or a given is unused.");
     return feedsOf(specification);
 }
