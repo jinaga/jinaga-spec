@@ -9,7 +9,7 @@ import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isWellFormed } from "./well-formed.ts";
+import { isConnectedDeep, isWellFormed } from "./well-formed.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const jinagaJs = resolve(process.env.JINAGA_JS ?? join(here, "../../../jinaga.js"));
@@ -92,6 +92,9 @@ const wellFormedFiles = readdirSync(wellFormedDir).filter(f => f.endsWith(".json
 for (const file of wellFormedFiles) {
     const vector = JSON.parse(readFileSync(join(wellFormedDir, file), "utf8"));
     const wrong = checkers.filter(([, check]) => check(vector.specification) !== vector.expected.wellFormed).map(([name]) => name);
+    // The connectivity check `buildFeeds` needs (`isConnectedDeep`). jinaga.js
+    // has no check of the same scope, so only the reference is held to it.
+    if (isConnectedDeep(vector.specification) !== vector.expected.connected) wrong.push("reference isConnectedDeep");
     const failures = wrong.filter(name => !(name === "jinaga.js" && jinagaWellFormedMisses.has(vector.name)));
     if (jinagaWellFormedMisses.has(vector.name) && wellFormedErrors && !wrong.includes("jinaga.js")) {
         console.log(`  note  ${vector.name}: jinaga.js now agrees; remove it from jinagaWellFormedMisses`);
