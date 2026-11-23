@@ -1,4 +1,5 @@
 import JinagaSpec.Proofs.Cover
+import JinagaSpec.WellFormed
 
 /-!
 # Child specifications
@@ -201,37 +202,56 @@ theorem prefix_iff {G1 G2 : Graph} {env σ : Env} {ms X : List Match}
 theorem names_sub_declared {ms : List Match} {x : Name} (h : x ∈ names ms) : x ∈ declaredMatches ms :=
   mem_within (within_level ms) (List.mem_append_left _ (by rw [names_level]; exact mem_names_flatten h))
 
+/-- Matching a child's listed results to its solutions, in both directions,
+respects solutions and readings that agree. -/
+theorem matched_congr {A A' : Env → Prop} {R R' : Env → Result → Prop} {l : List Result}
+    (hA : ∀ τ, A τ ↔ A' τ) (hR : ∀ τ, A τ → ∀ r, R τ r ↔ R' τ r) :
+    ((∀ r ∈ l, ∃ τ, A τ ∧ R τ r) ∧ ∀ τ, A τ → ∃ r ∈ l, R τ r) ↔
+      ((∀ r ∈ l, ∃ τ, A' τ ∧ R' τ r) ∧ ∀ τ, A' τ → ∃ r ∈ l, R' τ r) := by
+  have go : ∀ {A A' : Env → Prop} {R R' : Env → Result → Prop}, (∀ τ, A τ ↔ A' τ) →
+      (∀ τ, A τ → ∀ r, R τ r ↔ R' τ r) →
+      ((∀ r ∈ l, ∃ τ, A τ ∧ R τ r) ∧ ∀ τ, A τ → ∃ r ∈ l, R τ r) →
+      ((∀ r ∈ l, ∃ τ, A' τ ∧ R' τ r) ∧ ∀ τ, A' τ → ∃ r ∈ l, R' τ r) :=
+    fun hA hR ⟨h1, h2⟩ => ⟨fun r hr => let ⟨τ, ha, h⟩ := h1 r hr; ⟨τ, (hA τ).mp ha, (hR τ ha r).mp h⟩,
+      fun τ ha => let ⟨r, hr, h⟩ := h2 τ ((hA τ).mpr ha); ⟨r, hr, (hR τ ((hA τ).mpr ha) r).mp h⟩⟩
+  exact ⟨go hA hR, go (fun τ => (hA τ).symm) fun τ ha r => (hR τ ((hA τ).mpr ha) r).symm⟩
+
 /-- **Nested results are determined by the solutions along each path.** Two
 graphs that have the same solutions of the matches along every path to a child
-specification read the same results, at every depth. -/
-theorem reads_congr {g g' : Graph} : ∀ (p : Projection) (ms : List Match) (env : Env),
+specification read the same results from each solution of `ms`, at every
+depth. -/
+theorem readsAt_congr {g g' : Graph} : ∀ (p : Projection) (ms : List Match) (env σ : Env),
     (∀ x ∈ p.paths, (declaredMatches (ms ++ x.1)).Nodup) →
     (∀ x ∈ p.paths, ∀ σ, σ ∈ evalMatches g env (ms ++ x.1) ↔ σ ∈ evalMatches g' env (ms ++ x.1)) →
-    ∀ r, p.Reads g ms env r ↔ p.Reads g' ms env r
-  | p, ms, env, hd, he, .mk row cs => by
-    have he0 : ∀ σ, σ ∈ evalMatches g env ms ↔ σ ∈ evalMatches g' env ms := by
-      simpa using he _ (mem_paths.mpr (Or.inl rfl))
+    σ ∈ evalMatches g env ms → ∀ r, p.ReadsAt g σ r ↔ p.ReadsAt g' σ r
+  | p, ms, env, σ, hd, he, hσ, .mk row cs => by
+    have hσ' : σ ∈ evalMatches g' env ms := (by simpa using he _ (mem_paths.mpr (Or.inl rfl)) σ : _ ↔ _).mp hσ
     -- A child's paths are paths of `p`, through the child.
     have hchild : ∀ c ∈ p.children, ∀ y ∈ c.2.paths, (c.1 ++ y.1, y.2) ∈ p.paths := fun c hc y hy =>
       mem_paths.mpr (Or.inr ⟨c, hc, y, hy, rfl⟩)
-    have hih : ∀ σ ∈ evalMatches g env ms, ∀ c ∈ p.children, ∀ r,
-        c.2.Reads g c.1 σ r ↔ c.2.Reads g' c.1 σ r := fun σ hσ c hc => by
-      have hnd : ∀ y ∈ c.2.paths, (declaredMatches ms ++ declaredMatches (c.1 ++ y.1)).Nodup := fun y hy => by
-        have := hd _ (hchild c hc y hy); rwa [declared_append] at this
-      exact reads_congr c.2 c.1 σ (fun y hy => (List.nodup_append.mp (hnd y hy)).2.1) fun y hy =>
-        prefix_iff hσ ((he0 σ).mp hσ)
-          (fun x hx hx' => (List.nodup_append.mp (hnd y hy)).2.2 x (names_sub_declared hx) x
-            (names_sub_declared hx') rfl)
-          (he _ (hchild c hc y hy))
-    rw [Projection.Reads, Projection.Reads]
-    constructor
-    · rintro ⟨σ, hσ, hrow, hlen, hch⟩
-      refine ⟨σ, (he0 σ).mp hσ, hrow, hlen, fun x hx r => (hch x hx r).trans (hih σ hσ _ x.1.2 r)⟩
-    · rintro ⟨σ, hσ, hrow, hlen, hch⟩
-      have hσ' := (he0 σ).mpr hσ
-      refine ⟨σ, hσ', hrow, hlen, fun x hx r => (hch x hx r).trans (hih σ hσ' _ x.1.2 r).symm⟩
+    have hnd : ∀ c ∈ p.children, ∀ y ∈ c.2.paths, (declaredMatches ms ++ declaredMatches (c.1 ++ y.1)).Nodup :=
+      fun c hc y hy => by have := hd _ (hchild c hc y hy); rwa [declared_append] at this
+    have he' : ∀ c ∈ p.children, ∀ y ∈ c.2.paths, ∀ τ,
+        τ ∈ evalMatches g σ (c.1 ++ y.1) ↔ τ ∈ evalMatches g' σ (c.1 ++ y.1) := fun c hc y hy =>
+      prefix_iff hσ hσ' (fun x hx hx' => (List.nodup_append.mp (hnd c hc y hy)).2.2 x (names_sub_declared hx) x
+        (names_sub_declared hx') rfl) (he _ (hchild c hc y hy))
+    rw [Projection.ReadsAt, Projection.ReadsAt]
+    exact and_congr_right fun _ => and_congr_right fun _ => forall_congr' fun x => imp_congr_right fun _ =>
+      matched_congr (by simpa using he' _ x.1.2 _ (mem_paths.mpr (Or.inl rfl))) fun τ hτ =>
+        readsAt_congr x.1.1.2 x.1.1.1 σ τ (fun y hy => (List.nodup_append.mp (hnd _ x.1.2 y hy)).2.1)
+          (he' _ x.1.2) hτ
 termination_by p => sizeOf p
-decreasing_by exact Projection.sizeOf_children ‹_›
+decreasing_by exact Projection.sizeOf_children x.1.2
+
+/-- `readsAt_congr`, from the environment the matches `ms` start from. -/
+theorem reads_congr {g g' : Graph} (p : Projection) (ms : List Match) (env : Env)
+    (hd : ∀ x ∈ p.paths, (declaredMatches (ms ++ x.1)).Nodup)
+    (he : ∀ x ∈ p.paths, ∀ σ, σ ∈ evalMatches g env (ms ++ x.1) ↔ σ ∈ evalMatches g' env (ms ++ x.1)) :
+    ∀ r, p.Reads g ms env r ↔ p.Reads g' ms env r := by
+  have he0 : ∀ σ, σ ∈ evalMatches g env ms ↔ σ ∈ evalMatches g' env ms := by
+    simpa using he _ (mem_paths.mpr (Or.inl rfl))
+  exact fun r => ⟨fun ⟨σ, hσ, h⟩ => ⟨σ, (he0 σ).mp hσ, (readsAt_congr p ms env σ hd he hσ r).mp h⟩,
+    fun ⟨σ, hσ, h⟩ => ⟨σ, (he0 σ).mpr hσ, (readsAt_congr p ms env σ hd he ((he0 σ).mpr hσ) r).mpr h⟩⟩
 
 section Top
 variable {g : Graph} {B : List Fact}
@@ -284,5 +304,157 @@ theorem feed_converges {s : Specification} (hwf : ∀ d ∈ s.descendants, WellF
     exact hheld id (caught_sync (hcaught f hf) (hsync f hf) t ht id hid)
 
 end Top
+
+/-! ## Every solution has a result -/
+
+theorem forall_attach_zip {α β : Type} {l : List α} {cs : List β} {P : α → β → Prop} :
+    (∀ x ∈ l.attach.zip cs, P x.1.1 x.2) ↔ ∀ x ∈ l.zip cs, P x.1 x.2 := by
+  have e : l.zip cs = (l.attach.zip cs).map (Prod.map Subtype.val id) := by
+    rw [← List.zip_map_left, List.attach_map_subtype_val]
+  exact ⟨fun h y hy => by rw [e] at hy; obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy; exact h x hx,
+    fun h x hx => h (x.1.1, x.2) (e ▸ List.mem_map_of_mem hx)⟩
+
+/-- The result `resultsAt` builds from a solution is read from it. -/
+theorem readsAt_resultsAt (g : Graph) : ∀ (p : Projection) (σ : Env), p.ReadsAt g σ (p.resultsAt g σ)
+  | p, σ => by
+    rw [Projection.resultsAt, Projection.ReadsAt]
+    refine ⟨rfl, by simp, fun x hx => ?_⟩
+    have e := List.zip_map' (f := id) (g := fun c : {c // c ∈ p.children} =>
+      (evalMatches g σ c.1.1).map (c.1.2.resultsAt g)) (l := p.children.attach)
+    simp only [List.map_id] at e
+    rw [e] at hx; obtain ⟨a, -, rfl⟩ := List.mem_map.mp hx
+    exact ⟨fun r hr => let ⟨τ, hτ, e⟩ := List.mem_map.mp hr; ⟨τ, hτ, e ▸ readsAt_resultsAt g a.1.2 τ⟩,
+      fun τ hτ => ⟨_, List.mem_map_of_mem hτ, readsAt_resultsAt g a.1.2 τ⟩⟩
+termination_by p => sizeOf p
+decreasing_by all_goals exact Projection.sizeOf_children a.2
+
+theorem reads_of_mem_resultsOf {g : Graph} {p : Projection} {ms : List Match} {env : Env} {r : Result}
+    (h : r ∈ p.resultsOf g ms env) : p.Reads g ms env r :=
+  let ⟨σ, hσ, e⟩ := List.mem_map.mp h; ⟨σ, hσ, e ▸ readsAt_resultsAt g p σ⟩
+
+/-- Each result `Specification.readsOf` lists is read. -/
+theorem reads_of_mem_readsOf {s : Specification} {g : Graph} {env : Env} {r : Result}
+    (h : r ∈ s.readsOf g env) : s.Reads g env r := by
+  unfold Specification.readsOf at h
+  split at h
+  · exact ⟨‹_›, reads_of_mem_resultsOf h⟩
+  · simp at h
+
+/-- **A solution has a result.** A replica that holds the givens reads a
+result from each solution of the matches, at any depth of child
+specifications. -/
+theorem reads_of_solution {s : Specification} {g : Graph} {env : Env}
+    (hgiv : ∀ l ∈ s.given, g.has env l = true) {σ : Env} (hσ : σ ∈ evalMatches g env s.matchList) :
+    s.Reads g env (s.projection.resultsAt g σ) :=
+  ⟨List.all_eq_true.mpr hgiv, σ, hσ, readsAt_resultsAt g _ σ⟩
+
+/-! ## Every result read is one `readsOf` lists -/
+
+theorem forall_mem_zip {α β : Type} {l : List α} {m : List β} {P : α → β → Prop} :
+    (∀ x ∈ l.zip m, P x.1 x.2) ↔ ∀ i (h1 : i < l.length) (h2 : i < m.length), P l[i] m[i] := by
+  constructor
+  · intro h i h1 h2
+    have hi : i < (l.zip m).length := by rw [List.length_zip]; exact Nat.lt_min.mpr ⟨h1, h2⟩
+    have := h _ (List.getElem_mem hi)
+    simp only [List.getElem_zip] at this; exact this
+  · intro h x hx; obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+    rw [List.length_zip, Nat.lt_min] at hi; simpa using h i hi.1 hi.2
+
+
+theorem setEq_iff {row row' : List (Option FactId)} {cs cs' : List (List Result)} :
+    (Result.mk row cs).SetEq (.mk row' cs') ↔ row = row' ∧ cs.length = cs'.length ∧
+      ∀ i (h1 : i < cs.length) (h2 : i < cs'.length),
+        (∀ a ∈ cs[i], ∃ b ∈ cs'[i], a.SetEq b) ∧ ∀ b ∈ cs'[i], ∃ a ∈ cs[i], a.SetEq b := by
+  rw [Result.SetEq]
+  refine and_congr_right fun _ => and_congr_right fun _ => ?_
+  refine (forall_mem_zip (P := fun (xs ys : List Result) =>
+    (∀ a ∈ xs, ∃ b ∈ ys, a.SetEq b) ∧ ∀ b ∈ ys, ∃ a : {a // a ∈ xs}, a.1.SetEq b)).trans ?_
+  simp only [Subtype.exists, exists_prop]
+
+/-- `ReadsAt`, by index rather than by `attach` and `zip`. -/
+theorem readsAt_index {g : Graph} {p : Projection} {σ : Env} {row : List (Option FactId)} {cs : List (List Result)} :
+    p.ReadsAt g σ (.mk row cs) ↔ row = p.labels.map σ ∧ cs.length = p.children.length ∧
+      ∀ i (h1 : i < p.children.length) (h2 : i < cs.length),
+        (∀ r ∈ cs[i], ∃ τ ∈ evalMatches g σ p.children[i].1, p.children[i].2.ReadsAt g τ r) ∧
+        ∀ τ ∈ evalMatches g σ p.children[i].1, ∃ r ∈ cs[i], p.children[i].2.ReadsAt g τ r := by
+  rw [Projection.ReadsAt]
+  let P := fun (c : List Match × Projection) (rs : List Result) =>
+    (∀ r ∈ rs, ∃ τ ∈ evalMatches g σ c.1, c.2.ReadsAt g τ r) ∧ ∀ τ ∈ evalMatches g σ c.1, ∃ r ∈ rs, c.2.ReadsAt g τ r
+  exact and_congr_right fun _ => and_congr_right fun _ =>
+    (forall_attach_zip (P := P)).trans (forall_mem_zip (P := P))
+
+/-- **A solution's result is unique** up to `SetEq`: it is `resultsAt`'s. -/
+theorem setEq_resultsAt (g : Graph) : ∀ (p : Projection) (σ : Env) (r : Result),
+    p.ReadsAt g σ r → r.SetEq (p.resultsAt g σ)
+  | p, σ, .mk row cs, h => by
+    rw [readsAt_index] at h; obtain ⟨hrow, hlen, hch⟩ := h
+    rw [Projection.resultsAt, setEq_iff]
+    refine ⟨hrow, by simp [hlen], fun i h1 h2 => ?_⟩
+    have hi : i < p.children.length := hlen ▸ h1
+    obtain ⟨hA, hB⟩ := hch i hi h1
+    simp only [List.getElem_map, List.getElem_attach]
+    refine ⟨fun a ha => ?_, fun b hb => ?_⟩
+    · obtain ⟨τ, hτ, hr⟩ := hA a ha; exact ⟨_, List.mem_map_of_mem hτ, setEq_resultsAt g _ τ a hr⟩
+    · obtain ⟨τ, hτ, rfl⟩ := List.mem_map.mp hb
+      obtain ⟨r, hr, h⟩ := hB τ hτ; exact ⟨r, hr, setEq_resultsAt g _ τ r h⟩
+termination_by p => sizeOf p
+decreasing_by all_goals exact Projection.sizeOf_children (List.getElem_mem hi)
+
+/-- `ReadsAt` respects `SetEq`. -/
+theorem readsAt_of_setEq (g : Graph) : ∀ (p : Projection) (σ : Env) (r r' : Result),
+    r.SetEq r' → p.ReadsAt g σ r' → p.ReadsAt g σ r
+  | p, σ, .mk row cs, .mk row' cs', he, h => by
+    rw [setEq_iff] at he; rw [readsAt_index] at h ⊢
+    obtain ⟨rfl, hl, he⟩ := he; obtain ⟨hrow, hlen, hch⟩ := h
+    refine ⟨hrow, hl.trans hlen, fun i h1 h2 => ?_⟩
+    obtain ⟨hA, hB⟩ := hch i h1 (hl ▸ h2); obtain ⟨eA, eB⟩ := he i h2 (hl ▸ h2)
+    refine ⟨fun a ha => ?_, fun τ hτ => ?_⟩
+    · obtain ⟨b, hb, hab⟩ := eA a ha; obtain ⟨τ, hτ, h⟩ := hA b hb
+      exact ⟨τ, hτ, readsAt_of_setEq g _ τ a b hab h⟩
+    · obtain ⟨b, hb, h⟩ := hB τ hτ; obtain ⟨a, ha, hab⟩ := eB b hb
+      exact ⟨a, ha, readsAt_of_setEq g _ τ a b hab h⟩
+termination_by p => sizeOf p
+decreasing_by all_goals exact Projection.sizeOf_children (List.getElem_mem h1)
+
+/-- **`readsOf` is complete.** Every result read is, as a set at every depth,
+one `Specification.readsOf` lists, and each one it lists is read. -/
+theorem reads_iff_readsOf {s : Specification} {g : Graph} {env : Env} {r : Result} :
+    s.Reads g env r ↔ ∃ r' ∈ s.readsOf g env, r.SetEq r' := by
+  unfold Specification.Reads Specification.readsOf
+  split
+  · refine ⟨fun ⟨_, σ, hσ, h⟩ => ⟨_, List.mem_map_of_mem hσ, setEq_resultsAt g _ σ r h⟩, fun ⟨_, hr', he⟩ => ?_⟩
+    obtain ⟨σ, hσ, rfl⟩ := List.mem_map.mp hr'
+    exact ⟨‹_›, σ, hσ, readsAt_of_setEq g _ σ r _ he (readsAt_resultsAt g _ σ)⟩
+  · simp [*]
+
+/-! ## Two levels of child specifications
+
+The definition `Reads` replaced compared a child's results with a list by
+membership. A list with duplicates has the same members, so a document with
+one comment had infinitely many results (`[c]`, `[c, c]`, …), no list could
+hold them all, and the group read nothing (jinaga/jinaga-spec#53). -/
+
+/-- `Group 1`, `Document 2 → group 1`, `Comment 3 → document 2`. -/
+def twoDeepGraph : Graph :=
+  [⟨1, "Group", []⟩, ⟨2, "Document", [("group", 1)]⟩, ⟨3, "Comment", [("document", 2)]⟩]
+
+/-- `(g: Group) { } => { documents = { d: Document [d->group: Group = g] } =>
+{ comments = { c: Comment [c->document: Document = d] } => c } }`. -/
+def twoDeep : Specification where
+  given := [⟨"g", "Group"⟩]
+  matchList := []
+  projection := .composite [.specification "documents"
+    [.mk ⟨"d", "Document"⟩ [.path ⟨[⟨"group", "Group"⟩], "g", []⟩]]
+    (.composite [.specification "comments"
+      [.mk ⟨"c", "Comment"⟩ [.path ⟨[⟨"document", "Document"⟩], "d", []⟩]] (.fact "c")])]
+
+theorem twoDeep_wellFormed : isWellFormedDeep twoDeep = true := by decide +kernel
+
+/-- The group reads its document, and the document its comment. -/
+theorem twoDeep_reads : twoDeep.Reads twoDeepGraph (twoDeep.bindGivens [1]) (.mk [] [[.mk [] [[.mk [some 3] []]]]]) := by
+  refine ⟨by decide, _, List.mem_singleton_self _, ?_⟩
+  simp [twoDeep, readsAt_index, Projection.children, Projection.labels, Component.labels, evalMatches,
+    allHold, holds, PathCondition.holds, Graph.walk, Graph.step, Graph.factOf, twoDeepGraph, Env.bind,
+    Specification.bindGivens]
 
 end JinagaSpec

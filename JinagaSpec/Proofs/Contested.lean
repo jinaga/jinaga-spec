@@ -265,7 +265,7 @@ theorem reads_contested (hT : ∀ f ∈ T, f = name) (r : Result) :
   have hg : contested.given.all ((graph N U ++ T).has env0) = true := List.all_eq_true.mpr (given_held hT)
   rw [Specification.Reads, show contested.projection = fact "n" from rfl, Projection.Reads]
   simp only [hg, true_and, mem_contested hT]
-  simp [fact, Projection.children, Projection.labels]
+  simp [fact, Projection.children, Projection.labels, Projection.ReadsAt]
   exact ⟨fun ⟨_, ⟨hu, hn, rfl⟩, hr, hc⟩ => ⟨hu, hn, by simpa [Env.bind] using hr, hc⟩,
     fun ⟨hu, hn, hr, hc⟩ => ⟨_, ⟨hu, hn, rfl⟩, by simpa [Env.bind] using hr, hc⟩⟩
 

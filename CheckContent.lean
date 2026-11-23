@@ -73,14 +73,15 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
         out := "read_admitted" :: out
   return out.eraseDups
 
-/-- A proof yields `key` as the test library reads nested results (`readsOf`):
+/-- A proof yields `key` as `Specification.readsOf` lists nested results:
 some result, at any depth of child specifications, names it. `yields_iff`
-proves `Proof.yields` is the nested reading; this checks `readsOf` agrees. -/
+proves `Proof.yields` is the nested reading; this checks `readsOf`, whose
+results are read (`reads_of_mem_readsOf`), agrees. -/
 partial def resultNames (key : FactId) : Result → Bool
   | .mk row children => row.contains (some key) || children.any (·.any (resultNames key))
 
 def yieldsByReads (p : Proof) (g : Graph) (key : FactId) : Bool :=
-  (readsOf p.spec g (p.spec.bindGivens p.givens)).any (resultNames key)
+  (p.spec.readsOf g (p.spec.bindGivens p.givens)).any (resultNames key)
 
 /-! ## Random histories -/
 

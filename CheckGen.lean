@@ -279,15 +279,6 @@ def genFeedGraph (s : Specification) (size : Nat) : Gen Graph := do
     facts := facts ++ [{ id := i, type := type, predecessors := preds }]
   return facts
 
-/-- The results of the projection `p` after the matches `ms`, child
-specifications included (`Projection.Reads`). -/
-partial def resultsOf (g : Graph) (p : Projection) (ms : List Match) (env : Env) : List Result :=
-  (evalMatches g env ms).map fun σ => .mk (p.labels.map σ) (p.children.map fun (cms, q) => resultsOf g q cms σ)
-
-/-- What a replica reads, child specifications included (`Specification.Reads`). -/
-def readsOf (s : Specification) (g : Graph) (env : Env) : List Result :=
-  if s.given.all (g.has env) then resultsOf g s.projection s.matchList env else []
-
 /-- A result, as a string that does not depend on the order of the results of
 its child specifications, or on repeated ones, at any depth. -/
 partial def JinagaSpec.Result.key : Result → String
