@@ -6,7 +6,9 @@ import JinagaSpec.GivenConditions
 Prints a specification in the text form of `describeSpecification`
 (`src/specification/description.ts`), so a vector can be read, and so a port
 can check its own printer against this one. Composite components print sorted
-by name, as the TypeScript does.
+by name in code-point order (`String ≤`). jinaga.net sorts the same way
+(`StringComparer.Ordinal`). jinaga.js sorts with `localeCompare`, which differs
+on names that differ in case (jinaga/jinaga.js#438).
 -/
 namespace JinagaSpec
 

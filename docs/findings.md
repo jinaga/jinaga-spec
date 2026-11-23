@@ -1326,6 +1326,15 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   throws `The existential condition must be based on the unknown`, so
   `describeSpecification`'s text for it cannot be read back
   (jinaga/jinaga.js#434).
+- **jinaga.js orders composite components by locale, not by code point.**
+  `describeSpecification` sorts them with `localeCompare`
+  (`src/specification/description.ts:69`). `Describe.lean` sorts by
+  `String ≤`, and jinaga.net by `StringComparer.Ordinal`. The components
+  `username`, `userName`, `Zone` and `alpha` print as
+  `alpha username userName Zone` in jinaga.js and as
+  `Zone alpha userName username` here. So the same specification gets
+  different text, and a different hash, depending on which replica describes
+  it (jinaga/jinaga.js#438).
 
 Review found two places that read a projection's labels and missed a child's.
 `Projection.labels` names only the facts a projection projects. The split's
