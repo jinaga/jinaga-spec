@@ -20,7 +20,7 @@
 // product of two chains (jinaga/jinaga-spec#55). It reads the feeds from
 // ./feed-builder.ts, which is the one dependency of this file.
 
-import { feedsOf } from "./feed-builder.ts";
+import { asFeed, feedsOf } from "./feed-builder.ts";
 
 export interface Label { name: string; type: string }
 export interface Role { name: string; predecessorType: string }
@@ -151,10 +151,6 @@ export function usedGivens<G extends { label: Label }>(given: G[], matches: Matc
     const free = freeIn([], matches);
     return given.filter(g => free.includes(g.label.name));
 }
-
-/** Matches as a feed of `given`: with the givens they use, and no projection. */
-const asFeed = (given: { label: Label }[], matches: Match[]): Specification =>
-    ({ given: usedGivens(given, matches), matches, projection: { type: "composite", components: [] } });
 
 /**
  * Every descendant, as a feed, is connected; every given is used by some

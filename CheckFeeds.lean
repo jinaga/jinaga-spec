@@ -124,7 +124,7 @@ mutual
 end
 
 def toFeeds (s : Specification) (keep : Specification → Bool) (Fs : List (List Match)) : List Specification :=
-  (Fs.map fun ms => ({ given := usedGivens s.given ms, matchList := ms, projection := .composite [] } : Specification)).filter keep
+  (Fs.map (asFeed s.given)).filter keep
 
 def buildFeedsWith (mu : Mutant) (s : Specification) : List Specification :=
   toFeeds s mu.keep (withChildren mu s.projection (levelWith mu ([], false) s.matchList))

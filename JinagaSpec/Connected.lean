@@ -35,11 +35,6 @@ reads only a specification's givens and its top-level matches.
 -/
 namespace JinagaSpec
 
-/-- A list of matches as a feed of `given`: with the givens it uses, and no
-projection. -/
-def asFeed (given : List Label) (ms : List Match) : Specification :=
-  { given := usedGivens given ms, matchList := ms, projection := .composite [] }
-
 /-- Every descendant is connected over the givens it uses, every given is used
 by some descendant, and every feed is connected. The feeds theorems
 `buildFeeds_connected` and `isConnected_of_connectedDescendants` assume it. -/

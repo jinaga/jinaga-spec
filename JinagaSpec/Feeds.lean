@@ -259,11 +259,15 @@ def projectionFeeds : Projection → List Match → List (List Match)
 termination_by p => sizeOf p
 decreasing_by exact Projection.sizeOf_children ‹_›
 
+/-- A list of matches as a feed of `given`: with the givens it uses, and no
+projection. -/
+def asFeed (given : List Label) (ms : List Match) : Specification :=
+  { given := usedGivens given ms, matchList := ms, projection := .composite [] }
+
 /-- Partial feeds of `s` as feeds: each with the givens it uses, and only those
 that walk a successor edge. -/
 def feedsOf (s : Specification) (Fs : List (List Match)) : List Specification :=
-  (Fs.map fun ms => { given := usedGivens s.given ms, matchList := ms, projection := .composite [] }).filter
-    traversesSuccessors
+  (Fs.map (asFeed s.given)).filter traversesSuccessors
 
 /-- The feeds of a specification. Its theorems assume `DistinctLabels` of each
 of its descendants: every label on the way to a child specification is

@@ -140,14 +140,17 @@ function checkLabels(outer: string[], matches: Match[], projection: Projection) 
     for (const child of children(projection)) checkLabels(labels, child.matches, child.projection);
 }
 
+/** Matches as a feed of `given`: with the givens they use, and no projection. */
+export const asFeed = (given: { label: Label }[], matches: Match[]): Specification => ({
+    given: usedGivens(given, matches).map(g => ({ label: g.label, conditions: [] })),
+    matches,
+    projection: { type: "composite", components: [] }
+});
+
 /** The feeds of a specification, with no check of its input. */
 export function feedsOf(specification: Specification): Specification[] {
     return levelFeeds(projectionFeeds(specification.projection), [], specification.matches)
-        .map(matches => ({
-            given: usedGivens(specification.given, matches as any).map(g => ({ label: g.label, conditions: [] })),
-            matches,
-            projection: { type: "composite" as const, components: [] }
-        }))
+        .map(matches => asFeed(specification.given, matches))
         .filter(traversesSuccessors);
 }
 

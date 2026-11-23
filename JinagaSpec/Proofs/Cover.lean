@@ -1141,9 +1141,8 @@ theorem feeds_settled {s : Specification} (hwf : WellFormed s) (hd : DistinctLab
     ∀ F ∈ levelFeeds (fun P => [P]) [] s.matchList, ∀ τ ∈ evalMatches (g ++ B) env F, Settled B τ := by
   intro F hF τ hτ
   let G0 := s.given.map (·.name)
-  by_cases ht : traversesSuccessors { given := usedGivens s.given F, matchList := F, projection := .composite [] } = true
-  · have hkept : ({ given := usedGivens s.given F, matchList := F, projection := .composite [] } : Specification) ∈
-        flatFeeds s := List.mem_filter.mpr ⟨List.mem_map.mpr ⟨F, hF, rfl⟩, ht⟩
+  by_cases ht : traversesSuccessors (asFeed s.given F) = true
+  · have hkept : asFeed s.given F ∈ flatFeeds s := List.mem_filter.mpr ⟨List.mem_map.mpr ⟨F, hF, rfl⟩, ht⟩
     intro n id hn
     by_cases hm : n ∈ names F
     · exact hdel _ hkept id (List.mem_flatten.mpr
