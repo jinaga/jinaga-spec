@@ -15,6 +15,12 @@ earlier commit to see which vectors that commit fails.
 
 It changes nothing in `jinaga.js`.
 
+The same command holds each well-formedness vector to its `expected` envelope:
+`expected.wellFormed` against the reference and jinaga.js's `wellFormedErrors`,
+and `expected.connected` against the reference's `isConnectedDeep` and, on a
+well-formed vector, jinaga.js's `detectDisconnectedSpecification`. jinaga.js
+connects a vector when that call does not throw.
+
 ## Cascade vectors
 
 ```
