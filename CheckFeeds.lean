@@ -369,7 +369,7 @@ top-level matches use every given and that `isConnected` refuses
 def connectedBreaks (check : Specification → Bool) (s : Specification) : List Bool :=
   [acceptsDisconnected check s,
    check s && usedGivens s.given s.matchList == s.given && !isConnected s,
-   check s && s.given.any fun l => !s.descendants.any fun d => (usedGivens d.given d.matchList).contains l]
+   check s && !connectedWith { descendants := false, feeds := false } s]
 
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
