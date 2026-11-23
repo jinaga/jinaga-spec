@@ -9,6 +9,7 @@ import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildFeeds } from "./feed-builder.ts";
 import { isConnectedDeep, isWellFormed } from "./well-formed.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -82,6 +83,10 @@ for (const file of files) {
 }
 console.log(`\n${tailReadsGivenChecked - tailReadsGivenFailed} of ${tailReadsGivenChecked} tailReadsGiven vectors agree with the constructor's check`);
 
+function refusesAsDisconnected(specification: any): boolean {
+    try { buildFeeds(structuredClone(specification)); return false; }
+    catch (e) { return String(e).includes("not connected"); }
+}
 let wellFormedFailed = 0;
 const checkers: [string, (specification: any) => boolean][] = [["reference", isWellFormed]];
 if (wellFormedErrors) checkers.push(["jinaga.js", specification => wellFormedErrors(structuredClone(specification)).length === 0]);
@@ -95,6 +100,9 @@ for (const file of wellFormedFiles) {
     // The connectivity check `buildFeeds` needs (`isConnectedDeep`). jinaga.js
     // has no check of the same scope, so only the reference is held to it.
     if (isConnectedDeep(vector.specification) !== vector.expected.connected) wrong.push("reference isConnectedDeep");
+    // The port's buildFeeds refuses a well-formed specification exactly when
+    // it is not connected (jinaga/jinaga-spec#55).
+    if (vector.expected.wellFormed && refusesAsDisconnected(vector.specification) === vector.expected.connected) wrong.push("reference buildFeeds");
     const failures = wrong.filter(name => !(name === "jinaga.js" && jinagaWellFormedMisses.has(vector.name)));
     if (jinagaWellFormedMisses.has(vector.name) && wellFormedErrors && !wrong.includes("jinaga.js")) {
         console.log(`  note  ${vector.name}: jinaga.js now agrees; remove it from jinagaWellFormedMisses`);
