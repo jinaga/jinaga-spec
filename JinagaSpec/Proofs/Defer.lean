@@ -555,7 +555,7 @@ theorem flatFeeds_defer {s : Specification} (hwf : WellFormed s) (hd : DistinctL
   intro f hf ⟨y, hyb, hyf⟩ τ hτ ns hns
   obtain ⟨hf, -⟩ := List.mem_filter.mp hf
   obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hf
-  simp only at hyf hτ
+  simp only [asFeed] at hyf hτ
   let G0 := s.given.map (·.name)
   let A := a ++ [m]
   have hs' : s.matchList = A ++ b := by rw [hs]; simp [A]

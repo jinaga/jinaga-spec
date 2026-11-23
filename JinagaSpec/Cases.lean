@@ -163,7 +163,9 @@ structure WellFormedCase where
   description : String
   source : String
   spec : Specification
-  /-- The rules the specification violates: `scoped`, `named` or `projected`. -/
+  /-- The rules the specification violates: `scoped`, `named` or `projected`,
+  which `isWellFormedDeep` checks, or `connected`, which `isConnectedDeep`
+  checks (`Connected.lean`). -/
   violates : List String
 
 def wellFormedCases : List WellFormedCase :=
@@ -316,7 +318,62 @@ def wellFormedCases : List WellFormedCase :=
       [unknown "u1" "Item" [path [role "root" "Root"] "p1"]]
       (.composite [.fact "item" "u1",
         .specification "notes" [unknown "n" "Note" [path [role "item" "Item"] "nosuch"]] (fact "n")])
-    violates := ["scoped"] }
+    violates := ["scoped"] },
+  { name := "child-joins-two-chains-only-in-a-grandchild"
+    description := "P of jinaga/jinaga-server#233. The child joins only p1 and its parent only p2; a grandchild joins the two. The child's own feed is a product of the two chains."
+    source := "jinaga/jinaga-spec#55, P"
+    spec := spec [("p1", "R"), ("p2", "A")]
+      [unknown "u" "A" [path [role "a" "A"] "p2"]]
+      (.composite [.specification "k" [unknown "c" "A" [path [role "r" "R"] "p1"]]
+        (.composite [.specification "g" [unknown "x" "B" [path [role "c" "A"] "c", path [role "u" "A"] "u"]] (fact "x")])])
+    violates := ["connected"] },
+  { name := "negative-condition-before-the-join"
+    description := "J with a negative condition on c. The excluding feed stops at c, before x joins c's chain to u's, so it is a product. isConnected accepts it."
+    source := "jinaga/jinaga-spec#55, J!"
+    spec := spec [("p1", "R"), ("p2", "A")]
+      [unknown "u" "A" [path [role "a" "A"] "p2"],
+       unknown "c" "A" [path [role "r" "R"] "p1", notExists [unknown "e" "E" [path [role "c" "A"] "c"]]],
+       unknown "x" "B" [path [role "c" "A"] "c", path [role "u" "A"] "u"]]
+      (fact "x")
+    violates := ["connected"] },
+  { name := "negative-condition-joins-another-given"
+    description := "N. The negative condition on u joins only p1, and u only p2. isConnected counts the condition's label as joined to u, so it accepts N, but the excluding feed has one match for each given and nothing joins them."
+    source := "jinaga/jinaga-spec#55, N"
+    spec := spec [("p1", "R"), ("p2", "A")]
+      [unknown "u" "A" [path [role "a" "A"] "p2", notExists [unknown "e" "E" [path [role "r" "R"] "p1"]]]]
+      (fact "u")
+    violates := ["connected"] },
+  { name := "negative-condition-joins-two-chains"
+    description := "B. u joins only p1, and x only p2; the negative condition on x joins the two. The excluding feed is connected, but the filtered feed { u, x [!E { e }] } joins u and x only through its filter, so it is a product. isConnected accepts that feed, since it counts the labels a filter names as joined to its match."
+    source := "jinaga/jinaga-spec#55, review"
+    spec := spec [("p1", "R"), ("p2", "A")]
+      [unknown "u" "U" [path [role "r" "R"] "p1"],
+       unknown "x" "X" [path [role "a" "A"] "p2",
+         notExists [unknown "e" "E" [path [role "u" "U"] "u", path [role "x" "X"] "x"]]]]
+      (fact "x")
+    violates := ["connected"] },
+  { name := "negative-condition-joined-only-inside-its-own"
+    description := "The negative condition on u has a match e that only its own negative condition joins to u. The filtered feed keeps e without that condition, so the filter { e } is joined to nothing, and isConnected refuses the feed. Its path conditions alone join it, and the excluding feed walks no successor, so the feed is the only one that shows it."
+    source := "jinaga/jinaga-spec#55, review"
+    spec := spec [("p", "P")]
+      [unknown "u" "U" [path [] "p" [role "up" "U"],
+         notExists [unknown "e" "E" [notExists [unknown "f" "F" [path [role "e" "E"] "e", path [role "u" "U"] "u"]]]]],
+       unknown "x" "X" [path [role "u" "U"] "u"]]
+      (fact "x")
+    violates := ["connected"] },
+  { name := "unused-given"
+    description := "A given that no match uses, at any depth. Every feed is connected, since a feed takes only the givens it uses."
+    source := "jinaga/jinaga-spec#45, random-2 at 77aa47d"
+    spec := spec [("p1", "R"), ("p2", "A")] [unknown "u" "A" [path [role "r" "R"] "p1"]] (fact "u")
+    violates := ["connected"] },
+  { name := "two-chains-of-predecessors"
+    description := "Each given has its own chain of predecessors, and nothing joins them. No feed walks a successor, so there are none to check; the specification itself is a product."
+    source := "jinaga-spec#55, the clause on descendants"
+    spec := spec [("p1", "Post"), ("p2", "Post")]
+      [unknown "a" "Author" [path [] "p1" [role "author" "Author"]],
+       unknown "b" "Author" [path [] "p2" [role "author" "Author"]]]
+      (.composite [.fact "a" "a", .fact "b" "b"])
+    violates := ["connected"] }
   ]
 
 end JinagaSpec

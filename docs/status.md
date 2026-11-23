@@ -17,11 +17,24 @@ last checked; check the issue before acting on one.
 - **The fact_id commit-order problem is jinaga-server#203 and #207.** Don't
   file it again.
 - **Proof simplicity** is in `CLAUDE.md`.
+- **A disconnected feed is refused, not reordered** (jinaga-spec#55, option
+  (A)). `buildFeeds` keeps written order, and `feed-builder.ts` refuses a
+  specification `isConnectedDeep` refuses. Reordering cannot connect, cover,
+  defer and not widen all at once (N and J!, `docs/findings.md`).
 
 ## Open work (checked 2026-11-22)
 
-- jinaga-spec#45: the random feed vectors are not filtered for connectivity
-  (random-2 has an unused given).
+- jinaga-spec#45: resolved on the branch for jinaga-spec#55 (2026-11-23). The random feed vectors
+  are filtered for `isConnectedDeep` (`Connected.lean`), so `random-2` (an
+  unused given) and `random-children-1` (a product, P's shape) are no longer
+  generated. `isConnectedDeep_iff` proves the check decides
+  `ConnectedDescendants`, whose feed clause asks that each feed be joined
+  (`isJoined`): connected, and joined by its path conditions alone, not by a
+  negative condition's filter. `isConnected_asFeed` makes the descendant clause,
+  at the specification itself, at least as strict as `isConnected` when its
+  top-level matches use every given; without that hypothesis it is not
+  (`child-uses-a-given`). The other clauses are refusal policy, with no theorem
+  behind them (`docs/findings.md`).
 - jinaga-spec#18: the given-conditions label rule's wording in
   `vectors/README.md` and `GivenConditions.lean`, and a regression check; the
   code was fixed in `287ef39`.

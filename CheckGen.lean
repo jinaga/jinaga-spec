@@ -294,6 +294,52 @@ def feedReady (s : Specification) : Bool :=
   isWellFormedDeep s && s.descendants.all fun d =>
     (declaredMatches d.matchList).eraseDups.length == (declaredMatches d.matchList).length
 
+/-! ## Mutants of the connectivity check
+
+Checks a port might write in place of `isConnectedDeep`, each wrong in one way
+(`mutant-first-statement`). They are one check, `connectedWith`, parameterized
+over which of `ConnectedDescendants`'s clauses it keeps and what it asks of
+each feed, and `connectedWith {}` is checked to be `isConnectedDeep`. -/
+
+/-- Which clauses of `ConnectedDescendants` a check keeps, and what it asks of
+each feed. -/
+structure ConnectedMutant where
+  /-- Each descendant, as a feed, is connected. -/
+  descendants : Bool := true
+  /-- Every given is used by some descendant. -/
+  coverage : Bool := true
+  /-- What every feed `buildFeeds` emits passes. -/
+  feed : Specification → Bool := isJoined
+  /-- Only `isConnected` of the specification, as the inverse checks it. -/
+  topLevel : Bool := false
+
+def connectedWith (mu : ConnectedMutant) (s : Specification) : Bool :=
+  if mu.topLevel then isConnected s else
+  (!mu.descendants || s.descendants.all fun d => isConnected (asFeed d.given d.matchList)) &&
+  (!mu.coverage || s.given.all fun l => s.descendants.any fun d => (usedGivens d.given d.matchList).contains l) &&
+  (buildFeeds s).all mu.feed
+
+/-- A feed's path conditions alone, its filters dropped, join its matches and
+the givens it uses: half of `isJoined`. -/
+def pathsJoin (f : Specification) : Bool :=
+  isConnected (asFeed f.given (f.matchList.map Match.paths))
+
+/-- Each is wrong in one way. The first two accept `N`, whose excluding feed is
+a product. The third accepts B (`negative-condition-joins-two-chains`), whose
+filtered feed only its filter joins, since `isConnected` counts the labels a
+filter names as joined to its match. The fourth accepts a filter that is
+joined to its feed only inside a negative condition of its own
+(`negative-condition-joined-only-inside-its-own`). The fifth accepts two chains
+of predecessors with no feed, which `isConnected` refuses. The last accepts an
+unused given (jinaga/jinaga-spec#45). -/
+def connectedMutants : List (String × ConnectedMutant) := [
+  ("isConnected alone, the rule of jinaga/jinaga.js#436", { topLevel := true }),
+  ("descendants only, no feed checked", { feed := fun _ => true }),
+  ("feeds by isConnected, which a filter joins", { feed := isConnected }),
+  ("feeds by their path conditions only", { feed := pathsJoin }),
+  ("feeds only, no descendant checked", { descendants := false }),
+  ("no given coverage", { coverage := false })]
+
 /-- The facts `ids` name, and all their predecessors. -/
 def closure (g : Graph) (ids : List FactId) : List FactId := Id.run do
   let mut out := ids.eraseDups

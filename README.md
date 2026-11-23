@@ -36,7 +36,9 @@ A third:
   an entity whose one delete stands (`exact_deferral_impossible`). Paging by bookmark loses nothing while the graph grows,
   provided ids increase in commit order (`Cursor.lean`;
   jinaga/jinaga-server#203). So a replica that pages every feed to an empty
-  page converges (`feed_converges`).
+  page converges (`feed_converges`). A specification one of whose feeds would
+  be a product of two chains, or joined only through a negative condition, is
+  refused (`isConnectedDeep`).
 
 **Status.** It began as a spike to find out whether this approach keeps the
 definitions readable, the proofs tractable, and the ports checkable. It does,
@@ -60,6 +62,7 @@ and the libraries now port from it:
 | `JinagaSpec/Candidates.lean`, `Reorder.lean` | `candidates`: the inverses of a specification, each reordered to start at the new fact. |
 | `JinagaSpec/Exact.lean` | `changes`: the exact inverses, which report adds and removes from one read each, and a stream that applies them. |
 | `JinagaSpec/Feeds.lean`, `Cursor.lean` | `buildFeeds`: the ordinary, excluding and restoring feeds of a specification, and what they deliver; paging a feed by bookmark, as jinaga-server does. |
+| `JinagaSpec/Connected.lean` | `isConnectedDeep`: the check that no feed is a product of two chains, which `buildFeeds` needs (`isConnectedDeep_iff`). |
 | `JinagaSpec/Maintain.lean` | A stream that re-checks candidates after each batch. |
 | `JinagaSpec/GivenConditions.lean` | Conditions on a given, and their reduction to a match. |
 | `JinagaSpec/Inverse.lean` | A port of `jinaga.js`'s earlier `invertSpecification`, kept to measure what the proven algorithm replaced. |
@@ -411,7 +414,8 @@ There are four kinds, all generated from the definitions (`vectors/README.md`):
 
 - `split/`: a specification, the split the oracle computes, and both in
   Jinaga's text form.
-- `well-formed/`: a specification, and whether it is well-formed.
+- `well-formed/`: a specification, whether it is well-formed, and whether its
+  feeds and descendants are connected (`isConnectedDeep`).
 - `inverse/`: a specification, a graph, a subscription's givens, and a fresh
   fact or batch. Each vector gives the rows gained and lost, the inverses and
   their reorderings, the candidates they find, and, where the projection names

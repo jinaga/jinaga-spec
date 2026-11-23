@@ -30,7 +30,12 @@
 //   - an excluding feed is not filtered, since what it would filter out a
 //     restoring feed delivers anyway.
 
-import { isWellFormed } from "./well-formed.ts";
+// It refuses a specification that is not well formed (`isWellFormedDeep`),
+// that repeats a label (`DistinctLabels`), or one of whose feeds or child
+// specifications is not connected (`isConnectedDeep`): the hypotheses of the
+// theorems.
+
+import { isConnectedDeep, isWellFormed, usedGivens } from "./well-formed.ts";
 
 type Label = { name: string; type: string };
 type Role = { name: string; predecessorType: string };
@@ -61,7 +66,7 @@ function flatten(matches: Match[]): Match[] {
     ]);
 }
 
-const paths = (m: Match): Match => ({ unknown: m.unknown, conditions: m.conditions.filter(isPath) });
+export const paths = (m: Match): Match => ({ unknown: m.unknown, conditions: m.conditions.filter(isPath) });
 
 /** A negative condition's level: its matches, positives joined, path conditions only. */
 const level = (matches: Match[]): Match[] => flatten(matches).map(paths);
@@ -102,10 +107,6 @@ function negFeeds(k: Continuation, Q: Match[], negs: Match[][]): Match[][] {
 const traversesSuccessors = (feed: Specification) =>
     feed.matches.some(m => m.conditions.some(c => isPath(c) && c.rolesLeft.length > 0));
 
-/** The labels a feed's path conditions name, in its matches or its filters. */
-const named = (matches: Match[]): string[] => matches.flatMap(m => m.conditions.flatMap(c =>
-    isPath(c) ? [c.labelRight] : named(c.matches)));
-
 /** Every label the matches declare, at any depth. */
 const declared = (matches: Match[]): string[] => matches.flatMap(m => [m.unknown.name,
     ...m.conditions.flatMap(c => isPath(c) ? [] : declared(c.matches))]);
@@ -139,19 +140,29 @@ function checkLabels(outer: string[], matches: Match[], projection: Projection) 
     for (const child of children(projection)) checkLabels(labels, child.matches, child.projection);
 }
 
+/** Matches as a feed of `given`: with the givens they use, and no projection. */
+export const asFeed = (given: { label: Label }[], matches: Match[]): Specification => ({
+    given: usedGivens(given, matches).map(g => ({ label: g.label, conditions: [] })),
+    matches,
+    projection: { type: "composite", components: [] }
+});
+
+/** The feeds of a specification, with no check of its input. */
+export function feedsOf(specification: Specification): Specification[] {
+    return levelFeeds(projectionFeeds(specification.projection), [], specification.matches)
+        .map(matches => asFeed(specification.given, matches))
+        .filter(traversesSuccessors);
+}
+
 export function buildFeeds(specification: Specification): Specification[] {
     // The theorems assume every descendant is well formed (`isWellFormedDeep`).
     // jinaga.js's assertWellFormed does not look inside a child specification.
     if (!isWellFormed(specification as any))
         throw new Error("The specification is not well formed: a label is out of scope, redeclared, or reserved.");
     checkLabels(specification.given.map(g => g.label.name), specification.matches, specification.projection);
-    return levelFeeds(projectionFeeds(specification.projection), [], specification.matches)
-        .map(matches => ({
-            given: specification.given
-                .filter(g => named(matches).includes(g.label.name))
-                .map(g => ({ label: g.label, conditions: [] })),
-            matches,
-            projection: { type: "composite", components: [] }
-        }))
-        .filter(traversesSuccessors);
+    // No feed is a product of two chains (`ConnectedDescendants`,
+    // JinagaSpec/Connected.lean, jinaga/jinaga-spec#55).
+    if (!isConnectedDeep(specification as any))
+        throw new Error("The specification is not connected: a feed, or a child specification, joins givens that nothing joins to each other, a feed is joined only by a negative condition, or a given is unused.");
+    return feedsOf(specification);
 }

@@ -21,6 +21,12 @@ specifications and graphs, the requirements of chapter 12:
   excluded and whose exclusion nothing has cancelled, a child specification's
   facts about it included.
 
+* **connected** — each mutant of `isConnectedDeep` (`connectedMutants`,
+  `CheckGen.lean`) accepts, on some specification, the named ones included, a
+  feed that is a product, a feed `isConnected` refuses, a specification whose
+  top-level matches use every given and that `isConnected` refuses
+  (`isConnected_asFeed`), or an unused given (`connectedBreaks`).
+
 A third of the specifications have child specifications, two deep at most
 (`genChildSpec`).
 
@@ -118,7 +124,7 @@ mutual
 end
 
 def toFeeds (s : Specification) (keep : Specification → Bool) (Fs : List (List Match)) : List Specification :=
-  (Fs.map fun ms => ({ given := usedGivens s.given ms, matchList := ms, projection := .composite [] } : Specification)).filter keep
+  (Fs.map (asFeed s.given)).filter keep
 
 def buildFeedsWith (mu : Mutant) (s : Specification) : List Specification :=
   toFeeds s mu.keep (withChildren mu s.projection (levelWith mu ([], false) s.matchList))
@@ -356,12 +362,38 @@ def caughtOn (mu : Mutant) (s : Specification) (G : Graph) (env : Env) (B : List
     (buildFeedsWith mu s).any (fun f => !antitoneHolds f G B env) ||
     deferViolations s G env (buildFeedsWith mu s) > 0
 
+/-- What a connectivity check accepts on `s` that it should not: a feed that
+is a product, one its path conditions do not join (`pathsJoin`); a feed
+`isConnected` refuses; a specification whose top-level matches use every
+given and that `isConnected` refuses; or an unused given. The first, second
+and fourth are clauses of `ConnectedDescendants` itself, so `isConnectedDeep`
+accepts none of them by definition, and a zero there tests only that
+`connectedWith {}` agrees with it. The third is `isConnected_asFeed`. What the
+counts show is that each mutant is caught. -/
+def connectedBreaks (check : Specification → Bool) (s : Specification) : List Bool :=
+  [check s && (buildFeeds s).any (!pathsJoin ·),
+   check s && (buildFeeds s).any (!isConnected ·),
+   check s && usedGivens s.given s.matchList == s.given && !isConnected s,
+   check s && !connectedWith { descendants := false, feed := fun _ => true } s]
+
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
   let reuse := args.contains "reuse"
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
   let mut t : Tally := {}
   let mut caught : List Nat := mutants.map fun _ => 0
+  -- For the connectivity check and each of its mutants, the specifications on
+  -- which it breaks each statement of `connectedBreaks`.
+  let mut refused := 0
+  let checks : List ConnectedMutant := {} :: connectedMutants.map (·.2)
+  let tally (breaks : List (List Nat)) (s : Specification) : List (List Nat) :=
+    (breaks.zip checks).map fun (ns, mu) =>
+      (ns.zip (connectedBreaks (connectedWith mu) s)).map fun (n, b) => if b then n + 1 else n
+  -- The named specifications first: the feed cases, and the well-formed ones of
+  -- the well-formedness vectors.
+  let mut breaks : List (List Nat) :=
+    ((feedCases.map (·.spec)) ++ ((wellFormedCases.map (·.spec)).filter isWellFormedDeep)).foldl tally
+      (checks.map fun _ => [0, 0, 0, 0])
   for c in feedCases do
     unless feedReady c.spec do
       throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
@@ -387,6 +419,10 @@ def main (args : List String) : IO UInt32 := do
     unless isWellFormedDeep s do
       throw <| IO.userError s!"the generator made a specification that is not well-formed:\n{describeSpecification s}"
     t := { t with specs := t.specs + 1 }
+    unless connectedWith {} s == isConnectedDeep s do
+      throw <| IO.userError s!"isConnectedDeep differs from the mutant family:\n{describeSpecification s}"
+    if !isConnectedDeep s then refused := refused + 1
+    breaks := tally breaks s
     let feeds := buildFeeds s
     unless sameSet (feeds.map (·.matchList)) ((buildFeedsWith {} s).map (·.matchList)) do
       throw <| IO.userError s!"buildFeeds differs from the mutant family:\n{describeSpecification s}"
@@ -432,6 +468,14 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"deferral: {t.defer} wrong"
   for ((label, _), n) in mutants.zip caught do
     IO.println s!"  mutant \"{label}\": caught on {n} of {t.specs + feedCases.length} specifications"
+  let fmt (ns : List Nat) := s!"a product feed on {ns[0]!}, a feed isConnected refuses on {ns[1]!}, refused by isConnected on {ns[2]!}, an unused given on {ns[3]!}"
+  IO.println s!"connected: isConnectedDeep refuses {refused} of {t.specs} random specifications; on those and the named ones, it accepts {fmt breaks[0]!}"
+  for ((label, _), ns) in connectedMutants.zip breaks.tail do
+    IO.println s!"  connectivity mutant \"{label}\": caught, accepting {fmt ns}"
+  let checkOk := breaks[0]!.all (· == 0) && breaks.tail.all (·.any (· > 0))
+  unless checkOk do
+    IO.println "the connectivity check breaks a statement, or a mutant of it is caught on none"
+    return 1
   match t.first with
   | none => return (if caught.any (· == 0) then 1 else 0)
   | some r => IO.println s!"\nFIRST FAILURE\n{r}"; return 1
