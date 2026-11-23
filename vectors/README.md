@@ -48,23 +48,33 @@ split does not take conditions on givens yet. Inverse vectors may carry them
 
 ## `well-formed/<name>.json`
 
-The same envelope, for the check `isWellFormedDeep`: `isWellFormed` of the
-specification and of each child specification in its projection, each as a
-specification whose matches go on from its parent's:
+The same envelope, for two checks. `wellFormed` is `isWellFormedDeep`:
+`isWellFormed` of the specification and of each child specification in its
+projection, each as a specification whose matches go on from its parent's.
+`connected` is `isConnectedDeep` (`JinagaSpec/Connected.lean`): each of those
+descendants, with the givens its matches use, passes `isConnected`; every
+given is used by some descendant; and every feed `buildFeeds` makes passes
+`isConnected`. A port of `buildFeeds` refuses a specification that fails
+either.
 
 ```jsonc
 {
-  "name": "projection-names-an-undefined-label",
+  "name": "negative-condition-joins-another-given",
   "description": "...", "source": "...",
   "specification": { ... }, "text": "...",
-  "expected": { "scoped": true, "unshadowed": true, "projected": false, "wellFormed": false }
+  "violates": ["connected"],          // or "scoped", "named", "projected"
+  "expected": { "wellFormed": true, "connected": false }
 }
 ```
 
-A port passes when its check returns exactly `expected` for `specification`. The
-three verdicts are the conditions in `docs/contracts.md`. Each case states the
-verdict a reader of the rules expects, and the generator refuses to write a
-vector where the oracle disagrees.
+A port passes when its checks return exactly `expected` for `specification`.
+The rules of `wellFormed` are the conditions in `docs/contracts.md`. Each case
+states the rules a reader expects it to violate, and the generator refuses to
+write a vector where the oracle disagrees. `connected` is stated only for a
+well-formed case: a specification that is not well formed may be disconnected
+too. `lake exe vectors` also refuses to write the vectors unless each mutant of
+the connectivity check (`connectedMutants`, `CheckGen.lean`) disagrees with
+`isConnectedDeep` on one of them.
 
 ## `inverse/<name>.json`
 
@@ -178,6 +188,8 @@ replicator holds. Generated from `JinagaSpec/FeedCases.lean` (named cases) and
 fixed random seeds (`random-<n>`: specifications shaped like an application's,
 with at least three feeds, on graphs where each delivers a fact;
 `random-children-<n>`: the same with child specifications, two deep at most).
+Every one passes `isConnectedDeep`: the random seeds skip a specification that
+does not (jinaga-spec#45), and a named case that does not is an error.
 
 ```jsonc
 {

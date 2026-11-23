@@ -151,7 +151,11 @@ in a projection only for feeds. There each child specification is a
 specification of its own (`Specification.descendants`). `isWellFormed` checks
 one specification, and `isWellFormedDeep` checks it and each descendant: the
 hypothesis of the feeds theorems (`isWellFormedDeep_iff`), and what
-`ports/typescript/well-formed.ts` and `feed-builder.ts` check. `isWellFormed`
+`ports/typescript/well-formed.ts` and `feed-builder.ts` check. Feeds need one
+more check, `isConnectedDeep` (`Connected.lean`, `isConnectedDeep_iff`): no
+feed and no descendant is a product of two chains, and no given is unused.
+`feed-builder.ts` runs it after the other two, and `buildFeeds_connected` holds
+for what it accepts. `isWellFormed`
 ignores conditions on givens. The reserved-label
 rule makes the second harmless for the split's own labels: no declaration site,
 modelled or not, can collide with a name it may not use.

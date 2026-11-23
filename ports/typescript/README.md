@@ -39,7 +39,9 @@ checks a `buildFeeds` three ways: its feeds equal the vector's; a replica
 holding what they deliver reads the vector's results, child specifications'
 at every depth; and they deliver no fact
 the vector's feeds withhold, which is deferral. `feed-builder.ts` is the
-reference implementation, and must pass all three. Against jinaga.js's own
+reference implementation, and must pass all three. It refuses a specification
+that `well-formed.ts`'s `isConnectedDeep` refuses, and `npm run vectors` holds
+that check to each well-formedness vector's `expected.connected`. Against jinaga.js's own
 `buildFeeds`, a replica of its feeds must read the vector's results, except on
 the vectors the runner names in `jinagaMisses` (none at present). Its feeds
 differ from the vector's, so the other two are reported.

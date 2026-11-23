@@ -1328,7 +1328,8 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
   `DistinctLabels`. The two differ on this input, and that renaming preserves
   results is not proved here.
 - **A child feed that joins the givens through separate chains has no SQL.**
-  In `random-children-1`, the parent reaches the given `p2`. The child reaches
+  In `random-children-1` as it was (it is no longer generated, since
+  `isConnectedDeep` refuses it: jinaga-spec#55), the parent reaches the given `p2`. The child reaches
   only `p1`, and a grandchild's positive condition connects the two.
   `detectDisconnectedSpecification` accepts the specification. But the child's
   first feeds are a product of two chains, and jinaga-server's `generateJoins`
@@ -1348,7 +1349,8 @@ sends no fact the vector's feeds withhold. Its misses are still PR #42's four.
 - **jinaga.js's parser refuses an existential condition that does not join its
   own unknown.** `WellFormed` puts a condition's matches in scope of the givens,
   the earlier matches and the enclosing unknown, and does not require them to
-  join the unknown. `random-2` has such a condition, `!E { e1717 }` on
+  join the unknown. `random-2`, as it was before it was dropped for an unused
+  given (jinaga-spec#45), had such a condition, `!E { e1717 }` on
   `e1716`, which joins only the given `p1`. `wellFormedErrors` accepts it, and
   jinaga.js's feeds and `MemoryStore` handle it, but `SpecificationParser`
   throws `The existential condition must be based on the unknown`, so
@@ -1376,6 +1378,113 @@ The TypeScript reference's `reduceGivenConditions` had the same gap and now
 mirrors it.
 
 No issue was found for any of the three.
+
+## Feeds: no feed is a product (jinaga-spec#55)
+
+`buildFeeds` keeps each descendant's matches in written order, and emits a
+feed wherever a negative condition or a child specification cuts them. A cut
+can fall between two chains that only a later match joins, and the feed is
+then a product of the two, which jinaga-server cannot answer
+(jinaga/jinaga-server#233). Such a specification is refused, and
+`buildFeeds` is unchanged.
+
+### Why not reorder
+
+jinaga-spec#55 first asked for `buildFeeds` to order each descendant's matches
+so that every feed is connected, keeping the feeds that cover and defer, with
+no feed delivering a fact today's feeds do not. Those requirements contradict
+each other:
+
+- **N**, `(p1: R, p2: A) { u: A [u->a = p2, !E { e: E [e->r = p1] }] } => u`.
+  The excluding feed is `{ u: A [u->a = p2]  e: E [e->r = p1] }`. It has one
+  match for each given and nothing joins them, and no order of its single
+  top-level match connects it. `isConnected` accepts N, since it joins the
+  labels a condition names to the match it is written on.
+- **J!**, `(p1: R, p2: A) { u: A [u->a = p2]  c: A [c->r = p1, !E { e: E [e->c = c] }]  x: B [x->c = c, x->u = u] } => x`.
+  No set of feeds is connected, covers, defers and widens nothing. The feed
+  that delivers `e` binds `c`. If it binds `x` too, it sends `x`, a detail of
+  `c`, while `c` is excluded, which deferral forbids. If it binds `u`
+  without `x`, it is a product. If it binds neither, it is `{c, e}`, which
+  delivers on graphs where today's feeds deliver nothing. Ordering `u, x, c`
+  delivers `x` while `c` is deleted, and ordering from `p1` widens.
+
+So option (A) was chosen: refuse. The requirement to reorder is moot. Nothing
+is ordered, so no theorem says that ordering never fails, and `feeds_cover`
+and `feeds_defer` hold as they are, with no new hypothesis.
+
+### The check
+
+`ConnectedDescendants s` (`Connected.lean`), decided by `isConnectedDeep`
+(`isConnectedDeep_iff`), holds when:
+
+- each descendant, as a feed (its matches, with the givens they use), is
+  connected;
+- every given is used by some descendant; and
+- every feed `buildFeeds` emits is connected.
+
+The last clause is stated over the emitted feeds, not over the prefixes where
+`buildFeeds` cuts. Those prefixes are the feeds: an excluding feed is the
+written prefix followed by the condition's matches, joined with path
+conditions only, so `isConnected` adds no link between the condition and its
+match. A restoring feed goes on through a canceller's matches. Stating the cuts
+separately would copy `levelFeeds` and `negFeeds` as a second walk, and its
+proof would need a description of `isConnected`'s reachability that nothing
+here has yet. In the port, the clause is one line over `buildFeeds` and
+`isConnected`.
+
+| theorem | statement | hypotheses |
+|---|---|---|
+| `isConnectedDeep_iff` | the check decides `ConnectedDescendants` | none |
+| `buildFeeds_connected` | every `f ∈ buildFeeds s` is connected, and `f.given = usedGivens s.given f.matchList` | `ConnectedDescendants s` |
+| `isConnected_of_connectedDescendants` | `isConnected s` | `ConnectedDescendants s`, and the top-level matches use every given |
+
+`buildFeeds_connected` reads only `ConnectedDescendants`. It does not need
+`WellFormed`, `DistinctLabels` or `RootedMatches`, because the check reads the
+feeds `buildFeeds` makes.
+
+**`ConnectedDescendants s → isConnected s` is false.** `child-uses-a-given`
+(chapter 12, Unused Givens) is the counterexample. Its post feed takes only the
+blog, its comment feed the blog and the user, and both are connected.
+`isConnected` reads only the top-level matches, where nothing uses the user,
+so it refuses. The strongest form that holds adds the hypothesis that the
+top-level matches use every given. So `isConnected` and the new check are
+incomparable. `isConnected` accepts N and J!, and refuses
+`child-uses-a-given`. Among specifications whose top-level matches use every
+given, the new check is strictly stricter, with N as the witness.
+
+### Mutants
+
+Each mutant of the check (`connectedMutants`, `CheckGen.lean`) is caught by a
+well-formedness vector, and on random specifications in `check-feeds`:
+
+| mutant | breaks | caught on (seeds 1, 2) |
+|---|---|---|
+| `isConnected` alone, the rule of jinaga/jinaga.js#436 | `buildFeeds_connected` (N, J!) | 48, 57 |
+| descendants only, no feed checked (#55's first statement) | `buildFeeds_connected` (N, J!) | 53, 66 |
+| feeds only, no descendant checked | `isConnected_of_connectedDescendants` (`two-chains-of-predecessors`, which has no feeds) | 2, 1 |
+| no given coverage | accepts an unused given (`unused-given`, jinaga-spec#45) | 53, 51 |
+
+The real check breaks none. It refuses 117 and 125 of 600 random
+specifications on the two seeds.
+
+The negative vectors are `child-joins-two-chains-only-in-a-grandchild` (P),
+`negative-condition-before-the-join` (J!),
+`negative-condition-joins-another-given` (N), `unused-given` and
+`two-chains-of-predecessors`. Every named feed vector passes the check and
+keeps its feeds. Of the random feed vectors, `random-2` (an unused given) and
+`random-children-1` (P's shape) fail it and are no longer generated. The later
+ones move up a number, with the same contents. One split vector,
+`given-only-an-existential-uses`, is N's shape. `isConnected` accepts it, and
+the new check refuses it. It stays, since the split does not assume the check.
+
+### jinaga.js
+
+From jinaga-spec#55: jinaga.js's `buildFeeds` on `3e18b4b` emits P's middle
+feed, `{ u: A [u->a = p2]  c: A [c->r = p1] }`, and its own
+`detectDisconnectedSpecification` refuses that feed. `isConnected` alone, the
+rule jinaga/jinaga.js#436 puts in the parser, accepts N and J!. This session
+had no jinaga.js or jinaga-server checkout, so neither was confirmed with the
+`jinaga-conformance` runners, and no issue is drafted.
 
 ## Content storage: SEC-1 to SEC-5
 
