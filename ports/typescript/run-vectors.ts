@@ -1,5 +1,6 @@
 // Runs the conformance vectors: the split against jinaga.js, and the
-// well-formedness check against the reference implementation in this directory.
+// well-formedness and connectivity checks against the reference
+// implementation in this directory and against jinaga.js.
 //
 //   JINAGA_JS=/path/to/jinaga.js npm run vectors
 //
@@ -23,6 +24,7 @@ const { describeSpecification } = await import(pathToFileURL(join(jinagaJs, "src
 // Earlier commits of jinaga.js have no well-formedness check, so it is optional.
 const { wellFormedErrors } = await import(pathToFileURL(join(jinagaJs, "src/specification/specification-validation.ts")).href);
 const { AuthorizationRules } = await import(pathToFileURL(join(jinagaJs, "src/authorization/authorizationRules.ts")).href);
+const { detectDisconnectedSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/UnionFind.ts")).href);
 
 // A missing head or tail is `undefined` in TypeScript and `null` in a vector.
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
@@ -93,13 +95,23 @@ if (wellFormedErrors) checkers.push(["jinaga.js", specification => wellFormedErr
 // The vectors jinaga.js's wellFormedErrors is expected to disagree on. None
 // since jinaga/jinaga.js#431 made it look inside child specifications.
 const jinagaWellFormedMisses = new Set<string>();
+// jinaga.js refuses a disconnected specification by throwing from
+// detectDisconnectedSpecification, which its parser and buildFeeds call
+// (jinaga/jinaga.js#436, #437). It is held to `connected` on every well-formed
+// vector, as the reference's buildFeeds is. None is excused: a jinaga.js that
+// accepts a vector the check refuses is one whose buildFeeds can emit a product
+// feed, so moving jinaga.js's pin past this commit requires the port.
+const jinagaConnects = (specification: any): boolean => {
+    try { detectDisconnectedSpecification(structuredClone(specification)); return true; }
+    catch { return false; }
+};
 const wellFormedFiles = readdirSync(wellFormedDir).filter(f => f.endsWith(".json")).sort();
 for (const file of wellFormedFiles) {
     const vector = JSON.parse(readFileSync(join(wellFormedDir, file), "utf8"));
     const wrong = checkers.filter(([, check]) => check(vector.specification) !== vector.expected.wellFormed).map(([name]) => name);
-    // The connectivity check `buildFeeds` needs (`isConnectedDeep`). jinaga.js
-    // has no check of the same scope, so only the reference is held to it.
+    // The connectivity check `buildFeeds` needs (`isConnectedDeep`).
     if (isConnectedDeep(vector.specification) !== vector.expected.connected) wrong.push("reference isConnectedDeep");
+    if (vector.expected.wellFormed && jinagaConnects(vector.specification) !== vector.expected.connected) wrong.push("jinaga.js detectDisconnectedSpecification");
     // The port's buildFeeds refuses a well-formed specification exactly when
     // it is not connected (jinaga/jinaga-spec#55).
     if (vector.expected.wellFormed && refusesAsDisconnected(vector.specification) === vector.expected.connected) wrong.push("reference buildFeeds");
