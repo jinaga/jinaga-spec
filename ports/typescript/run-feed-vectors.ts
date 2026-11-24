@@ -38,10 +38,13 @@ const implementation = strict
     : await load("src/specification/feed-builder.ts");
 
 /**
- * The vectors jinaga.js's `buildFeeds` is expected to miss a result on. None
- * since jinaga/jinaga.js#429 and #432 (docs/findings.md).
+ * The vectors jinaga.js's `buildFeeds` is expected to miss a result on. Only
+ * `random-2`, whose given `p2` no match uses: jinaga/jinaga-spec#60 allows it,
+ * and jinaga.js's buildFeeds may refuse it as disconnected (pending
+ * jinaga/jinaga.js#436 and #437). Misses of the feeds themselves were fixed by
+ * jinaga/jinaga.js#429 and #432 (docs/findings.md).
  */
-const jinagaMisses = new Set<string>();
+const jinagaMisses = new Set<string>(["random-2"]);
 
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
 const key = (row: unknown) => JSON.stringify(row);
@@ -142,7 +145,11 @@ for (const file of readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort
     }
 
     // 2. The implementation under test.
-    const feeds = normalize(implementation.buildFeeds(structuredClone(v.specification)));
+    // A buildFeeds that refuses the vector builds no feeds, which cover nothing.
+    let feeds: any[] = [];
+    let refused: string | undefined;
+    try { feeds = normalize(implementation.buildFeeds(structuredClone(v.specification))); }
+    catch (e: any) { refused = e.message; }
     let same = true;
     try { deepStrictEqual(feeds, normalize(expectedFeeds)); } catch { same = false; }
     if (same) structural++;
@@ -152,7 +159,8 @@ for (const file of readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort
     if (extra.length === 0) bounded++;
     else if (strict) { failures++; console.log(`FAIL ${v.name}: sends ${JSON.stringify(extra)}, which the vector's feeds withhold`); }
     // A feed the store cannot read covers nothing.
-    const results = await deliver(v, feeds).then(ids => readReplica(v, ids), (e: Error) => `an error: ${e.message}`);
+    const results = refused !== undefined ? `buildFeeds threw: ${refused}`
+        : await deliver(v, feeds).then(ids => readReplica(v, ids), (e: Error) => `an error: ${e.message}`);
     const covers = typeof results !== "string" && readsExpected(v, results);
     if (covers) covered++;
     if (strict) {

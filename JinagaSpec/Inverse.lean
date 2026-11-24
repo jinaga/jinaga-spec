@@ -334,11 +334,16 @@ def invertSpecification (s : Specification) : Except InverseError (List Inverse)
 /-- The results an inverse reports when `f` arrives in `g`, for a subscription
 whose givens are bound by `env`: run the inverse from `f`, keep the solutions
 that agree with the subscription's givens, and project them as the original
-specification does. The inverse binds every given the matches use; one they
-do not use keeps the subscription's binding, which the projection may name. -/
+specification does. The inverse binds every given the matches use, so only a
+given they do not use starts from the subscription's binding, which the
+projection may name; an inverse that fails to bind a used given still finds
+nothing. -/
 def Inverse.fire (ι : Inverse) (s : Specification) (g : Graph) (env : Env) (f : Fact) :
     List (List (Option FactId)) :=
-  let e0 : Env := Env.bind env ι.given.unknown.name f.id
+  let used := usedGivens s.given s.matchList
+  let unused : Env := fun n =>
+    if s.given.any (·.name == n) && !used.any (·.name == n) then env n else none
+  let e0 : Env := Env.bind unused ι.given.unknown.name f.id
   if f.type == ι.given.unknown.type && allHold g e0 ι.given.unknown.name ι.given.conditions then
     ((evalMatches g e0 ι.matchList).filter fun σ => s.given.all fun l => σ l.name == env l.name).map
       fun σ => s.projection.labels.map σ
