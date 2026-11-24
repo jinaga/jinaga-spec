@@ -360,12 +360,39 @@ hash function:
   content-bearing;
 - the authorization rules let a user create exactly the facts `writers` pairs
   them with, on any store;
-- the distribution rules let a user run the specification with exactly the
-  givens `readers` pairs them with.
+- the distribution rules are one specification, `rule` (with `ruleText`):
+  the specification read has one feed, which a user may read when `rule`, run
+  with the read's givens, has a result naming the user (`Policy.distributes`:
+  the rule's proof must be bound, and its results are checked as a read's
+  are). In the named cases the rule is membership in the document's group,
+  revoked by a `Removal` of the membership and given back by a `Restore` of
+  the removal.
+
+A save is a batch: `save` holds its facts, `fresh` says whether the batch
+is fresh on the store before it (`isFresh`: no stored fact has the id of one of
+its facts, or names one as a predecessor), and `closed` whether every
+predecessor its facts name is in the store or the batch (`isClosed`). A batch
+that is not both is not stored at all; a replicator first drops the facts it
+already holds, and what remains of a closed batch is then fresh
+(`Closed.fresh_new`).
+
+A content specification's givens carry no conditions: Lean's `Specification`
+cannot express them. The TypeScript store refuses a proof with conditions on a
+given with 400 (RR-1), and a rule proof with them authorizes nothing;
+`run-content-vectors.ts` checks both on its own, port-only cases.
+
+The responses are those of the uncached replicator, and a replicator that
+caches read decisions (NF-2, `ContentCache.lean`) must give the same ones
+(`cached_read`). The cases that revoke, restore, deliver a given, or deliver
+facts together in one batch catch the cache's mutants.
 
 Each read carries `yields`: whether running the specification with its givens
-on the store at that step yields the key (`Proof.yields`). A harness without a
-specification engine uses it; one with an engine can check its engine against it.
+on the store at that step yields the key (`Proof.yields`). The store computes
+it with the check `read` runs, `Proof.confirms`, which binds the key as a
+result and looks for a solution; a harness can check its engine against the
+field, for every proof the store does not refuse with 400. Some cases'
+specifications are ill formed or declare a reserved label, and their reads
+expect 400 (RR-1).
 
 ```jsonc
 {
@@ -375,10 +402,10 @@ specification engine uses it; one with an engine can check its engine against it
   "policy": {
     "content": [ { "fact": 10, "hash": "#plan", "maxLength": 100 } ],
     "writers": [ { "user": 100, "fact": 10 } ],
-    "readers": [ { "user": 100, "givens": [1] } ]
+    "rule": { ... }, "ruleText": "(g: Group) { m: Member [ ... ] ... } => u"
   },
   "steps": [
-    { "save": { "id": 1, "type": "Group", "predecessors": [] } },
+    { "save": [ { "id": 1, "type": "Group", "predecessors": [] } ], "fresh": true, "closed": true },
     { "write": { "user": 100, "key": 10, "bytes": "plan" },          // user null: no valid token
       "expected": { "status": 201, "code": "stored" } },
     { "read": { "user": 101, "key": 11, "givens": [2] }, "yields": true,

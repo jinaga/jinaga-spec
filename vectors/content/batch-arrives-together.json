@@ -1,0 +1,96 @@
+{"text":
+ "(g: Group) {\n    d: Document [\n        d->group: Group = g\n    ]\n} => d\n",
+ "steps":
+ [{"save":
+   [{"type": "Jinaga.User", "predecessors": [], "id": 100},
+    {"type": "Jinaga.User", "predecessors": [], "id": 101},
+    {"type": "Jinaga.User", "predecessors": [], "id": 102},
+    {"type": "Group", "predecessors": [], "id": 1},
+    {"type": "Group", "predecessors": [], "id": 2},
+    {"type": "Member",
+     "predecessors": [{"role": "group", "id": 1}, {"role": "user", "id": 100}],
+     "id": 40},
+    {"type": "Member",
+     "predecessors": [{"role": "group", "id": 2}, {"role": "user", "id": 101}],
+     "id": 41}],
+   "fresh": true,
+   "closed": true},
+  {"yields": false,
+   "read": {"user": 100, "key": 13, "givens": [3]},
+   "expected": {"status": 403, "code": "forbidden"}},
+  {"save":
+   [{"type": "Group", "predecessors": [], "id": 3},
+    {"type": "Document",
+     "predecessors": [{"role": "group", "id": 3}],
+     "id": 13},
+    {"type": "Member",
+     "predecessors": [{"role": "group", "id": 3}, {"role": "user", "id": 100}],
+     "id": 44}],
+   "fresh": true,
+   "closed": true},
+  {"yields": true,
+   "read": {"user": 100, "key": 13, "givens": [3]},
+   "expected": {"status": 404, "code": "not_uploaded"}}],
+ "specification":
+ {"projection": {"type": "fact", "label": "d"},
+  "matches":
+  [{"unknown": {"type": "Document", "name": "d"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Group", "name": "group"}],
+      "labelRight": "g"}]}],
+  "given": [{"label": {"type": "Group", "name": "g"}, "conditions": []}]},
+ "source": "NF-2, CR-3",
+ "policy":
+ {"writers":
+  [{"user": 100, "fact": 10},
+   {"user": 100, "fact": 12},
+   {"user": 100, "fact": 13},
+   {"user": 100, "fact": 20},
+   {"user": 101, "fact": 11}],
+  "ruleText":
+  "(g: Group) {\n    m: Member [\n        m->group: Group = g\n        !E {\n            r: Removal [\n                r->member: Member = m\n                !E {\n                    s: Restore [\n                        s->removal: Removal = r\n                    ]\n                }\n            ]\n        }\n    ]\n    u: Jinaga.User [\n        u = m->user: Jinaga.User\n    ]\n} => u\n",
+  "rule":
+  {"projection": {"type": "fact", "label": "u"},
+   "matches":
+   [{"unknown": {"type": "Member", "name": "m"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Group", "name": "group"}],
+       "labelRight": "g"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Removal", "name": "r"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Member", "name": "member"}],
+           "labelRight": "m"},
+          {"type": "existential",
+           "matches":
+           [{"unknown": {"type": "Restore", "name": "s"},
+             "conditions":
+             [{"type": "path",
+               "rolesRight": [],
+               "rolesLeft": [{"predecessorType": "Removal", "name": "removal"}],
+               "labelRight": "r"}]}],
+           "exists": false}]}],
+       "exists": false}]},
+    {"unknown": {"type": "Jinaga.User", "name": "u"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [{"predecessorType": "Jinaga.User", "name": "user"}],
+       "rolesLeft": [],
+       "labelRight": "m"}]}],
+   "given": [{"label": {"type": "Group", "name": "g"}, "conditions": []}]},
+  "content":
+  [{"maxLength": 100, "hash": "#plan", "fact": 10},
+   {"maxLength": 100, "hash": "#plan", "fact": 11},
+   {"maxLength": 4, "hash": "#notes!", "fact": 12},
+   {"maxLength": 100, "hash": "#minutes", "fact": 13}]},
+ "name": "batch-arrives-together",
+ "expected": {"objects": []},
+ "description":
+ "Group C, its minutes and Alice's membership of it arrive in one batch. Before it Alice is refused the minutes; after it she is admitted, and told nothing is uploaded. No fact of the batch read without the others finds the change."}

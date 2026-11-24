@@ -138,6 +138,28 @@ end
 /-- `==` on conditions is equality. -/
 theorem Condition.eq_of_beq' {a b : Condition} (h : (a == b) = true) : a = b := Condition.eq_of_beq h
 
+mutual
+  theorem Projection.eq_of_beq : ∀ {a b : Projection}, Projection.beq a b = true → a = b
+    | .fact _, .fact _, h => by simp [Projection.beq] at h; rw [h]
+    | .composite _, .composite _, h => by rw [Component.eq_of_beqList h]
+    | .fact _, .composite _, h | .composite _, .fact _, h => by simp [Projection.beq] at h
+
+  theorem Component.eq_of_beqList : ∀ {a b : List Component}, Component.beqList a b = true → a = b
+    | [], [], _ => rfl
+    | _ :: _, _ :: _, h => by
+      simp only [Component.beqList, Bool.and_eq_true] at h
+      rw [Component.eq_of_beq h.1, Component.eq_of_beqList h.2]
+    | [], _ :: _, h | _ :: _, [], h => by simp [Component.beqList] at h
+
+  theorem Component.eq_of_beq : ∀ {a b : Component}, Component.beq a b = true → a = b
+    | .fact _ _, .fact _ _, h => by
+      simp only [Component.beq, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1, h.2]
+    | .specification _ _ _, .specification _ _ _, h => by
+      simp only [Component.beq, Bool.and_eq_true, beq_iff_eq] at h
+      rw [h.1.1, Match.eq_of_beqList h.1.2, Projection.eq_of_beq h.2]
+    | .fact _ _, .specification _ _ _, h | .specification _ _ _, .fact _ _, h => by simp [Component.beq] at h
+end
+
 /-- `exists ms` holds exactly when `ms` has a solution. -/
 theorem holds_exists {G : Graph} {env : Env} {u : Name} {ms : List Match} :
     holds G env u (.existential true ms) = true ↔ ∃ σ, σ ∈ evalMatches G env ms := by
