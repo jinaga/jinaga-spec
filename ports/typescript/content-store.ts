@@ -3,6 +3,14 @@
 // It is a template for a replicator's implementation, and what
 // run-content-vectors.ts runs the content vectors against. The proved
 // properties are SEC-1 to SEC-5 (JinagaSpec/Proofs/Content.lean).
+//
+// A read checks its proof itself: the givens' count and `isWellFormed`
+// (./well-formed.ts, every child specification included) for RR-1
+// (`Proof.bound`, `read_badRequest`), then `confirms` (./content-proof.ts),
+// proved to be `Proof.yields` on every proof that passes (`confirms_eq_yields`).
+
+import { confirms } from "./content-proof.ts";
+import { isWellFormed } from "./well-formed.ts";
 
 export type FactId = number;
 export type User = number;
@@ -29,8 +37,6 @@ export interface Policy {
     mayCreate(user: User, store: Fact[], fact: Fact): boolean;
     /** The distribution rules let the user run the specification with these givens (RR-3). */
     distributes(user: User, specification: any, givens: FactId[], store: Fact[]): boolean;
-    /** Running the proof on the store yields the fact `key` (RR-4). */
-    yields(proof: Proof, store: Fact[], key: FactId): boolean;
 }
 
 export type Code =
@@ -51,7 +57,7 @@ export class ContentStore {
     /** Objects by content key, never by content hash (ST-1). */
     readonly objects = new Map<FactId, string>();
 
-    constructor(private readonly policy: Policy, private readonly wellFormed: (specification: any) => boolean) {}
+    constructor(private readonly policy: Policy) {}
 
     save(fact: Fact) {
         this.store.push(fact);
@@ -78,11 +84,12 @@ export class ContentStore {
     read(user: User | null, key: FactId, proof: Proof): Response {
         const P = this.policy;
         if (user === null) return respond("unauthenticated");
-        if (proof.givens.length !== proof.specification.given.length || !this.wellFormed(proof.specification))
+        if (proof.givens.length !== proof.specification.given.length || !isWellFormed(proof.specification))
             return respond("bad_request");
         // Checked before the object is looked up, so the answer to a reader the
         // rules do not admit does not depend on what is stored (RR-5).
-        if (!(P.distributes(user, proof.specification, proof.givens, this.store) && P.yields(proof, this.store, key)))
+        if (!(P.distributes(user, proof.specification, proof.givens, this.store) &&
+            confirms(proof.specification, proof.givens, this.store, key)))
             return respond("forbidden");
         const bytes = this.objects.get(key);
         return bytes === undefined ? respond("not_uploaded") : respond("ok", bytes);

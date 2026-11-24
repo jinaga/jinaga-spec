@@ -1,6 +1,8 @@
 import JinagaSpec.Content
 import JinagaSpec.Proofs.Basic
 import JinagaSpec.Proofs.Children
+import JinagaSpec.Proofs.Exact
+import JinagaSpec.Proofs.WellFormedCheck
 
 /-!
 # The content store's security invariants
@@ -32,6 +34,15 @@ at some depth (`Result.Names`), which is what RR-4 and CR-1 ask. The step on
 the way is `yields_iff`: a solution of the matches, then of a child
 specification's matches from it, and so on down, names the fact
 (`Projection.Names`), which `Projection.names_iff_reads` proves is the same.
+
+`read` does not compute `Proof.yields`: it runs `Proof.confirms`, which binds
+the content fact as a result and looks for a solution, starting at the fact
+(RR-4). `confirms_eq_yields` proves the two agree on every proof whose
+specification's descendants are well formed, and `Proof.bound_iff` that
+`Proof.bound`, which `read` checks first, decides exactly that and the given
+count (`Proof.Bound`). So SEC-1 and `read_admitted`, stated against
+`Proof.yields`, say that the check is right. `read_badRequest` is RR-1: a read
+is 400 exactly when the proof is not bound.
 
 SEC-1 to SEC-5 only say when the replicator may serve or store. The success
 path is `read_admitted` and `write_accepted`: an admitted reader is served, or
@@ -100,13 +111,138 @@ theorem stored_authorized {P : Policy} {evs : List Event} (h : (k, o) ∈ (Repli
       P.mayCreate u (Replicator.run P pre).store f = true ∧ P.contentHash f = some (P.hash o) := by
   simpa [Replicator.run, Replicator.empty] using Replicator.mem_foldl h
 
+/-! ## Confirming a proof by binding the result (RR-4) -/
+
+/-- Pinning `l`'s match keeps exactly the solutions that bind `l` to the
+pinned fact, when `l` is bound once and the pin is not an unknown. -/
+theorem evalMatches_pinUnknown {G : Graph} {l : Name} {key : FactId} :
+    ∀ {ms : List Match} {env σ : Env}, env pinLabel = some key → pinLabel ∉ names ms → l ∈ names ms →
+      (names ms).Nodup →
+      (σ ∈ evalMatches G env (pinUnknown l ms) ↔ σ ∈ evalMatches G env ms ∧ σ l = some key)
+  | [], _, _, _, _, hl, _ => by simp [names] at hl
+  | .mk u cs :: rest, env, σ, hk, hp, hl, hnd => by
+    simp only [names, List.map_cons, List.mem_cons, List.nodup_cons, not_or, Match.unknown_mk] at hp hl hnd
+    have hk' : ∀ x, (env.bind u.name x) pinLabel = some key := fun x => by
+      simp only [Env.bind, hp.1, ↓reduceIte, hk]
+    simp only [pinUnknown, List.map_cons, Match.unknown_mk, Match.conditions_mk]
+    by_cases hu : u.name = l
+    · subst hu
+      have hrest : rest.map (fun m => if m.unknown.name == u.name then
+          Match.mk m.unknown (pinCondition :: m.conditions) else m) = rest :=
+        (List.map_congr_left fun m hm => by
+          simp [show m.unknown.name ≠ u.name from fun h => hnd.1 (h ▸ List.mem_map_of_mem hm)]).trans
+          (List.map_id _)
+      simp only [beq_self_eq_true, ite_true, hrest, mem_evalMatches_cons, allHold, Bool.and_eq_true]
+      have hpin : ∀ x, holds G (env.bind u.name x) u.name pinCondition = decide (x = key) := fun x => by
+        simp only [holds, PathCondition.holds, pinCondition, hk' x]; simp [Env.bind, Graph.walk]
+      simp only [hpin, decide_eq_true_eq]
+      constructor
+      · rintro ⟨x, hx, ht, ⟨rfl, hc⟩, hr⟩
+        exact ⟨⟨x, hx, ht, hc, hr⟩, by rw [evalMatches_frame hr _ hnd.1]; simp [Env.bind]⟩
+      · rintro ⟨⟨x, hx, ht, hc, hr⟩, hσ⟩
+        rw [evalMatches_frame hr _ hnd.1] at hσ
+        exact ⟨x, hx, ht, ⟨by simpa [Env.bind] using hσ, hc⟩, hr⟩
+    · have hl' : l ∈ names rest := hl.resolve_left (Ne.symm hu)
+      simp only [show (u.name == l) = false from by simpa using hu, Bool.false_eq_true, ite_false,
+        mem_evalMatches_cons]
+      constructor
+      · rintro ⟨x, hx, ht, hc, hr⟩
+        obtain ⟨hr, hσ⟩ := (evalMatches_pinUnknown (hk' x.id) hp.2 hl' hnd.2).1 hr
+        exact ⟨⟨x, hx, ht, hc, hr⟩, hσ⟩
+      · rintro ⟨⟨x, hx, ht, hc, hr⟩, hσ⟩
+        exact ⟨x, hx, ht, hc, (evalMatches_pinUnknown (hk' x.id) hp.2 hl' hnd.2).2 ⟨hr, hσ⟩⟩
+
+theorem not_isEmpty_iff {α : Type} {xs : List α} : (!xs.isEmpty) = true ↔ ∃ x, x ∈ xs := by
+  cases xs <;> simp
+
+/-- `bindsResult` finds a solution that binds the label to the fact. -/
+theorem Specification.bindsResult_iff {d : Specification} (hwf : WellFormed d) (g : Graph) (env : Env)
+    (key : FactId) (l : Name) :
+    d.bindsResult g env key l = true ↔ ∃ σ ∈ evalMatches g env d.matchList, σ l = some key := by
+  unfold Specification.bindsResult
+  split
+  · rename_i m hm
+    obtain rfl : m.unknown.name = l := by simpa using List.find?_some hm
+    have hl : m.unknown.name ∈ names d.matchList := List.mem_map_of_mem (List.mem_of_find?_eq_some hm)
+    have hp : m.unknown.name ≠ pinLabel := hwf.not_pin (.inr hl)
+    have hpin σ' := evalMatches_pinUnknown (G := g) (σ := σ') (env := env.bind pinLabel key) (key := key)
+      (by simp [Env.bind]) (fun h => hwf.not_pin (.inr h) rfl) hl hwf.wellNamed.nodup
+    rw [not_isEmpty_iff]
+    simp only [reorderOrSelf_correct]
+    simp only [Specification.evaluate, Specification.pinResult, List.mem_map]
+    constructor
+    · rintro ⟨_, σ', hσ', -⟩
+      obtain ⟨hσ', hk⟩ := (hpin σ').1 hσ'
+      obtain ⟨σ, hσ, hag⟩ := evalMatches_agreeOff _ (AgreeOff.pin env key) hwf.pin_unused hσ'
+      exact ⟨σ, hσ, hag _ hp ▸ hk⟩
+    · rintro ⟨σ, hσ, hk⟩
+      obtain ⟨σ', hσ', hag⟩ := evalMatches_agreeOff _ (AgreeOff.pin env key).symm hwf.pin_unused hσ
+      exact ⟨_, σ', (hpin σ').2 ⟨hσ', hag _ hp ▸ hk⟩, rfl⟩
+  · rename_i hm
+    have hl : l ∉ d.matchList.map (·.unknown.name) := fun h => by
+      obtain ⟨m, hm', rfl⟩ := List.mem_map.1 h
+      exact List.find?_eq_none.1 hm m hm' (by simp)
+    rw [Bool.and_eq_true, not_isEmpty_iff, beq_iff_eq]
+    exact ⟨fun ⟨hk, σ, hσ⟩ => ⟨σ, hσ, evalMatches_frame hσ l hl ▸ hk⟩,
+      fun ⟨σ, hσ, hk⟩ => ⟨evalMatches_frame hσ l hl ▸ hk, σ, hσ⟩⟩
+
+/-- **`confirms_eq_yields`.** The replicator's check is `Proof.yields`, for every
+proof whose specification's descendants are well formed, which `Proof.bound`
+checks. -/
+theorem confirms_eq_yields {p : Proof} (hwf : ∀ d ∈ p.spec.descendants, WellFormed d) (g : Graph)
+    (key : FactId) : p.confirms g key = p.yields g key := by
+  rw [Bool.eq_iff_iff]
+  simp only [Proof.confirms, Proof.yields, List.any_eq_true]
+  refine exists_congr fun d => and_congr_right fun hd => ?_
+  simp only [Specification.read, Bool.and_eq_true, List.any_eq_true, Specification.bindsResult_iff (hwf d hd)]
+  split <;> simp [Specification.evaluate, *]
+  exact ⟨fun ⟨l, hl, σ, hσ, hk⟩ => ⟨_, ⟨σ, hσ, rfl⟩, List.mem_map.2 ⟨l, hl, hk⟩⟩,
+    fun ⟨_, ⟨σ, hσ, e⟩, hk⟩ => let ⟨l, hl, hk⟩ := List.mem_map.1 (e ▸ hk); ⟨l, hl, σ, hσ, hk⟩⟩
+
+/-! ## The proof is checked at RR-1 -/
+
+/-- What `Proof.bound` checks (RR-1): a fact for every given, and every
+descendant of the specification well formed, which `confirms_eq_yields`
+assumes. -/
+def Proof.Bound (p : Proof) : Prop :=
+  p.givens.length = p.spec.given.length ∧ ∀ d ∈ p.spec.descendants, WellFormed d
+
+/-- **`Proof.bound_iff`.** `Proof.bound` decides `Proof.Bound`. -/
+theorem Proof.bound_iff (p : Proof) : p.bound = true ↔ p.Bound := by
+  simp [Proof.bound, Proof.Bound, isWellFormedDeep_iff]
+
+/-- With a bound proof, `read` asks what `Policy.admits` asks: its check is
+`Proof.yields` (`confirms_eq_yields`). -/
+theorem Replicator.read_bound {P : Policy} {r : Replicator} (hb : p.bound = true) :
+    r.read P (some u) key p = if !P.admits r.store u key p then .forbidden else
+      match r.objects.lookup key with
+      | none => .notUploaded
+      | some o => .ok o := by
+  simp only [read, hb, Policy.admits, confirms_eq_yields ((p.bound_iff.1 hb).2)]; rfl
+
+/-- **RR-1.** An authenticated read is refused with 400 exactly when the proof
+is not bound: a given without a fact, or a descendant that is not well
+formed. -/
+theorem read_badRequest {P : Policy} {r : Replicator} :
+    r.read P (some u) key p = .badRequest ↔ ¬ p.Bound := by
+  rw [← p.bound_iff]
+  cases hb : p.bound
+  · simp [Replicator.read, hb]
+  · rw [Replicator.read_bound hb]; split <;> (try split) <;> simp
+
 /-- A read that returns an object returns the one stored under its key, to a
 user the rules admit. -/
 theorem Replicator.read_ok {P : Policy} {r : Replicator} (h : r.read P user key p = .ok o) :
     ∃ u, user = some u ∧ P.admits r.store u key p = true ∧ r.objects.lookup key = some o := by
-  unfold read at h
-  repeat' split at h
-  all_goals simp_all
+  cases user with
+  | none => simp [read] at h
+  | some u =>
+    cases hb : p.bound
+    · simp [read, hb] at h
+    · rw [read_bound hb] at h
+      split at h
+      · cases h
+      · split at h <;> simp_all
 
 /-- SEC-1. -/
 theorem read_authorized {P : Policy} {r : Replicator} (h : r.read P user key p = .ok o) :
@@ -138,7 +274,10 @@ theorem read_noninterference {P : Policy} {r : Replicator}
     r.read P user key p = { r with objects }.read P user key p := by
   cases user with
   | none => rfl
-  | some u => simp [Replicator.read, hu u rfl]
+  | some u =>
+    cases hb : p.bound
+    · simp [Replicator.read, hb]
+    · simp [Replicator.read_bound hb, hu u rfl]
 
 /-- SEC-5, for uploads: to a writer the authorization rules refuse, the
 answer does not depend on which objects are stored. -/
@@ -161,7 +300,7 @@ theorem read_admitted {P : Policy} {r : Replicator} (hb : p.bound = true)
     r.read P (some u) key p = match r.objects.lookup key with
       | none => .notUploaded
       | some o => .ok o := by
-  simp only [Replicator.read, hb, ha]; cases r.objects.lookup key <;> rfl
+  simp only [Replicator.read_bound hb, ha]; cases r.objects.lookup key <;> rfl
 
 /-- An authorized writer's upload of matching bytes within the constraints is
 stored, unless the key already holds an object (RW-8). -/
@@ -271,5 +410,6 @@ theorem yields_iff_reads (p : Proof) (g : Graph) (key : FactId) :
     p.yields g key = true ↔ ∃ r, p.spec.Reads g (p.spec.bindGivens p.givens) r ∧ r.Names key := by
   rw [yields_iff, Projection.names_iff_reads]
   exact ⟨fun ⟨hg, r, hr, hn⟩ => ⟨r, ⟨hg, hr⟩, hn⟩, fun ⟨r, ⟨hg, hr⟩, hn⟩ => ⟨hg, r, hr, hn⟩⟩
+
 
 end JinagaSpec

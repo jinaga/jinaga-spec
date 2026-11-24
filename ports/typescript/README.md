@@ -67,7 +67,11 @@ PORT=./my-content-store.ts npm run content
 Runs each `vectors/content/` history against `content-store.ts`, the
 reference port of `JinagaSpec/Content.lean`, or against the `ContentStore`
 class that `PORT` exports. The harness builds each vector's policy from its
-data. It takes `yields` from the vector, because computing it needs a
-specification engine. Every response and the objects stored at the end must
-equal the vector's. Needs no jinaga.js checkout.
+data. The store checks each proof itself: the given count and the deep
+`isWellFormed` of `well-formed.ts` (RR-1), then `confirms` in
+`content-proof.ts`, the port of `Proof.confirms` (RR-4), which binds the
+content fact as a result, pins it with `reorderInverse`'s `__f` and looks for
+a solution, with a port of the naive evaluator. The harness checks `confirms`
+against each bound read's `yields`. Every response and the objects stored at
+the end must equal the vector's. Needs no jinaga.js checkout.
 

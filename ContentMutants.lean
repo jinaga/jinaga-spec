@@ -14,10 +14,14 @@ open JinagaSpec
 are `Replicator.read` and `Replicator.write`, which `check-content` confirms on
 every request. The specification's own handlers stay unparameterized. -/
 structure Mutant where
+  /-- Which proofs a read accepts (RR-1). -/
+  bound : Proof → Bool := Proof.bound
   /-- How a read finds the object for a key. -/
   lookup : Policy → Replicator → FactId → Option Bytes := fun _ r k => r.objects.lookup k
-  /-- Whether the rules admit a reader. -/
-  admits : Policy → Graph → User → FactId → Proof → Bool := Policy.admits
+  /-- Whether the rules admit a reader: the distribution rules, and the
+  replicator's check that the proof yields the key. -/
+  admits : Policy → Graph → User → FactId → Proof → Bool :=
+    fun P g u key p => P.distributes u p.spec p.givens g && p.confirms g key
   /-- Answer 404 before checking the proof. -/
   existenceFirst : Bool := false
   /-- Whether the writer may create the fact. -/
@@ -34,7 +38,7 @@ def readWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (ke
   match user with
   | none => .unauthenticated
   | some u =>
-    if !p.bound then .badRequest
+    if !m.bound p then .badRequest
     else if m.existenceFirst && (m.lookup P r key).isNone then .notUploaded
     else if !m.admits P r.store u key p then .forbidden
     else match m.lookup P r key with
@@ -73,13 +77,48 @@ def byContentHash (P : Policy) (r : Replicator) (k : FactId) : Option Bytes :=
   | none => none
   | some h => (r.objects.find? fun (k', _) => (r.store.factOf k').bind P.contentHash == some h).map (·.2)
 
-/-- The first draft's yields: the top-level results only. -/
-def topLevelYields (p : Proof) (g : Graph) (key : FactId) : Bool :=
-  (p.spec.read g (p.spec.bindGivens p.givens)).any (·.contains (some key))
+/-- What a mutant of the replicator's check, `Proof.confirms`, changes. With
+no field changed, `confirmsWith` is `Proof.confirms`, which `check-content`
+confirms on every read. -/
+structure Check where
+  /-- The specifications checked: every descendant, or fewer. -/
+  descendants : Specification → List Specification := Specification.descendants
+  /-- The projected labels bound to the content fact: all, or fewer. -/
+  labels : List Name → List Name := id
+  /-- The pinned match keeps its own conditions. -/
+  keepConditions : Bool := true
+  /-- Every given must be held. -/
+  held : Bool := true
+
+def Check.pinResult (c : Check) (d : Specification) (u : Label) : Specification :=
+  { given := d.given ++ [{ name := pinLabel, type := u.type }], projection := .fact u.name,
+    matchList := d.matchList.map fun m => if m.unknown.name == u.name then
+      .mk m.unknown (pinCondition :: if c.keepConditions then m.conditions else []) else m }
+
+def Check.bindsResult (c : Check) (d : Specification) (g : Graph) (env : Env) (key : FactId) (l : Name) : Bool :=
+  match d.matchList.find? (·.unknown.name == l) with
+  | some m => !((reorderOrSelf (c.pinResult d m.unknown)).evaluate g (env.bind pinLabel key)).isEmpty
+  | none => env l == some key && !(evalMatches g env d.matchList).isEmpty
+
+def confirmsWith (c : Check) (p : Proof) (g : Graph) (key : FactId) : Bool :=
+  (c.descendants p.spec).any fun d =>
+    let env := d.bindGivens p.givens
+    (!c.held || d.given.all (g.has env)) && (c.labels d.projection.labels).any (c.bindsResult d g env key)
+
+/-- Mutants of the replicator's check that a proof yields the key. -/
+def checkMutants : List (String × Check) := [
+  ("read_admitted: yields ignores child specifications", { descendants := fun s => [s] }),
+  ("read_admitted: bind only the first projected label", { labels := List.take 1 }),
+  ("SEC-1: drop the pinned match's own conditions", { keepConditions := false }),
+  ("confirms_eq_yields: skip the check that the givens are held", { held := false })
+]
 
 def mutants : List (String × Mutant) := [
-  ("SEC-1: no yields check", { admits := fun P g u _ p => P.distributes u p.spec p.givens g }),
-  ("read_admitted: yields ignores child specifications", { admits := fun P g u key p => P.distributes u p.spec p.givens g && topLevelYields p g key }),
+  ("SEC-1: no yields check", { admits := fun P g u _ p => P.distributes u p.spec p.givens g })] ++
+  checkMutants.map (fun (label, c) =>
+    (label, { admits := fun P g u key p => P.distributes u p.spec p.givens g && confirmsWith c p g key })) ++ [
+  ("RR-1: check only the top-level specification",
+    { bound := fun p => p.givens.length == p.spec.given.length && isWellFormed p.spec }),
   ("SEC-1: no distribution check", { admits := fun _ g _ key p => p.yields g key }),
   ("SEC-2: store bytes without hashing them", { checkHash := false }),
   ("SEC-3: authorize the fact's presence, not the writer", { mayCreate := fun _ _ _ _ => true }),

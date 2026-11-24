@@ -156,7 +156,10 @@ more check, `isConnectedDeep` (`Connected.lean`, `isConnectedDeep_iff`): no
 feed and no descendant is a product of two chains, and no feed is joined only
 through a negative condition. A given no match uses is allowed
 (jinaga-spec#60). `feed-builder.ts` runs
-it after the other two. `isWellFormed`
+it after the other two. The content store's read checks `Proof.bound`
+(`isWellFormedDeep` and the given count, `Proof.bound_iff`) before
+`Proof.confirms`, whose `confirms_eq_yields` assumes every descendant well
+formed; `ports/typescript/content-store.ts` runs the same two checks. `isWellFormed`
 ignores conditions on givens. The reserved-label
 rule makes the second harmless for the split's own labels: no declaration site,
 modelled or not, can collide with a name it may not use.

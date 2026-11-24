@@ -1638,6 +1638,8 @@ theorem holds for every policy.
 | | `yields_iff_reads` | a proof yields a fact exactly when some result a replica reads (`Specification.Reads`) names it, at some depth of child specifications |
 | SEC-5 | `read_noninterference`, `write_noninterference` | to a reader the rules do not admit, or a writer they refuse, the answer does not depend on which objects are stored |
 | | `read_admitted`, `write_accepted` | an admitted reader with a bound proof gets the object, or 404 `not_uploaded`; an authorized upload of matching bytes within the constraints is stored, or answered 200 if the key already holds one |
+| RR-4 | `confirms_eq_yields` | the check `read` runs, `Proof.confirms` (bind the content fact as a result and look for a solution), is `Proof.yields` for every proof whose specification's descendants are well formed |
+| RR-1 | `read_badRequest`, `Proof.bound_iff` | an authenticated read is 400 exactly when the proof is not `Proof.Bound`: a fact for every given, and every descendant well formed, which `Proof.bound` decides |
 
 SEC-1 to SEC-5 only say when the replicator may serve or store. A handler that
 never serves, or answers 403 where RR-7 wants 404, meets all five. The last
@@ -1689,38 +1691,122 @@ Decisions the statements forced:
   against every store. The fact store's own authorization, and RW-2's
   combined fact-and-object request, are not modelled.
 
+**Confirming yields by binding the result (RR-4).** RR-4 asks the replicator
+to confirm that the proof yields the content fact, preferably by binding the
+fact as the result and checking that a match exists, rather than running the
+whole query. Its open question was whether that is cheap enough with the
+current inverse algorithm or needs an algorithm of its own. It needs none: the
+check is the inverse machinery with the pin at the content fact.
+`Proof.confirms` (`Content.lean`) takes each descendant of the specification
+(each child specification, with its parent's matches before its own), with
+every given held, and each label it projects:
+
+- a label that is a given is bound already, so the given must be the content
+  fact, and the matches must have a solution;
+- a label that is an unknown is pinned: its match gains `l = __f`, keeping its
+  own conditions, existential ones included (`pinUnknown`, the first clause of
+  `touchMatches true`), with `__f` bound to the content fact. The pinned
+  specification (`Specification.pinResult`) is reordered by `reorderOrSelf`,
+  so the read starts at the content fact and walks to the givens, and the
+  check asks only whether it has a solution.
+
+`confirms_eq_yields` proves this is `Proof.yields` for every proof whose
+descendants are well formed. The proof reads three consequences of
+`WellFormed`: a descendant's top-level unknowns are distinct
+(`WellNamedMatches.nodup`), none is `__f` (`WellFormed.not_pin`), and no
+condition names `__f` (`WellFormed.pin_unused`), so pinning changes nothing
+but the one label. `evalMatches_pinUnknown` is the core: pinning `l`'s match
+keeps exactly the solutions that bind `l` to the fact. Reordering is
+`reorderOrSelf_correct`, already proved for the inverses, and needs no
+hypothesis. The projection clause of `WellFormed` is not read: a projected
+label that is neither a given nor an unknown is unbound, and names nothing.
+
+When `reorderChecked` refuses, `reorderOrSelf` keeps the pinned specification
+in written order. That is still correct, but no cheaper than a full read for
+that label: it starts at the givens. It refuses when some match is reached by
+no path condition from the pin or the givens, as in a product
+(`(g: Group) { d: Document [d->group: Group = g], e: Other } => d`, pinning
+`d`). On the random well-formed specifications of `check-content` it never
+refuses: 0 of 4367 pinned specifications on seed 1, and 0 of 4075 on seed 2.
+
+`read` runs `Proof.confirms`, not `Proof.yields`, and SEC-1 and
+`read_admitted` are still stated against `Proof.yields` (through
+`Policy.admits`), so they now say the check is right, not only that the
+handler calls it. `Replicator.read_bound` is the step: with a bound proof,
+`read` asks what `Policy.admits` asks.
+
+**Every hypothesis on the proof is checked at RR-1.** The proof is
+attacker-supplied, so whatever a theorem assumes of it must be refused when
+false. The only hypothesis on the proof any content theorem assumes is
+`confirms_eq_yields`'s, every descendant well formed. `Proof.bound` checks it
+(`isWellFormedDeep`) and RR-1's given count, and `Proof.bound_iff` proves it
+decides `Proof.Bound`, their conjunction; `read_badRequest` proves `read`
+answers 400 exactly when the proof is not bound. Connectivity
+(`ConnectedDescendants`) is not checked: no content theorem uses it, and a
+disconnected proof is only read in written order (above). The TypeScript store
+calls the deep `isWellFormed` of `ports/typescript/well-formed.ts` instead of
+taking a well-formedness check from its harness. The vectors
+`ill-formed-child-specification` (a child declares its parent's unknown again,
+so the descendant's unknowns are not distinct), `reserved-label` (the
+specification declares `__f`) and `unbound-given` (too few givens, and too
+many) expect 400.
+
 **The obligation on distribution rules.** SEC-1 says the replicator asks the
 distribution engine and checks yields, and nothing more. A proof that names
 the content fact as its own given, `(d: Document) { } => d` with `d := F`, is
-well formed and yields `F` on every store. For that proof, yields is vacuous
-and SEC-1 is only as strong as the engine's verdict. So the engine must not
-authorize a specification just because it has no feeds to check, the way a
-check that authorizes each of a specification's feeds would. This is the first
-thing to prove once distribution rules have a model.
+well formed and yields `F` on every store that holds `F` (the vector
+`content-fact-as-given`). For that proof, yields is vacuous and SEC-1 is only
+as strong as the engine's verdict. So the engine must not authorize a
+specification just because it has no feeds to check, the way a check that
+authorizes each of a specification's feeds would. This is the first thing to
+prove once distribution rules have a model.
 
 `check-content` runs each statement as written on 2000 random histories per
-seed, with a policy in which a content hash is one of three values. The real
-handlers break none (they are proved). Seed 1:
+seed, with a policy in which a content hash is one of three values. Besides
+SEC-1 to SEC-5 and `read_admitted`, it checks RR-1 (`read_badRequest`) and
+`confirms_eq_yields`, which it tests on the handler: for a bound proof, the
+handler's admission with distribution rules that admit everyone must be
+`Proof.yields`. It also checks `Proof.confirms` against `Proof.yields` on
+every bound read. The real handlers break none (they are proved). Seed 1:
 
 | mutant | caught on | by |
 |---|---|---|
-| no yields check | 1067 | SEC-1, SEC-5 |
-| yields ignores child specifications | 14 | `read_admitted` |
-| no distribution check | 55 | SEC-1, SEC-5 |
-| store bytes without hashing them | 556 | SEC-2, SEC-3 |
-| authorize the fact's presence, not the writer (RW-4) | 662 | SEC-3, SEC-5 |
-| map a key to stored bytes of the same hash (ST-3) | 24 | SEC-3 |
-| look an object up by its content hash (ST-1) | 47 | SEC-4, `read_admitted` |
-| answer 404 before checking the proof (RR-5) | 1109 | SEC-5 |
-| answer a repeat upload before checking the writer (RW-8) | 122 | SEC-5 |
+| no yields check | 2000 | SEC-1, SEC-5, `confirms_eq_yields` |
+| the check ignores child specifications | 25 | `confirms_eq_yields`, `read_admitted` |
+| the check binds only the first projected label | 93 | `confirms_eq_yields`, `read_admitted` |
+| the check drops the pinned match's own conditions | 833 | SEC-1, SEC-5, `confirms_eq_yields` |
+| the check skips the givens being held | 19 | SEC-1, SEC-5, `confirms_eq_yields` |
+| RR-1 checks only the top-level specification | 1797 | RR-1 |
+| no distribution check | 44 | SEC-1, SEC-5 |
+| store bytes without hashing them | 559 | SEC-2, SEC-3 |
+| authorize the fact's presence, not the writer (RW-4) | 708 | SEC-3, SEC-5 |
+| map a key to stored bytes of the same hash (ST-3) | 22 | SEC-3 |
+| look an object up by its content hash (ST-1) | 54 | SEC-4, `read_admitted` |
+| answer 404 before checking the proof (RR-5) | 1110 | SEC-5 |
+| answer a repeat upload before checking the writer (RW-8) | 157 | SEC-5 |
 
-One history in three has child specifications (`genChildSpec`).
-Random specifications rarely yield a document, so only 111 of 80000 random
-reads are served, and the success path is thin there. The vectors cover it:
-`vectors/content/` holds sixteen named histories on one documents-in-groups
-model, one of them reading the documents as a child specification. Each is
-checked to catch the mutants it names, and together they catch all nine. `ports/typescript/content-store.ts` is a reference port that
-passes them.
+What each new statement rules out: `confirms_eq_yields` every mutant of the
+check (a check that ignores children or binds fewer labels refuses an
+admitted reader, which `read_admitted` also sees; one that drops the pinned
+match's conditions or skips the givens serves a reader whose proof yields
+nothing, which SEC-1 also sees); `read_badRequest` a 400 check that misses an
+ill-formed child specification, which `confirms_eq_yields` does not cover.
+
+One history in three has child specifications (`genChildSpec`). One proof in
+eight binds a given to the key read, whatever its type, so that a given the
+store does not hold as one is tried, and each history reads one proof whose
+child specification declares its parent's unknowns again. Random
+specifications rarely yield a document, so only about a hundred of 82000
+random reads are served, and the success path is thin there. The vectors
+cover it: `vectors/content/` holds twenty-two named histories on one
+documents-in-groups model, among them the documents read as a child
+specification, a proof projecting both a given and an unknown, a pinned match
+with an existential condition, and a given the store does not hold. Each is
+checked to catch the mutants it names, and together they catch all thirteen.
+`ports/typescript/content-store.ts` is a reference port that passes them,
+computing yields with the port of `Proof.confirms`
+(`ports/typescript/content-proof.ts`), which the harness also checks against
+each vector's `yields`.
 
 Not covered: the reactive hold (RR-6, SEC-6), revocation and the proof cache
 (SEC-7, NF-2), purging (ST-4), chunked uploads, notifications and the batch

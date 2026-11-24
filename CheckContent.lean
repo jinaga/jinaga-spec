@@ -4,7 +4,8 @@ import ContentMutants
 /-!
 # Randomized check of the content store
 
-`lake exe check-content [seed]` tests SEC-1 to SEC-5 and `read_admitted` (`Proofs/Content.lean`), as
+`lake exe check-content [seed]` tests SEC-1 to SEC-5, `read_admitted` and
+`confirms_eq_yields` (`Proofs/Content.lean`), as
 the theorems state them, on random histories of saves and uploads: a random
 well-formed specification, a graph for it, uploads by random users to random
 keys interleaved with the saves, then reads by every user of every key with
@@ -67,6 +68,15 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
     let admitted := match user with | some u => P.admits r.store u key p | none => false
     unless admitted || resp == readWith m P { r with objects := [] } user key p do
       out := "SEC-5" :: out
+    -- RR-1: an authenticated read is refused with 400 exactly when the proof is not bound.
+    if user.isSome && (resp == .badRequest) != !p.bound then
+      out := "RR-1" :: out
+    -- confirms_eq_yields: for a bound proof, the handler's check that the proof
+    -- yields the key is `Proof.yields`, seen with distribution rules that admit everyone.
+    if let some u := user then
+      let all := { P with distributes := fun _ _ _ _ => true }
+      if p.bound && m.admits all r.store u key p != p.yields r.store key then
+        out := "confirms_eq_yields" :: out
     -- read_admitted: an admitted reader with a bound proof is served, or told nothing is stored.
     if admitted && p.bound then
       unless resp == (match r.objects.lookup key with | none => .notUploaded | some o => .ok o) do
@@ -92,12 +102,17 @@ def genBytes : Gen Bytes := do
 def genUser : Gen (Option User) := do
   if ← chance 1 6 then return none else return some (← below 4)
 
-def genGivens (s : Specification) (g : Graph) : Gen (List FactId) := do
+def genGivens (s : Specification) (g : Graph) (key : FactId) : Gen (List FactId) := do
   let mut ids := []
   for l in s.given do
     let candidates := (g.filter (·.type == l.type)).map (·.id)
     ids := ids ++ [← if candidates.isEmpty then pure 0 else pick candidates]
-  if ← chance 1 10 then return ids.drop 1 else return ids
+  if ← chance 1 10 then return ids.drop 1
+  -- Sometimes a given is the key read, whatever its type, so the store may
+  -- not hold it as a given.
+  if ← chance 1 8 then
+    return ids.set (← below ids.length) key
+  return ids
 
 /-- An upload to a random key. Half its bytes match the key's content hash in
 `policy`, so that most writers who may create the fact get it stored. -/
@@ -130,6 +145,12 @@ def main (args : List String) : IO UInt32 := do
   let mut disagree := 0
   let mut first : Option String := none
   let mut caught : List (Nat × List String) := mutants.map fun _ => (0, [])
+  -- `confirms_eq_yields`: on bound proofs, the check is `Proof.yields`.
+  let mut confirmDisagree := 0
+  -- How often `reorderChecked` refuses a pinned specification, so the check
+  -- reads it in written order.
+  let mut pinned := 0
+  let mut fallback := 0
   for _ in [0:histories] do
     let ((g, evs, rs), gen') := (do
       -- One history in three has child specifications.
@@ -140,10 +161,21 @@ def main (args : List String) : IO UInt32 := do
       let mut rs := []
       for key in List.range 8 do
         for user in [none, some 0, some 1, some 2, some 3] do
-          rs := (user, key, { spec := s, givens := ← genGivens s g : Proof }) :: rs
+          rs := (user, key, { spec := s, givens := ← genGivens s g key : Proof }) :: rs
+      -- Some proofs have an ill-formed child specification: one that declares
+      -- its parent's unknowns again.
+      if !s.matchList.isEmpty then
+        let bad := { s with projection := .composite [.specification "again" s.matchList s.projection] }
+        rs := (some 0, 0, { spec := bad, givens := ← genGivens bad g 0 : Proof }) :: rs
       return (g, evs, rs) : Gen (Graph × List Event × List (Option User × FactId × Proof))).run gen
     gen := gen'
     let r := Replicator.run policy evs
+    if let some (_, _, p) := rs.getLast? then
+      for d in p.spec.descendants do
+        for l in d.projection.labels do
+          if let some m := d.matchList.find? (·.unknown.name == l) then
+            pinned := pinned + 1
+            if (reorderChecked (d.pinResult m.unknown)).isNone then fallback := fallback + 1
     -- The mutant family with no rule changed is the specification's handlers.
     unless r.objects == (evs.foldl (stepWith {} policy) .empty).objects do
       throw <| IO.userError "the mutant family's write differs from Replicator.write"
@@ -153,6 +185,10 @@ def main (args : List String) : IO UInt32 := do
       if let .ok _ := r.read policy user key p then served := served + 1
       -- `Proof.yields` agrees with the test library's nested reading.
       if p.yields r.store key != yieldsByReads p r.store key then disagree := disagree + 1
+      unless confirmsWith {} p r.store key == p.confirms r.store key do
+        throw <| IO.userError "the check family differs from Proof.confirms"
+      if p.bound then
+        if p.confirms r.store key != p.yields r.store key then confirmDisagree := confirmDisagree + 1
     reads := reads + rs.length
     stored := stored + r.objects.length
     let v := violations {} policy evs rs
@@ -163,10 +199,11 @@ def main (args : List String) : IO UInt32 := do
       let v := violations mu policy evs rs
       if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
   IO.println s!"histories {histories}, objects stored {stored}, reads {reads}, served {served}"
-  IO.println s!"real handlers: {real} histories break a statement; yields disagrees with readsOf on {disagree} reads"
+  IO.println s!"real handlers: {real} histories break a statement; yields disagrees with readsOf on {disagree} reads, confirms with yields on {confirmDisagree} bound reads"
+  IO.println s!"pinned specifications {pinned}, read in written order (reorderChecked refuses) {fallback}"
   for ((label, _), (n, by_)) in mutants.zip caught do
     IO.println s!"  mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
-  if disagree > 0 then return 1
+  if disagree > 0 || confirmDisagree > 0 then return 1
   match first with
   | some f => IO.println s!"\nFIRST FAILURE\n{f}"; return 1
   | none =>

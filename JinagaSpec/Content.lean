@@ -1,4 +1,5 @@
 import JinagaSpec.WellFormed
+import JinagaSpec.Reorder
 
 /-!
 # Distribution-based content storage
@@ -60,7 +61,9 @@ structure Proof where
 
 /-- Every given is bound, and the specification and each of its child
 specifications are well formed (RR-1). A proof that leaves a given unbound
-says nothing about which facts its reader can reach. -/
+says nothing about which facts its reader can reach, and `Proof.confirms`
+is `Proof.yields` only on well-formed descendants (`confirms_eq_yields`).
+`Proof.bound_iff` proves this decides `Proof.Bound`. -/
 def Proof.bound (p : Proof) : Bool :=
   p.givens.length == p.spec.given.length && isWellFormedDeep p.spec
 
@@ -72,6 +75,47 @@ results of the descendant whose matches go on from the parent's
 query is yielded. -/
 def Proof.yields (p : Proof) (g : Graph) (key : FactId) : Bool :=
   p.spec.descendants.any fun d => (d.read g (d.bindGivens p.givens)).any (·.contains (some key))
+
+/-! ## Confirming that a proof yields the content fact
+
+`Proof.yields` reads every result. The replicator need not: it knows which
+fact it wants. For each projected label it binds that label to the content
+fact and asks whether a solution exists (RR-4). A label that is a given is
+bound already, so the given must be the fact. A label that is an unknown is
+pinned to the fact with the inverse's reserved `pinLabel` (`Candidates.lean`),
+and the pinned matches are reordered to start at the pin (`reorderOrSelf`,
+`Reorder.lean`), so the read walks from the content fact to the givens instead
+of from the givens to every result. `confirms_eq_yields`
+(`Proofs/Content.lean`) proves the check is `Proof.yields` for every bound
+proof. -/
+
+/-- `ms`, with the match whose unknown is `l` pinned to the new fact: it gains
+the condition `l = __f`, and keeps its own conditions. -/
+def pinUnknown (l : Name) (ms : List Match) : List Match :=
+  ms.map fun m => if m.unknown.name == l then .mk m.unknown (pinCondition :: m.conditions) else m
+
+/-- `d`, with the unknown `u` pinned to the new fact, given as `pinLabel`, and
+projected: its solutions are those of `d` that bind `u` to the new fact. -/
+def Specification.pinResult (d : Specification) (u : Label) : Specification :=
+  { given := d.given ++ [{ name := pinLabel, type := u.type }], matchList := pinUnknown u.name d.matchList,
+    projection := .fact u.name }
+
+/-- Some solution of `d`'s matches from `env` binds the label `l` to `key`.
+If `l` is one of the matches' unknowns, pin it to `key` and look for a
+solution, reading from the pin. Otherwise the matches do not bind `l`, so it
+is as `env` binds it (a given), and any solution will do. -/
+def Specification.bindsResult (d : Specification) (g : Graph) (env : Env) (key : FactId) (l : Name) : Bool :=
+  match d.matchList.find? (·.unknown.name == l) with
+  | some m => !((reorderOrSelf (d.pinResult m.unknown)).evaluate g (env.bind pinLabel key)).isEmpty
+  | none => env l == some key && !(evalMatches g env d.matchList).isEmpty
+
+/-- The check the replicator runs for RR-4: some descendant of the proof's
+specification, with every given held, has a projected label that some
+solution binds to `key`. -/
+def Proof.confirms (p : Proof) (g : Graph) (key : FactId) : Bool :=
+  p.spec.descendants.any fun d =>
+    let env := d.bindGivens p.givens
+    d.given.all (g.has env) && d.projection.labels.any (d.bindsResult g env key)
 
 /-- The distribution rules let `u` run the proof, and it yields `key`. -/
 def Policy.admits (P : Policy) (g : Graph) (u : User) (key : FactId) (p : Proof) : Bool :=
@@ -139,7 +183,8 @@ def Replicator.write (P : Policy) (r : Replicator) (user : Option User) (key : F
           | none => ({ r with objects := (key, o) :: r.objects }, .stored)
 
 /-- `POST /content/{key}/read`: the object under `key`, if the distribution
-rules let the user run the proof and it yields the content fact (RR-3, RR-4).
+rules let the user run the proof and it yields the content fact (RR-3, RR-4),
+which `Proof.confirms` checks by binding the fact as a result.
 Otherwise 403, whether or not an object is stored (RR-5). The object is looked
 up by its content key alone (ST-1). The bytes are not hashed again: `write`
 verified them. -/
@@ -149,7 +194,7 @@ def Replicator.read (P : Policy) (r : Replicator) (user : Option User) (key : Fa
   | none => .unauthenticated
   | some u =>
     if !p.bound then .badRequest
-    else if !P.admits r.store u key p then .forbidden
+    else if !(P.distributes u p.spec p.givens r.store && p.confirms r.store key) then .forbidden
     else match r.objects.lookup key with
       | none => .notUploaded
       | some o => .ok o

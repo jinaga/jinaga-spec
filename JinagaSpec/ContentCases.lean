@@ -41,6 +41,36 @@ def groupWithDocuments : Specification :=
   spec [("g", "Group")] []
     (.composite [.specification "documents" [unknown "d" "Document" [path [role "group" "Group"] "g"]] (fact "d")])
 
+/-- `(g: Group) { d: Document [ d->group: Group = g ] } => { group = g, document = d }`:
+a given and an unknown, both projected. -/
+def groupAndDocument : Specification :=
+  spec [("g", "Group")] [unknown "d" "Document" [path [role "group" "Group"] "g"]]
+    (.composite [.fact "group" "g", .fact "document" "d"])
+
+/-- The documents not deleted: `(g: Group) { d: Document [ d->group: Group = g,
+!E { x: Deleted [ x->document: Document = d ] } ] } => d`. -/
+def liveDocumentsInGroup : Specification :=
+  spec [("g", "Group")] [unknown "d" "Document" [path [role "group" "Group"] "g",
+    notExists [unknown "x" "Deleted" [path [role "document" "Document"] "d"]]]] (fact "d")
+
+/-- `(g: Group) { } => g`. -/
+def theGroup : Specification := spec [("g", "Group")] [] (fact "g")
+
+/-- `(d: Document) { } => d`: the content fact as its own given. -/
+def theDocument : Specification := spec [("d", "Document")] [] (fact "d")
+
+/-- A child specification that declares its parent's unknown again:
+`(g: Group) { d: Document [ d->group: Group = g ] } => { again = { d: Document [ d->group: Group = g ] } => d }`.
+The top level is well formed; the child, as a descendant, is not. -/
+def redeclaringChild : Specification :=
+  let documents := [unknown "d" "Document" [path [role "group" "Group"] "g"]]
+  spec [("g", "Group")] documents (.composite [.specification "again" documents (fact "d")])
+
+/-- A specification that declares the label the replicator pins the content
+fact to: `(g: Group) { __f: Document [ __f->group: Group = g ] } => __f`. -/
+def declaresPinLabel : Specification :=
+  spec [("g", "Group")] [unknown pinLabel "Document" [path [role "group" "Group"] "g"]] (fact pinLabel)
+
 structure ContentCase where
   name : String
   description : String
@@ -76,6 +106,8 @@ def plan : Fact := { id := 10, type := "Document", predecessors := [("group", 1)
 def spoof : Fact := { id := 11, type := "Document", predecessors := [("group", 2)] }
 /-- A document in group A whose maximum size is four characters. -/
 def notes : Fact := { id := 12, type := "Document", predecessors := [("group", 1)] }
+/-- The plan, deleted. -/
+def planDeleted : Fact := { id := 30, type := "Deleted", predecessors := [("document", 10)] }
 /-- A fact of a type that is not content-bearing. -/
 def comment : Fact := { id := 20, type := "Comment", predecessors := [("document", 10)] }
 
@@ -90,8 +122,8 @@ def write (u : Option User) (key : FactId) (o : Bytes) : ContentStep := .event (
 def planStored : List ContentStep := [save groupA, save plan, write alice 10 "plan"]
 
 def make (name description source : String) (steps : List ContentStep) (catches : List String := [])
-    (spec : Specification := documentsInGroup) : ContentCase :=
-  { name, description, source, content, writers, readers, spec, steps, catches }
+    (spec : Specification := documentsInGroup) (moreReaders : List (User × List FactId) := []) : ContentCase :=
+  { name, description, source, content, writers, readers := readers ++ moreReaders, spec, steps, catches }
 
 end ContentCases
 
@@ -164,9 +196,41 @@ def contentCases : List ContentCase := [
     ["read_admitted: yields ignores child specifications"]
     groupWithDocuments,
   make "unbound-given"
-    "A proof that binds fewer givens than the specification declares is refused with 400."
+    "A proof that binds fewer givens, or more, than the specification declares is refused with 400."
     "RR-1"
-    (planStored ++ [.read alice 10 []]),
+    (planStored ++ [.read alice 10 [], .read alice 10 [1, 1]]),
+  make "ill-formed-child-specification"
+    "The proof's child specification declares `d` again, which its parent declares. The top level is well formed, but the child, as a specification of its own, is not: 400."
+    "RR-1"
+    (planStored ++ [.read alice 10 [1]])
+    ["RR-1: check only the top-level specification"]
+    redeclaringChild,
+  make "reserved-label"
+    "The proof's specification declares `__f`, the label the replicator pins the content fact to: 400."
+    "RR-1"
+    (planStored ++ [.read alice 10 [1]]) [] declaresPinLabel,
+  make "given-and-unknown-projected"
+    "The proof projects the group, a given, and the document, an unknown. The plan is confirmed through the second label, by pinning `d` to it. The group is confirmed by its given alone; it has no object, so 404."
+    "RR-4"
+    (planStored ++ [.read alice 10 [1], .read alice 1 [1]])
+    ["read_admitted: bind only the first projected label"]
+    groupAndDocument,
+  make "pinned-match-keeps-conditions"
+    "The proof's document match also asks that the document is not deleted. Pinning `d` to the plan keeps that condition: Alice gets the bytes until the plan is deleted, then 403."
+    "RR-4"
+    (planStored ++ [.read alice 10 [1], save planDeleted, .read alice 10 [1]])
+    ["SEC-1: drop the pinned match's own conditions"]
+    liveDocumentsInGroup,
+  make "given-not-held"
+    "The proof binds its Group given to the plan, a Document. The store does not hold it as a Group, so the specification reads nothing: 403, though its projected label is bound to the plan."
+    "RR-4"
+    (planStored ++ [.read alice 10 [10]])
+    ["confirms_eq_yields: skip the check that the givens are held"]
+    theGroup [(alice, [10])],
+  make "content-fact-as-given"
+    "`(d: Document) { } => d` with `d` bound to the plan yields the plan on every store that holds it. Here SEC-1 is only as strong as the distribution rules."
+    "RR-4, SEC-1"
+    (planStored ++ [.read alice 10 [10]]) [] theDocument [(alice, [10])],
   make "given-not-in-store"
     "The distribution rules admit a proof whose given the store does not hold; it yields nothing, so 403."
     "RR-4"

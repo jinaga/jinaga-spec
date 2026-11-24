@@ -364,8 +364,12 @@ hash function:
   givens `readers` pairs them with.
 
 Each read carries `yields`: whether running the specification with its givens
-on the store at that step yields the key (`Proof.yields`). A harness without a
-specification engine uses it; one with an engine can check its engine against it.
+on the store at that step yields the key (`Proof.yields`). The store computes
+it with the check `read` runs, `Proof.confirms`, which binds the key as a
+result and looks for a solution; a harness can check its engine against the
+field, for every proof the store does not refuse with 400. Some cases'
+specifications are ill formed or declare a reserved label, and their reads
+expect 400 (RR-1).
 
 ```jsonc
 {
