@@ -238,11 +238,6 @@ mutual
       | exact Prod.Lex.left _ _ (Nat.lt_of_lt_of_le (sizeOf_negativesOf _ ‹_›) (le_maxSize (List.mem_cons_self ..)))
 end
 
-/-- The givens a feed names, in its path conditions or its filters, in the
-specification's order. -/
-def usedGivens (givens : List Label) (ms : List Match) : List Label :=
-  givens.filter fun l => (freeInMatches [] ms).contains l.name
-
 /-- A feed walks at least one successor edge: some path condition of its
 matches walks from the unknown. -/
 def traversesSuccessors (feed : Specification) : Bool :=

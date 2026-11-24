@@ -163,6 +163,6 @@ export function buildFeeds(specification: Specification): Specification[] {
     // No feed is a product of two chains (`ConnectedDescendants`,
     // JinagaSpec/Connected.lean, jinaga/jinaga-spec#55).
     if (!isConnectedDeep(specification as any))
-        throw new Error("The specification is not connected: a feed, or a child specification, joins givens that nothing joins to each other, a feed is joined only by a negative condition, or a given is unused.");
+        throw new Error("The specification is not connected: a feed, or a child specification, joins givens that nothing joins to each other, or a feed is joined only by a negative condition.");
     return feedsOf(specification);
 }

@@ -113,6 +113,12 @@ mutual
       freeInMatches (inner ++ ms.map (·.unknown.name)) ms ++ freeInConditions inner cs
 end
 
+/-- The givens the matches use: those they name, in their path conditions or
+their filters, in the specification's order. A feed takes only these
+(`asFeed`), and so does the connectivity check (`isConnected`). -/
+def usedGivens (givens : List Label) (ms : List Match) : List Label :=
+  givens.filter fun l => (freeInMatches [] ms).contains l.name
+
 /-- Labels that begin with `__` belong to the split, which names the facts it
 hands from the head to the tail. A specification may not declare one, so a
 split label can never collide with a label the specification declares. -/

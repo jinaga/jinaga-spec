@@ -133,8 +133,11 @@ def randomInverseCases (namePrefix : String) (size count : Nat) : List InverseCa
     if out.length ≥ count then break
     let (s, g) := (genSpec false 3 true).run gen
     gen := g
-    -- Only specifications jinaga.js accepts: every label joined to the others.
-    unless isConnected s do continue
+    -- Only specifications jinaga.js's `invertSpecification` accepts: every
+    -- label joined to the others, and every given used, since jinaga.js
+    -- counts every given. The named cases show unused givens
+    -- (jinaga/jinaga-spec#60).
+    unless isConnected s && usedGivens s.given s.matchList == s.given do continue
     for _ in [0:200] do
       let ((store, env, B), g) := (do
         let st ← genGraph s 8
@@ -741,7 +744,7 @@ def main (args : List String) : IO Unit := do
     unless feedReady c.spec do
       throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
     unless isConnectedDeep c.spec do
-      throw <| IO.userError s!"feed case {c.name} has a disconnected feed or descendant, or an unused given"
+      throw <| IO.userError s!"feed case {c.name} has a disconnected feed or descendant"
     -- The vector's results are what a replica holding what the feeds deliver
     -- reads (`feeds_cover`), child specifications' included. `readsOf` lists
     -- exactly the results `Reads` gives, up to `Result.SetEq`

@@ -52,12 +52,13 @@ The same envelope, for two checks. `wellFormed` is `isWellFormedDeep`:
 `isWellFormed` of the specification and of each child specification in its
 projection, each as a specification whose matches go on from its parent's.
 `connected` is `isConnectedDeep` (`JinagaSpec/Connected.lean`): each of those
-descendants, with the givens its matches use, passes `isConnected`; every
-given is used by some descendant; and every feed `buildFeeds` makes is joined
-(`isJoined`): it passes `isConnected`, and its path conditions alone, its
-negative conditions' filters dropped, join its matches and the givens they
-use. A port of `buildFeeds` refuses a specification that fails
-either.
+descendants, with the givens its matches use, passes `isConnected`; and
+every feed `buildFeeds` makes is joined (`isJoined`): it passes
+`isConnected`, and its path conditions alone, its negative conditions'
+filters dropped, join its matches and the givens they use. A port of
+`buildFeeds` refuses a specification that fails either. A given no match uses
+is allowed (jinaga-spec#60): `unused-given`, `no-matches` and
+`no-matches-two-givens` are connected.
 
 ```jsonc
 {
@@ -107,8 +108,11 @@ given fails.
 Results are what a replica reads (`Specification.read`): none until every
 given is a fact the graph holds, then `evaluate`. `gained` and `lost` compare
 those reads. The random vectors draw their givens from `graph`, so a given
-arrives only in the named cases `given-arrives` and
-`given-arrives-under-not-exists`.
+arrives only in the named cases `given-arrives`,
+`given-arrives-under-not-exists`, `no-matches` and `no-matches-two-givens`.
+They use every given, as jinaga.js's `invertSpecification` requires; the
+named cases `unused-given`, `no-matches` and `no-matches-two-givens` have a
+given no match uses (jinaga-spec#60).
 
 ```jsonc
 {
@@ -193,7 +197,8 @@ fixed random seeds (`random-<n>`: specifications shaped like an application's,
 with at least three feeds, on graphs where each delivers a fact;
 `random-children-<n>`: the same with child specifications, two deep at most).
 Every one passes `isConnectedDeep`: the random seeds skip a specification that
-does not (jinaga-spec#45), and a named case that does not is an error.
+does not (jinaga-spec#55), and a named case that does not is an error. An
+unused given passes (jinaga-spec#60), so `random-2` has one.
 
 ```jsonc
 {

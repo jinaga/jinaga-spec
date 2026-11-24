@@ -15,9 +15,9 @@
 // ignored here: conditions on givens.
 //
 // `isConnectedDeep` (JinagaSpec/Connected.lean) is the check `buildFeeds`
-// needs besides: every descendant, as a feed, is connected; every given is
-// used by some descendant; and every feed is joined, so no feed is a
-// product of two chains (jinaga/jinaga-spec#55). It reads the feeds from
+// needs besides: every descendant, as a feed, is connected, and every feed is
+// joined, so no feed is a product of two chains (jinaga/jinaga-spec#55). A
+// given no match uses is allowed (jinaga/jinaga-spec#60). It reads the feeds from
 // ./feed-builder.ts, which is the one dependency of this file.
 
 import { asFeed, feedsOf, paths } from "./feed-builder.ts";
@@ -98,7 +98,9 @@ export function isWellFormed(specification: Specification): boolean {
 // The connectivity check `invertSpecification` runs (`isConnected`,
 // JinagaSpec/Inverse.lean, after jinaga.js's UnionFind.ts). A path condition
 // joins its match's unknown to the label it names. An existential condition
-// joins its match's unknown to every label its path conditions name.
+// joins its match's unknown to every label its path conditions name. Only the
+// givens the matches use are labels, as for a feed (`usedGivens`); UnionFind.ts
+// counts every given, and so refuses an unused one (jinaga/jinaga-spec#60).
 
 function referenced(matches: Match[]): string[] {
     return matches.flatMap(m => m.conditions.flatMap(c => c.type === "path" ? [c.labelRight] : referenced(c.matches)));
@@ -129,7 +131,8 @@ function connections(matches: Match[]): { labels: string[]; edges: [string, stri
 /** Every label is joined to every other, through path conditions or through labels an existential condition names. */
 export function isConnected(specification: Specification): boolean {
     const { labels: matchLabels, edges } = connections(specification.matches);
-    const labels = [...new Set([...specification.given.map(g => g.label.name), ...matchLabels])];
+    const given = usedGivens(specification.given, specification.matches);
+    const labels = [...new Set([...given.map(g => g.label.name), ...matchLabels])];
     if (labels.length === 0) return true;
     let reached = [labels[0]];
     for (let i = 0; i < labels.length; i++) {
@@ -162,13 +165,10 @@ const isJoined = (f: Specification): boolean =>
     isConnected(f) && isConnected(asFeed(f.given, f.matches.map(paths)));
 
 /**
- * Every descendant, as a feed, is connected; every given is used by some
- * descendant; and every feed `buildFeeds` emits is joined
- * (`ConnectedDescendants`).
+ * Every descendant, as a feed, is connected, and every feed `buildFeeds`
+ * emits is joined (`ConnectedDescendants`).
  */
 export function isConnectedDeep(specification: Specification): boolean {
-    const ds = descendants(specification);
-    return ds.every(d => isConnected(asFeed(d.given, d.matches))) &&
-        specification.given.every(g => ds.some(d => usedGivens(d.given, d.matches).includes(g))) &&
+    return descendants(specification).every(d => isConnected(asFeed(d.given, d.matches))) &&
         feedsOf(specification as any).every(isJoined);
 }

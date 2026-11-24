@@ -5,9 +5,13 @@
 //
 // Each specification's inverses are printed in the same text form on both sides
 // and compared as sets, since jinaga.js deduplicates and the port does not.
+// One difference is chosen (jinaga/jinaga-spec#60): the port allows a given the
+// matches do not use, which jinaga.js refuses as disconnected. Those
+// specifications are counted, not failed, until jinaga.js follows.
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { usedGivens } from "./well-formed.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const jinagaJs = resolve(process.env.JINAGA_JS ?? join(here, "../../../jinaga.js"));
@@ -41,7 +45,7 @@ function describeInverse(inverse: any): string {
 }
 
 const entries = JSON.parse(readFileSync(process.argv[2], "utf8"));
-let agree = 0;
+let agree = 0, unusedGiven = 0;
 const disagreements: string[] = [];
 for (const { specification, inverses } of entries) {
     let ts: string[] | { error: string };
@@ -57,11 +61,14 @@ for (const { specification, inverses } of entries) {
           lean.error.split(" with types")[0].split(" detected")[0] === ts.error.split(" with types")[0].split(" detected")[0];
     if (same) {
         agree++;
+    } else if (Array.isArray(lean) && !Array.isArray(ts) && ts.error.includes("Disconnected") &&
+        usedGivens(specification.given, specification.matches).length < specification.given.length) {
+        unusedGiven++;
     } else {
         disagreements.push(JSON.stringify({ specification, lean, ts }, null, 2));
     }
 }
-console.log(`${agree} of ${entries.length} specifications: the port's inverses equal jinaga.js's`);
+console.log(`${agree} of ${entries.length} specifications: the port's inverses equal jinaga.js's; jinaga.js refuses ${unusedGiven} more for an unused given (jinaga/jinaga-spec#60)`);
 if (disagreements.length > 0) {
     console.log(`FAIL: ${disagreements.length} disagree. First:\n${disagreements[0]}`);
     process.exit(1);
