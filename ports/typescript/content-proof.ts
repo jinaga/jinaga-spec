@@ -20,8 +20,8 @@ import { descendants } from "./well-formed.ts";
 import type { Condition, Label, Match, PathCondition, Projection, Specification } from "./well-formed.ts";
 import type { Fact, FactId } from "./content-store.ts";
 
-type Graph = Fact[];
-type Env = Map<string, FactId>;
+export type Graph = Fact[];
+export type Env = Map<string, FactId>;
 
 /* ---------------- The semantics (JinagaSpec/Semantics.lean) ---------------- */
 
@@ -41,7 +41,7 @@ function walk(g: Graph, start: FactId, roles: { name: string; predecessorType: s
     return step(g, role, start).flatMap(p => walk(g, p, rest));
 }
 
-const bind = (env: Env, name: string, id: FactId): Env => new Map(env).set(name, id);
+export const bind = (env: Env, name: string, id: FactId): Env => new Map(env).set(name, id);
 
 function holdsPath(g: Graph, env: Env, unknown: string, c: PathCondition): boolean {
     const u = env.get(unknown), r = env.get(c.labelRight);
@@ -67,17 +67,17 @@ const holds = (g: Graph, env: Env, unknown: string, c: Condition): boolean =>
     c.type === "path" ? holdsPath(g, env, unknown, c) : c.exists === (evalMatches(g, env, c.matches).length > 0);
 
 /** The labels whose facts a projection names; a child specification names its own. */
-const labels = (p: Projection): string[] =>
+export const labels = (p: Projection): string[] =>
     p.type === "composite" ? p.components.flatMap(c => c.type === "specification" ? [] : [c.label]) : [p.label];
 
 /** The label is bound to a fact of `g` of the label's type. */
-function has(g: Graph, env: Env, l: Label): boolean {
+export function has(g: Graph, env: Env, l: Label): boolean {
     const id = env.get(l.name);
     return id !== undefined && factOf(g, id)?.type === l.type;
 }
 
 /** Bind the givens, in order, to the facts a caller supplies. */
-function bindGivens(s: Specification, facts: FactId[]): Env {
+export function bindGivens(s: Specification, facts: FactId[]): Env {
     const env: Env = new Map();
     s.given.forEach((g, i) => { if (i < facts.length && !env.has(g.label.name)) env.set(g.label.name, facts[i]); });
     return env;

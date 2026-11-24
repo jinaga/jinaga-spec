@@ -159,7 +159,11 @@ through a negative condition. A given no match uses is allowed
 it after the other two. The content store's read checks `Proof.bound`
 (`isWellFormedDeep` and the given count, `Proof.bound_iff`) before
 `Proof.confirms`, whose `confirms_eq_yields` assumes every descendant well
-formed; `ports/typescript/content-store.ts` runs the same two checks. `isWellFormed`
+formed; `ports/typescript/content-store.ts` runs the same two checks. A save
+stores a batch only if `isFresh` (`isFresh_iff`: `Fresh`, the hypothesis of
+`candidates_complete`), which the proof cache's invalidation needs
+(`cached_read`); `ContentStore.save` runs the same check. A replicator first
+drops the facts it already holds. `isWellFormed`
 ignores conditions on givens. The reserved-label
 rule makes the second harmless for the split's own labels: no declaration site,
 modelled or not, can collide with a name it may not use.

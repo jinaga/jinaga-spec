@@ -8,6 +8,12 @@
 // (./well-formed.ts, every child specification included) for RR-1
 // (`Proof.bound`, `read_badRequest`), then `confirms` (./content-proof.ts),
 // proved to be `Proof.yields` on every proof that passes (`confirms_eq_yields`).
+//
+// The distribution rules are proofs too (`Policy.distribution`): a user may run
+// a specification when every feed has a bound rule proof that names them
+// (`Policy.distributes`), checked with the same `confirms`. A save is a batch,
+// stored only if it is fresh (`isFresh`, JinagaSpec/Content.lean), which the
+// cache's invalidation needs (./content-cache.ts).
 
 import { confirms } from "./content-proof.ts";
 import { isWellFormed } from "./well-formed.ts";
@@ -35,8 +41,11 @@ export interface Policy {
     fits(fact: Fact, bytes: string): boolean;
     /** The authorization rules let the user create the fact (RW-4). */
     mayCreate(user: User, store: Fact[], fact: Fact): boolean;
-    /** The distribution rules let the user run the specification with these givens (RR-3). */
-    distributes(user: User, specification: any, givens: FactId[], store: Fact[]): boolean;
+    /**
+     * The distribution rules for the specification with these givens (RR-3): one
+     * clause per feed, each the rule proofs that may authorize it. Reads no store.
+     */
+    distribution(specification: any, givens: FactId[]): Proof[][];
 }
 
 export type Code =
@@ -52,15 +61,36 @@ const status: Record<Code, number> = {
 const respond = (code: Code, bytes?: string): Response =>
     bytes === undefined ? { status: status[code], code } : { status: status[code], code, bytes };
 
+/** Every given is bound, and every descendant is well formed (RR-1, `Proof.bound`). */
+export const bound = (proof: Proof): boolean =>
+    proof.givens.length === proof.specification.given.length && isWellFormed(proof.specification);
+
+/** No stored fact has the id of a fact of the batch, or names one as a predecessor (`isFresh`). */
+export const isFresh = (store: Fact[], batch: Fact[]): boolean =>
+    batch.every(b => store.every(x => x.id !== b.id && x.predecessors.every(p => p.id !== b.id)));
+
 export class ContentStore {
     readonly store: Fact[] = [];
     /** Objects by content key, never by content hash (ST-1). */
     readonly objects = new Map<FactId, string>();
 
-    constructor(private readonly policy: Policy) {}
+    constructor(protected readonly policy: Policy) {}
 
-    save(fact: Fact) {
-        this.store.push(fact);
+    /** Store the batch if it is fresh; otherwise leave the store as it is. */
+    save(batch: Fact[]) {
+        if (isFresh(this.store, batch)) this.store.push(...batch);
+    }
+
+    /** Every clause has a bound rule proof whose results name the user (`Policy.distributes`). */
+    distributes(user: User, specification: any, givens: FactId[]): boolean {
+        return this.policy.distribution(specification, givens).every(clause =>
+            clause.some(q => bound(q) && confirms(q.specification, q.givens, this.store, user)));
+    }
+
+    /** The rules let the user read `key` with the bound proof: what `read` asks. */
+    protected admits(user: User, key: FactId, proof: Proof): boolean {
+        return this.distributes(user, proof.specification, proof.givens) &&
+            confirms(proof.specification, proof.givens, this.store, key);
     }
 
     /** `PUT /content/{key}`. */
@@ -82,15 +112,11 @@ export class ContentStore {
 
     /** `POST /content/{key}/read`. */
     read(user: User | null, key: FactId, proof: Proof): Response {
-        const P = this.policy;
         if (user === null) return respond("unauthenticated");
-        if (proof.givens.length !== proof.specification.given.length || !isWellFormed(proof.specification))
-            return respond("bad_request");
+        if (!bound(proof)) return respond("bad_request");
         // Checked before the object is looked up, so the answer to a reader the
         // rules do not admit does not depend on what is stored (RR-5).
-        if (!(P.distributes(user, proof.specification, proof.givens, this.store) &&
-            confirms(proof.specification, proof.givens, this.store, key)))
-            return respond("forbidden");
+        if (!this.admits(user, key, proof)) return respond("forbidden");
         const bytes = this.objects.get(key);
         return bytes === undefined ? respond("not_uploaded") : respond("ok", bytes);
     }

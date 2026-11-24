@@ -360,12 +360,23 @@ hash function:
   content-bearing;
 - the authorization rules let a user create exactly the facts `writers` pairs
   them with, on any store;
-- the distribution rules let a user run the specification with exactly the
-  givens `readers` pairs them with. In the Lean model
-  (`ContentCase.policy`) that is one feed, authorized by the rule
-  `(u: Jinaga.User) { } => u` run with each such reader, so each history first
-  saves the users' own facts (type `Jinaga.User`), which that rule needs to
-  yield them.
+- the distribution rules are one specification, `rule` (with `ruleText`):
+  the specification read has one feed, which a user may read when `rule`, run
+  with the read's givens, has a result naming the user (`Policy.distributes`:
+  the rule's proof must be bound, and its results are checked as a read's
+  are). In the named cases the rule is membership in the document's group,
+  revoked by a `Removal` of the membership and given back by a `Restore` of
+  the removal.
+
+A save is a batch: `save` holds its facts, and `fresh` says whether the batch
+is fresh on the store before it (`isFresh`: no stored fact has the id of one of
+its facts, or names one as a predecessor). A batch that is not fresh is not
+stored at all; a replicator first drops the facts it already holds.
+
+The responses are those of the uncached replicator, and a replicator that
+caches read decisions (NF-2, `ContentCache.lean`) must give the same ones
+(`cached_read`). The cases that revoke, restore, deliver a given, or deliver
+facts together in one batch catch the cache's mutants.
 
 Each read carries `yields`: whether running the specification with its givens
 on the store at that step yields the key (`Proof.yields`). The store computes
@@ -383,10 +394,10 @@ expect 400 (RR-1).
   "policy": {
     "content": [ { "fact": 10, "hash": "#plan", "maxLength": 100 } ],
     "writers": [ { "user": 100, "fact": 10 } ],
-    "readers": [ { "user": 100, "givens": [1] } ]
+    "rule": { ... }, "ruleText": "(g: Group) { m: Member [ ... ] ... } => u"
   },
   "steps": [
-    { "save": { "id": 1, "type": "Group", "predecessors": [] } },
+    { "save": [ { "id": 1, "type": "Group", "predecessors": [] } ], "fresh": true },
     { "write": { "user": 100, "key": 10, "bytes": "plan" },          // user null: no valid token
       "expected": { "status": 201, "code": "stored" } },
     { "read": { "user": 101, "key": 11, "givens": [2] }, "yields": true,

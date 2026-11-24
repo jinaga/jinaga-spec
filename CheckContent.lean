@@ -5,33 +5,43 @@ import ContentMutants
 # Randomized check of the content store
 
 `lake exe check-content [seed]` tests SEC-1 to SEC-5, `read_admitted` and
-`confirms_eq_yields` (`Proofs/Content.lean`), as
-the theorems state them, on random histories of saves and uploads: a random
-well-formed specification, a graph for it, uploads by random users to random
-keys interleaved with the saves, then reads by every user of every key with
-random proofs. The policy makes collisions common: a content hash is one of
-three values, so many content facts share one, and different bytes share a
-hash.
+`confirms_eq_yields` (`Proofs/Content.lean`), and `cached_read`
+(`Proofs/ContentCache.lean`), as the theorems state them, on random histories
+of saves, uploads and reads: a random well-formed specification, a graph for
+it, and memberships in its givens' facts, some removed and some removals
+restored, saved in batches, with uploads by random users to random keys and
+reads with a few random proofs among them; then reads by every user of every
+key with random proofs. The distribution rule is membership
+(`ContentCases.membersOf`). The policy makes collisions common: a content hash
+is one of three values, so many content facts share one, and different bytes
+share a hash.
 
 The theorems are proved, so the real handlers fail none of them. What the check
 measures is that each statement rules out the mutant it is meant to: each
-mutant breaks one rule of `read` or `write`, and must be caught on some
-histories, by the statement named in its label.
+mutant breaks one rule of `read` or `write`, or of the cache's invalidation,
+and must be caught on some histories, by the statement named in its label.
 -/
 open JinagaSpec
 
 instance : Inhabited Replicator := ⟨.empty⟩
+instance : Inhabited Role := ⟨{ name := "", predecessorType := "" }⟩
+instance : Inhabited Proof := ⟨{ spec := { given := [], matchList := [], projection := .fact "" }, givens := [] }⟩
 
 /-! ## The statements, as the theorems state them -/
 
-/-- A policy in which collisions are common. -/
-def policy : Policy where
+/-- A policy in which collisions are common. The distribution rule is
+membership: of the first given itself, or of the fact `via` reaches from it. -/
+def policyVia (via : Option Role) : Policy where
   hash b := toString (b.length % 3)
   contentHash f := if f.id % 4 == 3 then none else some (toString (f.id % 3))
   fits _ b := b.length ≤ 4
   mayCreate u g f := (u * 7 + f.id * 3 + g.length) % 3 != 0
-  -- One feed, authorized when the proof's own specification yields the user.
-  distribution s gs := [[{ spec := s, givens := gs }]]
+  -- One feed, which the current members of the first given's group may read.
+  distribution s gs := match s.given.head? with
+    | some l =>
+      let rule := membersOf ("g", l.type) ((via.map (·.predecessorType)).getD l.type) via.toList
+      [[{ spec := rule, givens := gs.take 1 }]]
+    | none => [[]]
 
 /-- Which statements a history and its reads break, by name. -/
 def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Option User × FactId × Proof)) :
@@ -100,8 +110,11 @@ def genBytes : Gen Bytes := do
   let n ← below 6
   return String.ofList (← repeatGen n (pick ['a', 'b']))
 
+/-- The users, whose facts every history saves first. -/
+def users : List User := [100, 101, 102, 103]
+
 def genUser : Gen (Option User) := do
-  if ← chance 1 6 then return none else return some (← below 4)
+  if ← chance 1 6 then return none else return some (← pick users)
 
 def genGivens (s : Specification) (g : Graph) (key : FactId) : Gen (List FactId) := do
   let mut ids := []
@@ -116,24 +129,101 @@ def genGivens (s : Specification) (g : Graph) (key : FactId) : Gen (List FactId)
   return ids
 
 /-- An upload to a random key. Half its bytes match the key's content hash in
-`policy`, so that most writers who may create the fact get it stored. -/
+`policyVia`, so that most writers who may create the fact get it stored. -/
 def genUpload : Gen Event := do
   let key ← below 8
   let matching := String.ofList (← repeatGen (key % 3 + 3 * (← below 2)) (pick ['a', 'b']))
   let bytes ← if ← chance 1 2 then genBytes else pure matching
   return .write (← genUser) key bytes
 
-/-- The graph's facts saved in order, with uploads among them. Some uploads are
-for a key that is not saved yet; many repeat a key. -/
-def genHistory (g : Graph) : Gen (List Event) := do
-  let mut evs := []
-  for f in g do
+/-- Memberships of random users in random facts of type `t`, some removed, and
+some of the removals restored. -/
+def genMemberships (g : Graph) (t : Name) : Gen (List Fact) := do
+  let groups := (g.filter (·.type == t)).map (·.id)
+  if groups.isEmpty then return []
+  let mut ms := []
+  for i in [0:4] do
+    ms := ms ++ [{ id := 200 + i, type := "Member", predecessors := [("group", ← pick groups), ("user", ← pick users)] }]
+  let mut rs := []
+  for m in ms do
+    if ← chance 1 2 then rs := rs ++ [{ id := m.id + 100, type := "Removal", predecessors := [("member", m.id)] }]
+  let mut ss := []
+  for r in rs do
+    if ← chance 1 2 then ss := ss ++ [{ id := r.id + 100, type := "Restore", predecessors := [("removal", r.id)] }]
+  return ms ++ rs ++ ss
+
+/-- The graph's facts and the memberships, interleaved at random, each in its
+own order, and a membership only once its predecessors are placed. Half the
+time a membership is placed as soon as it can be, so that the graph's later
+facts arrive for readers already admitted. -/
+def genOrder (graph extra : List Fact) : Gen (List Fact) := do
+  let eager ← chance 1 2
+  let mut a := graph
+  let mut b := extra
+  let mut out : List Fact := []
+  for _ in [0:graph.length + extra.length] do
+    let ready := match b with
+      | f :: _ => f.predecessors.all fun p => users.contains p.2 || out.any (·.id == p.2)
+      | [] => false
+    match a, b with
+    | x :: a', f :: b' =>
+      if ready && (eager || (← chance 1 2)) then out := out ++ [f]; b := b'
+      else out := out ++ [x]; a := a'
+    | x :: a', [] => out := out ++ [x]; a := a'
+    | [], f :: b' => out := out ++ [f]; b := b'
+    | [], [] => pure ()
+  return out
+
+/-- A history: the users' facts, then `facts` saved in batches of one to four,
+with uploads and reads with proofs from `pool` among them. One batch in ten
+also repeats a fact already saved, so is not fresh, and is not stored. Some
+uploads are for a key that is not saved yet; many repeat a key. -/
+def genHistory (facts : List Fact) (pool : List (Option User × FactId × Proof)) : Gen (List Request) := do
+  let mut hs : List Request := [.event (.save (users.map fun u => { id := u, type := "Jinaga.User", predecessors := [] }))]
+  let mut rest := facts
+  let mut saved : List Fact := []
+  while !rest.isEmpty do
     for _ in [0:(← below 3)] do
-      evs := evs ++ [← genUpload]
-    evs := evs ++ [.save [f]]
+      hs := hs ++ [.event (← genUpload)]
+    let n := (← below 4) + 1
+    let mut B := rest.take n
+    saved := saved ++ B
+    rest := rest.drop n
+    if !saved.isEmpty && (← chance 1 10) then B := B ++ [← pick saved]
+    hs := hs ++ [.event (.save B)]
+    for _ in [0:(← below 3) + 1] do
+      let (u, k, p) ← pick pool
+      hs := hs ++ [.read u k p]
   for _ in [0:(← below 4)] do
-    evs := evs ++ [← genUpload]
-  return evs
+    hs := hs ++ [.event (← genUpload)]
+  return hs
+
+/-- `cached_read`: every read in the history, answered by the cached
+replicator whose saves invalidate as `m` makes them, is answered as
+`Replicator.read` answers it on the state the same events produce. -/
+def cacheViolations (m : CacheMutant) (P : Policy) (hs : List Request) : List String := Id.run do
+  let mut c := Cached.empty
+  let mut r := Replicator.empty
+  for q in hs do
+    match q with
+    | .read u k p =>
+      let (c', resp) := c.read P u k p
+      if resp != r.read P u k p then return ["cached_read"]
+      c := c'
+    | .event e => c := cachedStepWith m P c q; r := r.step P e
+  return []
+
+/-- The cache mutant family with no field changed is `Cached.step`: the same
+entries after every request. -/
+def cacheFamilyAgrees (P : Policy) (hs : List Request) : Bool := Id.run do
+  let mut c := Cached.empty
+  let mut c' := Cached.empty
+  for q in hs do
+    c := c.step P q
+    c' := cachedStepWith {} P c' q
+    let key (e : Entry) := (e.user, e.key, e.admitted)
+    unless c.cache.map key == c'.cache.map key && c.replicator.store.map (·.id) == c'.replicator.store.map (·.id) do return false
+  return true
 
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
@@ -146,6 +236,9 @@ def main (args : List String) : IO UInt32 := do
   let mut disagree := 0
   let mut first : Option String := none
   let mut caught : List (Nat × List String) := mutants.map fun _ => (0, [])
+  let mut cacheCaught : List Nat := cacheMutants.map fun _ => 0
+  let mut requests := 0
+  let mut notFresh := 0
   -- `confirms_eq_yields`: on bound proofs, the check is `Proof.yields`.
   let mut confirmDisagree := 0
   -- How often `reorderChecked` refuses a pinned specification, so the check
@@ -153,23 +246,61 @@ def main (args : List String) : IO UInt32 := do
   let mut pinned := 0
   let mut fallback := 0
   for _ in [0:histories] do
-    let ((g, evs, rs), gen') := (do
+    let ((g, hs, rs, policy), gen') := (do
       -- One history in three has child specifications.
       let children ← chance 1 3
       let s ← if children then genChildSpec else genSpec
-      let g ← if children then genFeedGraph s 6 else genGraph s 6
-      let evs ← genHistory g
+      let g ← if children then genFeedGraph s 6 else genAcyclicGraph s 6
+      -- The rule's group: the first given, or half the time a predecessor of it.
+      let givenType := (s.given.head?.map (·.type)).getD ""
+      let roles := (g.filter (·.type == givenType)).flatMap fun f => f.predecessors.filterMap fun (r, id) =>
+        (g.factOf id).map fun t => ({ name := r, predecessorType := t.type } : Role)
+      let via ← if !roles.isEmpty && (← chance 1 2) then some <$> pick roles else pure none
+      let groupOf (f : Fact) : List FactId := match via with
+        | none => [f.id]
+        | some r => f.predecessors.filterMap fun (n, id) => if n == r.name then some id else none
+      let extra ← genMemberships g ((via.map (·.predecessorType)).getD givenType)
+      let memberUsers := extra.filterMap fun m => if m.type == "Member" then m.predecessors.lookup "user" else none
+      let memberGroups := extra.filterMap fun m => if m.type == "Member" then m.predecessors.lookup "group" else none
+      -- A few proofs, read again and again through the history: often by a
+      -- member, of a group with members, for a key the proof yields.
+      let mut pool := []
+      for _ in [0:4] do
+        let key ← below 8
+        let mut givens ← genGivens s g key
+        let admitted := (g.filter fun f => f.type == givenType && (groupOf f).any memberGroups.contains).map (·.id)
+        if !givens.isEmpty && !admitted.isEmpty && (← chance 2 3) then givens := givens.set 0 (← pick admitted)
+        let p : Proof := { spec := s, givens }
+        let yielded := (p.spec.descendants.flatMap fun d => (d.read g (d.bindGivens givens)).flatten).filterMap id
+        let key ← if !yielded.isEmpty && (← chance 2 3) then pick yielded else pure key
+        let user ← if !memberUsers.isEmpty && (← chance 2 3) then some <$> pick memberUsers else genUser
+        pool := (user, key, p) :: pool
+      let hs ← genHistory (← genOrder g extra) pool
       let mut rs := []
       for key in List.range 8 do
-        for user in [none, some 0, some 1, some 2, some 3] do
+        for user in none :: users.map some do
           rs := (user, key, { spec := s, givens := ← genGivens s g key : Proof }) :: rs
       -- Some proofs have an ill-formed child specification: one that declares
       -- its parent's unknowns again.
       if !s.matchList.isEmpty then
         let bad := { s with projection := .composite [.specification "again" s.matchList s.projection] }
         rs := (some 0, 0, { spec := bad, givens := ← genGivens bad g 0 : Proof }) :: rs
-      return (g, evs, rs) : Gen (Graph × List Event × List (Option User × FactId × Proof))).run gen
+      return (g, hs, rs, policyVia via) : Gen (Graph × List Request × List (Option User × FactId × Proof) × Policy)).run gen
     gen := gen'
+    let evs := hs.filterMap Request.event?
+    requests := requests + hs.length
+    let mut before := Replicator.empty
+    for e in evs do
+      if let .save B := e then
+        if !isFresh before.store B then notFresh := notFresh + 1
+      before := before.step policy e
+    unless cacheFamilyAgrees policy hs do
+      throw <| IO.userError "the cache mutant family differs from Cached.step"
+    unless (cacheViolations {} policy hs).isEmpty do
+      real := real + 1
+      if first.isNone then first := some s!"cached_read: {hs.length} requests"
+    cacheCaught := (cacheCaught.zip cacheMutants).map fun (n, (_, m)) =>
+      if (cacheViolations m policy hs).isEmpty then n else n + 1
     let r := Replicator.run policy evs
     if let some (_, _, p) := rs.getLast? then
       for d in p.spec.descendants do
@@ -199,15 +330,17 @@ def main (args : List String) : IO UInt32 := do
     caught := (caught.zip mutants).map fun ((n, by_), (_, mu)) =>
       let v := violations mu policy evs rs
       if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
-  IO.println s!"histories {histories}, objects stored {stored}, reads {reads}, served {served}"
+  IO.println s!"histories {histories}, requests {requests}, batches not fresh {notFresh}, objects stored {stored}, reads {reads}, served {served}"
   IO.println s!"real handlers: {real} histories break a statement; yields disagrees with readsOf on {disagree} reads, confirms with yields on {confirmDisagree} bound reads"
   IO.println s!"pinned specifications {pinned}, read in written order (reorderChecked refuses) {fallback}"
   for ((label, _), (n, by_)) in mutants.zip caught do
     IO.println s!"  mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
+  for ((label, _), n) in cacheMutants.zip cacheCaught do
+    IO.println s!"  cache mutant \"{label}\": caught on {n} of {histories} histories, by cached_read"
   if disagree > 0 || confirmDisagree > 0 then return 1
   match first with
   | some f => IO.println s!"\nFIRST FAILURE\n{f}"; return 1
   | none =>
     -- Each mutant must be caught by the statement its label names.
     let named := (caught.zip mutants).all fun ((_, by_), (label, _)) => by_.any (label.startsWith ·)
-    return if named then 0 else 1
+    return if named && cacheCaught.all (· > 0) then 0 else 1

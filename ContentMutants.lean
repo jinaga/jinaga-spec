@@ -128,3 +128,65 @@ def mutants : List (String × Mutant) := [
   ("SEC-5: answer a repeat upload before checking the writer", { repeatFirst := true })
 ]
 
+
+/-! ## Mutants of the cache
+
+One cached replicator, parameterized over how a save invalidates
+(`ContentCache.lean`). With no field changed, `cachedStepWith` is
+`Cached.step` and `candidatesWith` is `candidates`, which `check-content`
+confirms on every request. Each mutant is a way to invalidate too little. -/
+
+/-- A batch's candidates (`candidates`, `Reorder.lean`), parameterized over the
+inverses, whether a given arriving in the batch counts, and the graph each
+fact's inverses read. -/
+def candidatesWith (inv : Specification → List Specification) (arrival : Bool)
+    (graph : Graph → List Fact → Fact → Graph) (s : Specification) (env : Env) (g : Graph) (B : List Fact) :
+    List Row :=
+  let inverses := (inv s).map reorderOrSelf
+  B.flatMap fun f =>
+    let new := graph g B f
+    if arrival && s.given.any (env ·.name == some f.id) then s.read new env
+    else inverses.flatMap (·.evaluate new (pinEnv s env f))
+
+structure CacheMutant where
+  inverses : Specification → List Specification := JinagaSpec.inverses
+  /-- A given arriving in the batch makes every result a candidate. -/
+  arrival : Bool := true
+  /-- The graph a fact's inverses read: the store and the whole batch. -/
+  graph : Graph → List Fact → Fact → Graph := fun g B _ => g ++ B
+  /-- The rule proofs are checked, not only the reader's. -/
+  rules : Bool := true
+  /-- An entry the rules refused is invalidated too. -/
+  refused : Bool := true
+  /-- Any fact may invalidate, not only one of the content fact's type. -/
+  anyType : Bool := true
+  /-- A batch is stored only if it is fresh. -/
+  checkFresh : Bool := true
+
+def CacheMutant.mayChange (m : CacheMutant) (p : Proof) (g : Graph) (B : List Fact) (k : FactId) : Bool :=
+  p.spec.descendants.any fun d =>
+    (candidatesWith m.inverses m.arrival m.graph d (d.bindGivens p.givens) g B).any (·.contains (some k))
+
+def CacheMutant.invalidates (m : CacheMutant) (P : Policy) (g : Graph) (B : List Fact) (e : Entry) : Bool :=
+  (m.refused || e.admitted) &&
+    (m.anyType || B.any fun f => ((g ++ B).factOf e.key).any (·.type == f.type)) &&
+    (m.mayChange e.proof g B e.key ||
+      m.rules && (P.distribution e.proof.spec e.proof.givens).any (·.any (m.mayChange · g B e.user)))
+
+def cachedStepWith (m : CacheMutant) (P : Policy) (c : Cached) : Request → Cached
+  | .event (.save B) =>
+    if !m.checkFresh || isFresh c.replicator.store B then
+      { replicator := { c.replicator with store := c.replicator.store ++ B },
+        cache := c.cache.filter (!m.invalidates P c.replicator.store B ·) }
+    else c
+  | q => c.step P q
+
+def cacheMutants : List (String × CacheMutant) := [
+  ("cached_read: invalidate only on a fact of the content fact's type", { anyType := false }),
+  ("cached_read: ignore a given arriving in the batch", { arrival := false }),
+  ("cached_read: read each fact of a batch alone", { graph := fun g _ f => g ++ [f] }),
+  ("cached_read: never invalidate on a revocation", { inverses := inversesFor true }),
+  ("cached_read: keep the entries the rules refused", { refused := false }),
+  ("cached_read: invalidate on the reader's proof only, never the rules", { rules := false }),
+  ("cached_read: store a batch without checking it is fresh", { checkFresh := false })
+]
