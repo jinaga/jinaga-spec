@@ -21,11 +21,14 @@ Two endpoints change or read that index:
 What a fact's fields hold, how a writer is authorized and how distribution
 rules are evaluated are not modelled here: `Policy` takes each as a parameter,
 and the theorems (`Proofs/Content.lean`) hold for every policy. The fact store
-already models authorization rules (`Store.lean`); distribution rules have no
-model yet. A policy names, for a fact, its content hash (none if its type is not
-content-bearing, MD-1); for bytes, their hash; whether an object fits the
-declared constraints (MD-2); whether a user may create a fact; and whether the
-distribution rules let a user run a specification with given facts (RR-3).
+already models authorization rules (`Store.lean`). A policy names, for a fact,
+its content hash (none if its type is not content-bearing, MD-1); for bytes,
+their hash; whether an object fits the declared constraints (MD-2); whether a
+user may create a fact; and, for a specification and its givens, the
+distribution rules' own queries (RR-3), which `Policy.distributes` runs on the
+store with the same engine as every other proof. Because the rules are
+specifications, a save invalidates a cached decision exactly as it invalidates
+any other query (`ContentCache.lean`).
 
 Reactive authorization (RR-6), chunked uploads and the client are out of scope.
 
@@ -40,6 +43,11 @@ abbrev Hash := String
 /-- A user, by the id of their user fact. -/
 abbrev User := FactId
 
+/-- A reader's proof: a specification and the given facts it is run with. -/
+structure Proof where
+  spec : Specification
+  givens : List FactId
+
 /-- What the content store reads from the model and its rules. -/
 structure Policy where
   /-- The hash of an object's bytes, by the algorithm Jinaga uses for facts. -/
@@ -50,14 +58,13 @@ structure Policy where
   fits : Fact → Bytes → Bool
   /-- The authorization rules let the user create the fact, on this store. -/
   mayCreate : User → Graph → Fact → Bool
-  /-- The distribution rules let the user run the specification with these
-  givens, on this store. -/
-  distributes : User → Specification → List FactId → Graph → Bool
-
-/-- A reader's proof: a specification and the given facts it is run with. -/
-structure Proof where
-  spec : Specification
-  givens : List FactId
+  /-- The distribution rules for the specification with these givens, as the
+  feeds endpoint evaluates them (RR-3): one clause per feed of the
+  specification, each the rule queries that may authorize that feed. A rule
+  `share(feed).with(users)` is the proof that runs `users` from the feed's
+  givens. Which rule matches which feed is fixed by the model, not by the
+  store, so this reads no graph. -/
+  distribution : Specification → List FactId → List (List Proof)
 
 /-- Every given is bound, and the specification and each of its child
 specifications are well formed (RR-1). A proof that leaves a given unbound
@@ -116,6 +123,17 @@ def Proof.confirms (p : Proof) (g : Graph) (key : FactId) : Bool :=
   p.spec.descendants.any fun d =>
     let env := d.bindGivens p.givens
     d.given.all (g.has env) && d.projection.labels.any (d.bindsResult g env key)
+
+/-- The distribution rules let `u` run the specification with these givens on
+`g`: every clause (feed) has a bound rule proof whose results name `u`. A rule
+proof that is not bound counts for nothing.
+
+With no clauses this is `true`: the engine must not authorize a specification
+merely because it has no feeds to check. `distribution` must give a
+specification at least one clause, as the feeds endpoint gives every
+specification at least one feed. -/
+def Policy.distributes (P : Policy) (u : User) (s : Specification) (gs : List FactId) (g : Graph) : Bool :=
+  (P.distribution s gs).all fun clause => clause.any fun q => q.bound && q.yields g u
 
 /-- The distribution rules let `u` run the proof, and it yields `key`. -/
 def Policy.admits (P : Policy) (g : Graph) (u : User) (key : FactId) (p : Proof) : Bool :=
@@ -199,17 +217,23 @@ def Replicator.read (P : Policy) (r : Replicator) (user : Option User) (key : Fa
       | none => .notUploaded
       | some o => .ok o
 
-/-- What changes the replicator's state: a fact saved through the normal path,
-or an upload. A read changes nothing. A save appends any fact, unchecked: the
-fact store's own authorization is not modelled, so the theorems hold against
-every store. Facts are content-addressed, so a second fact with an id already
-stored would be the same fact; `factOf` finds the first. -/
+/-- The batch `B` is new to `g`: no fact of `g` has the id of a fact of `B`,
+or names one as a predecessor (`Fresh`, `Proofs/Fresh.lean`; `isFresh_iff`). -/
+def isFresh (g : Graph) (B : List Fact) : Bool :=
+  B.all fun b => g.all fun x => x.id != b.id && x.predecessors.all (·.2 != b.id)
+
+/-- What changes the replicator's state: a batch of facts saved through the
+normal path, or an upload. A read changes nothing. A batch is stored only if it
+is fresh, and otherwise ignored. A real replicator first drops the facts it
+already stores; when the store holds every predecessor of each fact it holds,
+what remains is fresh. The fact store's own authorization is not modelled, so
+the theorems hold against every store. -/
 inductive Event where
-  | save (f : Fact)
+  | save (B : List Fact)
   | write (user : Option User) (key : FactId) (o : Bytes)
 
 def Replicator.step (P : Policy) (r : Replicator) : Event → Replicator
-  | .save f => { r with store := r.store ++ [f] }
+  | .save B => if isFresh r.store B then { r with store := r.store ++ B } else r
   | .write u key o => (r.write P u key o).1
 
 /-- The state after a history of events, from an empty replicator. -/

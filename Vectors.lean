@@ -629,7 +629,7 @@ def userToJson : Option User → Json
 handlers `m` makes. -/
 def JinagaSpec.ContentCase.runWith (c : ContentCase) (m : Mutant) : List (Option Response) × Replicator :=
   c.steps.foldl (fun (out, r) step => match step with
-    | .event (.save f) => (out ++ [none], { r with store := r.store ++ [f] })
+    | .event (.save B) => (out ++ [none], stepWith m c.policy r (.save B))
     | .event (.write u k o) => let (r', resp) := writeWith m c.policy r u k o; (out ++ [some resp], r')
     | .read u k gs => (out ++ [some (readWith m c.policy r u k { spec := c.spec, givens := gs })], r))
     ([], .empty)
@@ -640,9 +640,9 @@ def contentVector (c : ContentCase) : Json := Id.run do
   let mut steps : Array Json := #[]
   for step in c.steps do
     match step with
-    | .event (.save f) =>
-      steps := steps.push (Json.mkObj [("save", factToJson f)])
-      r := r.step P (.save f)
+    | .event (.save B) =>
+      for f in B do steps := steps.push (Json.mkObj [("save", factToJson f)])
+      r := r.step P (.save B)
     | .event (.write u k o) =>
       let (r', resp) := r.write P u k o
       steps := steps.push (Json.mkObj [
@@ -682,7 +682,7 @@ def checkContentCases : IO Unit := do
     let mut oracle := []
     for step in c.steps do
       match step with
-      | .event (.save f) => oracle := oracle ++ [none]; r := r.step c.policy (.save f)
+      | .event (.save B) => oracle := oracle ++ [none]; r := r.step c.policy (.save B)
       | .event (.write u k o) => let (r', resp) := r.write c.policy u k o; oracle := oracle ++ [some resp]; r := r'
       | .read u k gs => oracle := oracle ++ [some (r.read c.policy u k { spec := c.spec, givens := gs })]
     unless real.1 == oracle do

@@ -22,7 +22,9 @@ model, rules and hash function:
 * the authorization rules let a user create exactly the facts `writers` pairs
   them with;
 * the distribution rules let a user run the specification with exactly the
-  givens `readers` pairs them with.
+  givens `readers` pairs them with: for those givens, one feed, authorized by
+  the rule proofs `(u: Jinaga.User) { } => u` run with each such reader `u`.
+  Each user's fact is saved first, so that the rule yields them.
 -/
 namespace JinagaSpec
 
@@ -85,12 +87,15 @@ structure ContentCase where
   /-- Labels of the mutants (`ContentMutants.lean`) this case must catch. -/
   catches : List String
 
+/-- A distribution rule that names one user: `(u: Jinaga.User) { } => u`. -/
+def theUser : Specification := spec [("u", "Jinaga.User")] [] (fact "u")
+
 def ContentCase.policy (c : ContentCase) : Policy where
   hash b := "#" ++ b
   contentHash f := (c.content.find? (·.1 == f.id)).map (·.2.1)
   fits f b := (c.content.find? (·.1 == f.id)).any (b.length ≤ ·.2.2)
   mayCreate u _ f := c.writers.contains (u, f.id)
-  distributes u _ gs _ := c.readers.contains (u, gs)
+  distribution _ gs := [(c.readers.filter (·.2 == gs)).map fun (u, _) => { spec := theUser, givens := [u] }]
 
 namespace ContentCases
 
@@ -115,7 +120,10 @@ def content : List (FactId × Hash × Nat) := [(10, "#plan", 100), (11, "#plan",
 def writers : List (User × FactId) := [(alice, 10), (alice, 12), (alice, 20), (mallory, 11)]
 def readers : List (User × List FactId) := [(alice, [1]), (alice, [3]), (mallory, [2])]
 
-def save (f : Fact) : ContentStep := .event (.save f)
+def save (f : Fact) : ContentStep := .event (.save [f])
+
+/-- The users' own facts, which the distribution rules name. -/
+def users : List ContentStep := [alice, mallory, eve].map fun u => save { id := u, type := "Jinaga.User", predecessors := [] }
 def write (u : Option User) (key : FactId) (o : Bytes) : ContentStep := .event (.write u key o)
 
 /-- Alice's plan saved and uploaded. -/
@@ -123,7 +131,7 @@ def planStored : List ContentStep := [save groupA, save plan, write alice 10 "pl
 
 def make (name description source : String) (steps : List ContentStep) (catches : List String := [])
     (spec : Specification := documentsInGroup) (moreReaders : List (User × List FactId) := []) : ContentCase :=
-  { name, description, source, content, writers, readers := readers ++ moreReaders, spec, steps, catches }
+  { name, description, source, content, writers, readers := readers ++ moreReaders, spec, steps := users ++ steps, catches }
 
 end ContentCases
 

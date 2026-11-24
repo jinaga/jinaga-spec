@@ -67,7 +67,7 @@ def writeWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (k
           | none => ({ r with objects := (key, o) :: r.objects }, .stored)
 
 def stepWith (m : Mutant) (P : Policy) (r : Replicator) : Event → Replicator
-  | .save f => { r with store := r.store ++ [f] }
+  | .save B => if isFresh r.store B then { r with store := r.store ++ B } else r
   | .write u key o => (writeWith m P r u key o).1
 
 /-- The spoof: any object stored under a key whose fact has the same content

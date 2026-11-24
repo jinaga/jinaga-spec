@@ -1,6 +1,9 @@
 {"text": "(g: Group) {\n} => g\n",
  "steps":
- [{"save": {"type": "Group", "predecessors": [], "id": 1}},
+ [{"save": {"type": "Jinaga.User", "predecessors": [], "id": 100}},
+  {"save": {"type": "Jinaga.User", "predecessors": [], "id": 101}},
+  {"save": {"type": "Jinaga.User", "predecessors": [], "id": 102}},
+  {"save": {"type": "Group", "predecessors": [], "id": 1}},
   {"save":
    {"type": "Document",
     "predecessors": [{"role": "group", "id": 1}],

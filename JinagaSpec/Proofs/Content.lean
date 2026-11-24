@@ -67,7 +67,7 @@ theorem Replicator.store_grows (P : Policy) (evs : List Event) (r : Replicator) 
     obtain ⟨g, hg⟩ := ih (r.step P e)
     simp only [List.foldl, hg]
     cases e with
-    | save f => exact ⟨f :: g, by simp [step]⟩
+    | save B => by_cases h : isFresh r.store B <;> simp [step, h] <;> exact ⟨_, rfl⟩
     | write u k o => exact ⟨g, by simp [step, write_store]⟩
 
 /-- An object in the state after an event was there before, or that event is
@@ -77,7 +77,7 @@ theorem Replicator.mem_step {P : Policy} {r : Replicator} {e : Event}
     (k, o) ∈ r.objects ∨ ∃ u f, e = .write (some u) k o ∧ r.store.factOf k = some f ∧
       P.mayCreate u r.store f = true ∧ P.contentHash f = some (P.hash o) := by
   cases e with
-  | save f => exact .inl h
+  | save B => simp only [step] at h; split at h <;> exact .inl h
   | write user key o' =>
     rcases user with _ | u
     · exact .inl h

@@ -361,7 +361,11 @@ hash function:
 - the authorization rules let a user create exactly the facts `writers` pairs
   them with, on any store;
 - the distribution rules let a user run the specification with exactly the
-  givens `readers` pairs them with.
+  givens `readers` pairs them with. In the Lean model
+  (`ContentCase.policy`) that is one feed, authorized by the rule
+  `(u: Jinaga.User) { } => u` run with each such reader, so each history first
+  saves the users' own facts (type `Jinaga.User`), which that rule needs to
+  yield them.
 
 Each read carries `yields`: whether running the specification with its givens
 on the store at that step yields the key (`Proof.yields`). The store computes

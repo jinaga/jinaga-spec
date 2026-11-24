@@ -30,7 +30,8 @@ def policy : Policy where
   contentHash f := if f.id % 4 == 3 then none else some (toString (f.id % 3))
   fits _ b := b.length ≤ 4
   mayCreate u g f := (u * 7 + f.id * 3 + g.length) % 3 != 0
-  distributes u _ gs _ := (u + gs.foldl (· + ·) 0) % 3 != 0
+  -- One feed, authorized when the proof's own specification yields the user.
+  distribution s gs := [[{ spec := s, givens := gs }]]
 
 /-- Which statements a history and its reads break, by name. -/
 def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Option User × FactId × Proof)) :
@@ -74,7 +75,7 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
     -- confirms_eq_yields: for a bound proof, the handler's check that the proof
     -- yields the key is `Proof.yields`, seen with distribution rules that admit everyone.
     if let some u := user then
-      let all := { P with distributes := fun _ _ _ _ => true }
+      let all := { P with distribution := fun _ _ => [] }
       if p.bound && m.admits all r.store u key p != p.yields r.store key then
         out := "confirms_eq_yields" :: out
     -- read_admitted: an admitted reader with a bound proof is served, or told nothing is stored.
@@ -129,7 +130,7 @@ def genHistory (g : Graph) : Gen (List Event) := do
   for f in g do
     for _ in [0:(← below 3)] do
       evs := evs ++ [← genUpload]
-    evs := evs ++ [.save f]
+    evs := evs ++ [.save [f]]
   for _ in [0:(← below 4)] do
     evs := evs ++ [← genUpload]
   return evs

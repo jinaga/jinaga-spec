@@ -1,7 +1,10 @@
 {"text":
  "(g: Group) {\n    d: Document [\n        d->group: Group = g\n    ]\n} => d\n",
  "steps":
- [{"save": {"type": "Group", "predecessors": [], "id": 1}},
+ [{"save": {"type": "Jinaga.User", "predecessors": [], "id": 100}},
+  {"save": {"type": "Jinaga.User", "predecessors": [], "id": 101}},
+  {"save": {"type": "Jinaga.User", "predecessors": [], "id": 102}},
+  {"save": {"type": "Group", "predecessors": [], "id": 1}},
   {"write": {"user": 100, "key": 10, "bytes": "plan"},
    "expected": {"status": 404, "code": "fact_missing"}},
   {"save":
