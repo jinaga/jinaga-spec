@@ -26,9 +26,12 @@ SEC-5 hold of `read` on every state.
   rules do not admit, or a writer they refuse, the answer does not depend on
   which objects are stored.
 
-`yields_iff` says what `Proof.yields` means: a solution of the matches,
-then of a child specification's matches from it, and so on down, names the
-fact (`Projection.Names`), which is what RR-4 and CR-1 ask.
+`yields_iff_reads` says what `Proof.yields` means: some result a replica
+reads (`Specification.Reads`, child specifications included) names the fact
+at some depth (`Result.Names`), which is what RR-4 and CR-1 ask. The step on
+the way is `yields_iff`: a solution of the matches, then of a child
+specification's matches from it, and so on down, names the fact
+(`Projection.Names`), which `Projection.names_iff_reads` proves is the same.
 
 SEC-1 to SEC-5 only say when the replicator may serve or store. The success
 path is `read_admitted` and `write_accepted`: an admitted reader is served, or
@@ -210,4 +213,63 @@ theorem yields_iff (p : Proof) (g : Graph) (key : FactId) :
     exact ⟨hg, a, b, hab, σ, hσ, by simpa using hk⟩
   · rintro ⟨hg, a, b, hab, σ, hσ, l, hl, hk⟩
     exact ⟨a, b, hab, _, ⟨hg, σ, hσ, rfl⟩, List.mem_map.2 ⟨l, hl, hk⟩⟩
+
+/-! ## Yields, against the nested reading `Reads` -/
+
+/-- The result names `key` at some depth: its row holds it, or a result of one
+of its child specifications names it. -/
+def Result.Names (key : FactId) : Result → Prop
+  | .mk row cs => some key ∈ row ∨ ∃ rs, ∃ _ : rs ∈ cs, ∃ r, ∃ _ : r ∈ rs, r.Names key
+termination_by r => sizeOf r
+decreasing_by
+  have h1 := List.sizeOf_lt_of_mem ‹rs ∈ cs›
+  have h2 := List.sizeOf_lt_of_mem ‹r ∈ rs›
+  simp only [Result.mk.sizeOf_spec]; omega
+
+/-- A solution that names `key` reads a result naming it. -/
+theorem Projection.names_resultsAt (g : Graph) (key : FactId) : ∀ (p : Projection) (σ : Env),
+    (some key ∈ p.labels.map σ ∨ ∃ c, ∃ _ : c ∈ p.children, c.2.Names g key c.1 σ) →
+      (p.resultsAt g σ).Names key
+  | p, σ, h => by
+    rw [Projection.resultsAt, Result.Names]
+    rcases h with h | ⟨c, hc, hn⟩
+    · exact .inl h
+    · rw [Projection.Names] at hn
+      obtain ⟨τ, hτ, hn⟩ := hn
+      exact .inr ⟨_, List.mem_map_of_mem (List.mem_attach _ ⟨c, hc⟩), _, List.mem_map_of_mem hτ,
+        names_resultsAt g key c.2 τ hn⟩
+termination_by p => sizeOf p
+decreasing_by exact Projection.sizeOf_children hc
+
+/-- A result read from a solution names `key` only if the solution does. -/
+theorem Projection.names_of_readsAt (g : Graph) (key : FactId) : ∀ (p : Projection) (σ : Env) (r : Result),
+    p.ReadsAt g σ r → r.Names key →
+      some key ∈ p.labels.map σ ∨ ∃ c, ∃ _ : c ∈ p.children, c.2.Names g key c.1 σ
+  | p, σ, .mk row cs, hr, hn => by
+    rw [readsAt_index] at hr; obtain ⟨rfl, hlen, hch⟩ := hr
+    rw [Result.Names] at hn
+    rcases hn with h | ⟨rs, hrs, r, hr, hn⟩
+    · exact .inl h
+    · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hrs
+      have hi' : i < p.children.length := hlen ▸ hi
+      obtain ⟨τ, hτ, hra⟩ := (hch i hi' hi).1 r hr
+      exact .inr ⟨_, List.getElem_mem hi', by
+        rw [Projection.Names]; exact ⟨τ, hτ, names_of_readsAt g key _ τ r hra hn⟩⟩
+termination_by p => sizeOf p
+decreasing_by exact Projection.sizeOf_children (List.getElem_mem hi')
+
+/-- The nested reading of `Names` is `Reads`: some result read names `key`. -/
+theorem Projection.names_iff_reads (g : Graph) (key : FactId) (p : Projection) (ms : List Match) (env : Env) :
+    p.Names g key ms env ↔ ∃ r, p.Reads g ms env r ∧ r.Names key := by
+  rw [Projection.Names]
+  exact ⟨fun ⟨σ, hσ, h⟩ => ⟨_, ⟨σ, hσ, readsAt_resultsAt g p σ⟩, names_resultsAt g key p σ h⟩,
+    fun ⟨r, ⟨σ, hσ, hr⟩, hn⟩ => ⟨σ, hσ, names_of_readsAt g key p σ r hr hn⟩⟩
+
+/-- **A proof yields a fact exactly when some result a replica reads names it**,
+at any depth of child specifications (RR-4, CR-1). -/
+theorem yields_iff_reads (p : Proof) (g : Graph) (key : FactId) :
+    p.yields g key = true ↔ ∃ r, p.spec.Reads g (p.spec.bindGivens p.givens) r ∧ r.Names key := by
+  rw [yields_iff, Projection.names_iff_reads]
+  exact ⟨fun ⟨hg, r, hr, hn⟩ => ⟨r, ⟨hg, hr⟩, hn⟩, fun ⟨r, ⟨hg, hr⟩, hn⟩ => ⟨hg, r, hr, hn⟩⟩
+
 end JinagaSpec
