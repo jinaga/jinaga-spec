@@ -298,7 +298,8 @@ def feedReady (s : Specification) : Bool :=
 
 Checks a port might write in place of `isConnectedDeep`, each wrong in one way
 (`mutant-first-statement`). They are one check, `connectedWith`, parameterized
-over which of `ConnectedDescendants`'s clauses it keeps and what it asks of
+over which of `ConnectedDescendants`'s clauses it keeps, whether it adds the
+rule jinaga-spec#60 dropped, and what it asks of
 each feed, and `connectedWith {}` is checked to be `isConnectedDeep`. -/
 
 /-- Which clauses of `ConnectedDescendants` a check keeps, and what it asks of
@@ -306,8 +307,9 @@ each feed. -/
 structure ConnectedMutant where
   /-- Each descendant, as a feed, is connected. -/
   descendants : Bool := true
-  /-- Every given is used by some descendant. -/
-  coverage : Bool := true
+  /-- Also refuse a given no descendant uses: jinaga-spec#45's rule, which
+  jinaga/jinaga-spec#60 dropped. -/
+  coverage : Bool := false
   /-- What every feed `buildFeeds` emits passes. -/
   feed : Specification → Bool := isJoined
   /-- Only `isConnected` of the specification, as the inverse checks it. -/
@@ -330,15 +332,15 @@ filtered feed only its filter joins, since `isConnected` counts the labels a
 filter names as joined to its match. The fourth accepts a filter that is
 joined to its feed only inside a negative condition of its own
 (`negative-condition-joined-only-inside-its-own`). The fifth accepts two chains
-of predecessors with no feed, which `isConnected` refuses. The last accepts an
-unused given (jinaga/jinaga-spec#45). -/
+of predecessors with no feed, which `isConnected` refuses. The last refuses an
+unused given, which jinaga/jinaga-spec#60 allows. -/
 def connectedMutants : List (String × ConnectedMutant) := [
-  ("isConnected alone, the rule of jinaga/jinaga.js#436", { topLevel := true }),
+  ("isConnected alone, as the inverse checks it", { topLevel := true }),
   ("descendants only, no feed checked", { feed := fun _ => true }),
   ("feeds by isConnected, which a filter joins", { feed := isConnected }),
   ("feeds by their path conditions only", { feed := pathsJoin }),
   ("feeds only, no descendant checked", { descendants := false }),
-  ("no given coverage", { coverage := false })]
+  ("every given used, the rule of jinaga/jinaga-spec#45", { coverage := true })]
 
 /-- The facts `ids` name, and all their predecessors. -/
 def closure (g : Graph) (ids : List FactId) : List FactId := Id.run do

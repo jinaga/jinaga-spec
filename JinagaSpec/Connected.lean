@@ -16,12 +16,15 @@ file defines the check.
 `ConnectedDescendants s` holds when
 
 1. each descendant, taken as a feed (its matches with the givens they use),
-   passes `isConnected`;
-2. every given is used by some descendant; and
-3. every feed `buildFeeds` emits is joined (`isJoined`): its path conditions
+   passes `isConnected`; and
+2. every feed `buildFeeds` emits is joined (`isJoined`): its path conditions
    alone join its matches and the givens it uses, and it passes `isConnected`.
 
-Clause 3 is the one (A) of jinaga-spec#55 needs, and it says no feed is a
+A given no descendant uses is allowed (jinaga/jinaga-spec#60): no feed takes
+it, and no match reads it. An earlier clause
+refused it (jinaga-spec#45's rule, refusal policy no theorem needed).
+
+Clause 2 is the one (A) of jinaga-spec#55 needs, and it says no feed is a
 product: a feed's matches are joined by its path conditions, not by a negative
 condition. An excluding feed holds a condition's matches as matches, joined to
 the rest by their own path conditions. A filtered feed holds the condition as
@@ -37,14 +40,12 @@ over the prefixes where `buildFeeds` cuts, because those prefixes are exactly
 the feeds; restating the cuts as a second walk would copy `levelFeeds` and
 `negFeeds`.
 
-Clauses 1 and 2 are refusal policy. No theorem here needs clause 2, which is
-jinaga-spec#45's rule and matches jinaga.js, or clause 1 at a child
-specification; clause 1 at the specification itself makes the check at least
-as strict as `isConnected` when the top-level matches use every given
+Clause 1 is refusal policy. No theorem here needs it at a child
+specification; at the specification itself it is exactly `isConnected`
 (`isConnected_asFeed`).
 
 `isConnected` is the check `invertSpecification` runs (`Inverse.lean`). It
-reads only a specification's givens and its top-level matches.
+reads only a specification's top-level matches and the givens they use.
 -/
 namespace JinagaSpec
 
@@ -55,17 +56,15 @@ it. -/
 def isJoined (f : Specification) : Bool :=
   isConnected f && isConnected (asFeed f.given (f.matchList.map Match.paths))
 
-/-- Every descendant is connected over the givens it uses, every given is used
-by some descendant, and every feed is joined. -/
+/-- Every descendant is connected over the givens it uses, and every feed is
+joined. -/
 def ConnectedDescendants (s : Specification) : Prop :=
   (∀ d ∈ s.descendants, isConnected (asFeed d.given d.matchList) = true) ∧
-  (∀ l ∈ s.given, ∃ d ∈ s.descendants, l ∈ usedGivens d.given d.matchList) ∧
   ∀ f ∈ buildFeeds s, isJoined f = true
 
 /-- The check that decides `ConnectedDescendants` (`isConnectedDeep_iff`). -/
 def isConnectedDeep (s : Specification) : Bool :=
   s.descendants.all (fun d => isConnected (asFeed d.given d.matchList)) &&
-  s.given.all (fun l => s.descendants.any fun d => (usedGivens d.given d.matchList).contains l) &&
   (buildFeeds s).all isJoined
 
 end JinagaSpec

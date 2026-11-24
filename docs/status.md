@@ -17,6 +17,9 @@ last checked; check the issue before acting on one.
 - **The fact_id commit-order problem is jinaga-server#203 and #207.** Don't
   file it again.
 - **Proof simplicity** is in `CLAUDE.md`.
+- **Unused givens are allowed** (jinaga-spec#60, decided 2026-11-23). A given
+  no match uses causes no refusal: not in `isConnectedDeep`, `isConnected` or
+  `invertSpecification`.
 - **A disconnected feed is refused, not reordered** (jinaga-spec#55, option
   (A)). `buildFeeds` keeps written order, and `feed-builder.ts` refuses a
   specification `isConnectedDeep` refuses. Reordering cannot connect, cover,
@@ -24,17 +27,16 @@ last checked; check the issue before acting on one.
 
 ## Open work (checked 2026-11-22)
 
-- jinaga-spec#45: resolved on the branch for jinaga-spec#55 (2026-11-23). The random feed vectors
-  are filtered for `isConnectedDeep` (`Connected.lean`), so `random-2` (an
-  unused given) and `random-children-1` (a product, P's shape) are no longer
-  generated. `isConnectedDeep_iff` proves the check decides
-  `ConnectedDescendants`, whose feed clause asks that each feed be joined
-  (`isJoined`): connected, and joined by its path conditions alone, not by a
-  negative condition's filter. `isConnected_asFeed` makes the descendant clause,
-  at the specification itself, at least as strict as `isConnected` when its
-  top-level matches use every given; without that hypothesis it is not
-  (`child-uses-a-given`). The other clauses are refusal policy, with no theorem
-  behind them (`docs/findings.md`).
+- jinaga-spec#45: superseded by jinaga-spec#60 (2026-11-24). Unused givens
+  are allowed: `ConnectedDescendants` (`Connected.lean`) no longer asks that
+  every given be used, and `isConnected` counts only the givens the matches
+  use. The random feed vectors are filtered for `isConnectedDeep`, so
+  `random-children-1` (a product, P's shape) is still not generated, but
+  `random-2` (an unused given) is again. `isConnectedDeep_iff` proves the
+  check decides `ConnectedDescendants`, whose feed clause asks that each feed
+  be joined (`isJoined`). `isConnected_asFeed`, with no hypothesis now, makes
+  the descendant clause at the specification itself exactly `isConnected`.
+  jinaga.js still refuses an unused given (`docs/findings.md`).
 - jinaga-spec#18: the given-conditions label rule's wording in
   `vectors/README.md` and `GivenConditions.lean`, and a regression check; the
   code was fixed in `287ef39`.

@@ -98,9 +98,14 @@ const jinagaWellFormedMisses = new Set<string>();
 // jinaga.js refuses a disconnected specification by throwing from
 // detectDisconnectedSpecification, which its parser and buildFeeds call
 // (jinaga/jinaga.js#436, #437). It is held to `connected` on every well-formed
-// vector, as the reference's buildFeeds is. None is excused: a jinaga.js that
-// accepts a vector the check refuses is one whose buildFeeds can emit a product
-// feed, so moving jinaga.js's pin past this commit requires the port.
+// vector, as the reference's buildFeeds is. A jinaga.js that accepts a vector
+// the check refuses is one whose buildFeeds can emit a product feed, so that
+// is never excused. The one known difference is the other way:
+// detectDisconnectedSpecification counts every given, so it refuses a given no
+// match uses, which jinaga/jinaga-spec#60 allows. Those vectors, and only
+// those, are reported rather than failed until jinaga.js follows (pending its
+// port of jinaga/jinaga.js#436 and #437).
+const jinagaRefusesUnusedGiven = new Set<string>(["unused-given", "no-matches-two-givens"]);
 const jinagaConnects = (specification: any): boolean => {
     try { detectDisconnectedSpecification(structuredClone(specification)); return true; }
     catch { return false; }
@@ -111,7 +116,16 @@ for (const file of wellFormedFiles) {
     const wrong = checkers.filter(([, check]) => check(vector.specification) !== vector.expected.wellFormed).map(([name]) => name);
     // The connectivity check `buildFeeds` needs (`isConnectedDeep`).
     if (isConnectedDeep(vector.specification) !== vector.expected.connected) wrong.push("reference isConnectedDeep");
-    if (vector.expected.wellFormed && jinagaConnects(vector.specification) !== vector.expected.connected) wrong.push("jinaga.js detectDisconnectedSpecification");
+    const connects = vector.expected.wellFormed ? jinagaConnects(vector.specification) : vector.expected.connected;
+    if (connects !== vector.expected.connected) {
+        if (jinagaRefusesUnusedGiven.has(vector.name) && !connects) {
+            console.log(`  known ${vector.name}: jinaga.js's detectDisconnectedSpecification refuses an unused given (jinaga/jinaga-spec#60)`);
+        } else {
+            wrong.push("jinaga.js detectDisconnectedSpecification");
+        }
+    } else if (jinagaRefusesUnusedGiven.has(vector.name) && vector.expected.wellFormed) {
+        console.log(`  note  ${vector.name}: jinaga.js now accepts it; remove it from jinagaRefusesUnusedGiven`);
+    }
     // The port's buildFeeds refuses a well-formed specification exactly when
     // it is not connected (jinaga/jinaga-spec#55).
     if (vector.expected.wellFormed && refusesAsDisconnected(vector.specification) === vector.expected.connected) wrong.push("reference buildFeeds");

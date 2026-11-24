@@ -19,7 +19,10 @@ The same command holds each well-formedness vector to its `expected` envelope:
 `expected.wellFormed` against the reference and jinaga.js's `wellFormedErrors`,
 and `expected.connected` against the reference's `isConnectedDeep` and, on a
 well-formed vector, jinaga.js's `detectDisconnectedSpecification`. jinaga.js
-connects a vector when that call does not throw.
+connects a vector when that call does not throw. The runner names, in `jinagaRefusesUnusedGiven`, the
+vectors jinaga.js is known to refuse because a given is unused
+(`unused-given`, `no-matches-two-givens`; jinaga/jinaga-spec#60): they are
+reported, not failed, until jinaga.js follows.
 
 ## Cascade vectors
 
@@ -49,7 +52,9 @@ reference implementation, and must pass all three. It refuses a specification
 that `well-formed.ts`'s `isConnectedDeep` refuses, and `npm run vectors` holds
 that check to each well-formedness vector's `expected.connected`. Against jinaga.js's own
 `buildFeeds`, a replica of its feeds must read the vector's results, except on
-the vectors the runner names in `jinagaMisses` (none at present). Its feeds
+the vectors the runner names in `jinagaMisses`: only `random-2`, whose given
+`p2` no match uses, which jinaga/jinaga-spec#60 allows and jinaga.js's
+`buildFeeds` may refuse. A `buildFeeds` that throws covers nothing. Its feeds
 differ from the vector's, so the other two are reported.
 
 ## Content vectors

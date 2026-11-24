@@ -22,10 +22,10 @@ specifications and graphs, the requirements of chapter 12:
   facts about it included.
 
 * **connected** — each mutant of `isConnectedDeep` (`connectedMutants`,
-  `CheckGen.lean`) accepts, on some specification, the named ones included, a
-  feed that is a product, a feed `isConnected` refuses, a specification whose
-  top-level matches use every given and that `isConnected` refuses
-  (`isConnected_asFeed`), or an unused given (`connectedBreaks`).
+  `CheckGen.lean`), on some specification, the named ones included, accepts a
+  feed that is a product, a feed `isConnected` refuses, or a specification
+  `isConnected` refuses (`isConnected_asFeed`), or refuses an unused given that
+  jinaga/jinaga-spec#60 allows (`connectedBreaks`).
 
 A third of the specifications have child specifications, two deep at most
 (`genChildSpec`).
@@ -362,19 +362,21 @@ def caughtOn (mu : Mutant) (s : Specification) (G : Graph) (env : Env) (B : List
     (buildFeedsWith mu s).any (fun f => !antitoneHolds f G B env) ||
     deferViolations s G env (buildFeedsWith mu s) > 0
 
-/-- What a connectivity check accepts on `s` that it should not: a feed that
-is a product, one its path conditions do not join (`pathsJoin`); a feed
-`isConnected` refuses; a specification whose top-level matches use every
-given and that `isConnected` refuses; or an unused given. The first, second
-and fourth are clauses of `ConnectedDescendants` itself, so `isConnectedDeep`
-accepts none of them by definition, and a zero there tests only that
-`connectedWith {}` agrees with it. The third is `isConnected_asFeed`. What the
-counts show is that each mutant is caught. -/
+/-- What a connectivity check gets wrong on `s`: it accepts a feed that is a
+product, one its path conditions do not join (`pathsJoin`); it accepts a feed
+`isConnected` refuses; it accepts a specification `isConnected` refuses; or it
+refuses an unused given on a specification that is otherwise connected
+(jinaga/jinaga-spec#60). The first two are clauses of `ConnectedDescendants`
+itself, so `isConnectedDeep` breaks neither by definition, and a zero there
+tests only that `connectedWith {}` agrees with it. The third is
+`isConnected_asFeed`, and the fourth says `ConnectedDescendants` has no
+clause about unused givens. What the counts show is that each mutant is
+caught. -/
 def connectedBreaks (check : Specification → Bool) (s : Specification) : List Bool :=
   [check s && (buildFeeds s).any (!pathsJoin ·),
    check s && (buildFeeds s).any (!isConnected ·),
-   check s && usedGivens s.given s.matchList == s.given && !isConnected s,
-   check s && !connectedWith { descendants := false, feed := fun _ => true } s]
+   check s && !isConnected s,
+   !check s && connectedWith {} s && !connectedWith { coverage := true } s]
 
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
@@ -468,10 +470,10 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"deferral: {t.defer} wrong"
   for ((label, _), n) in mutants.zip caught do
     IO.println s!"  mutant \"{label}\": caught on {n} of {t.specs + feedCases.length} specifications"
-  let fmt (ns : List Nat) := s!"a product feed on {ns[0]!}, a feed isConnected refuses on {ns[1]!}, refused by isConnected on {ns[2]!}, an unused given on {ns[3]!}"
-  IO.println s!"connected: isConnectedDeep refuses {refused} of {t.specs} random specifications; on those and the named ones, it accepts {fmt breaks[0]!}"
+  let fmt (ns : List Nat) := s!"accepts a product feed on {ns[0]!}, a feed isConnected refuses on {ns[1]!}, a specification isConnected refuses on {ns[2]!}; refuses an unused given on {ns[3]!}"
+  IO.println s!"connected: isConnectedDeep refuses {refused} of {t.specs} random specifications; on those and the named ones, it {fmt breaks[0]!}"
   for ((label, _), ns) in connectedMutants.zip breaks.tail do
-    IO.println s!"  connectivity mutant \"{label}\": caught, accepting {fmt ns}"
+    IO.println s!"  connectivity mutant \"{label}\": caught, it {fmt ns}"
   let checkOk := breaks[0]!.all (· == 0) && breaks.tail.all (·.any (· > 0))
   unless checkOk do
     IO.println "the connectivity check breaks a statement, or a mutant of it is caught on none"

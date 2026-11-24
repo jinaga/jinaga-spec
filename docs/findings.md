@@ -1419,13 +1419,16 @@ and `feeds_defer` hold as they are, with no new hypothesis.
 (`isConnectedDeep_iff`), holds when:
 
 1. each descendant, as a feed (its matches, with the givens they use), passes
-   `isConnected`;
-2. every given is used by some descendant; and
-3. every feed `buildFeeds` emits is joined (`isJoined`): its path conditions
+   `isConnected`; and
+2. every feed `buildFeeds` emits is joined (`isJoined`): its path conditions
    alone, its negative conditions' filters dropped (`Match.paths`), join its
    matches and the givens they use, and it passes `isConnected`.
 
-Clause 3 is what says no feed is a product. It is stated over the emitted
+(As #55 first landed, a clause between these asked that every given be used
+by some descendant, jinaga-spec#45's rule. jinaga-spec#60 dropped it; see
+below.)
+
+Clause 2 is what says no feed is a product. It is stated over the emitted
 feeds, not over the prefixes where `buildFeeds` cuts, because those prefixes
 are the feeds. An excluding feed is the written prefix followed by the
 condition's matches, which hold only path conditions, so they are joined to
@@ -1454,78 +1457,74 @@ Two choices in `isJoined` are forced by vectors:
 
 | theorem | statement | hypotheses | reads |
 |---|---|---|---|
-| `isConnectedDeep_iff` | the check decides `ConnectedDescendants` | none | all three clauses |
-| `isConnected_asFeed` | `isConnected (asFeed s.given s.matchList) = isConnected s` | the top-level matches use every given | that hypothesis |
+| `isConnectedDeep_iff` | the check decides `ConnectedDescendants` | none | both clauses |
+| `isConnected_asFeed` | `isConnected (asFeed s.given s.matchList) = isConnected s` | none | nothing beyond the definitions |
 
-So clause 1, at the specification itself, makes the check at least as strict
-as `isConnected` on a specification whose top-level matches use every given.
-Nothing else is proved about the check, and the rest is refusal policy:
+So clause 1, at the specification itself, is exactly `isConnected`, and
+`ConnectedDescendants s → isConnected s` holds. Nothing else is proved about
+the check, and the rest is refusal policy:
 
-- **Clause 3 is a definition.** `isJoined` is what "not a product" means here,
+- **Clause 2 is a definition.** `isJoined` is what "not a product" means here,
   and no theorem derives it from anything else. An earlier
   `buildFeeds_connected` concluded, from all of `ConnectedDescendants`, that
   every feed passes `isConnected`, with the feed's givens
-  `usedGivens s.given f.matchList`. It read only clause 3, which stated it,
+  `usedGivens s.given f.matchList`. It read only this clause, which stated it,
   and the second conjunct held by `rfl` for every specification, so it was
-  dropped. "Every feed passes `isConnected`" is now half of clause 3.
+  dropped. "Every feed passes `isConnected`" is now half of clause 2.
 - **Clause 1 at a child specification** has no theorem behind it. It refuses P
-  (`child-joins-two-chains-only-in-a-grandchild`) through clause 3 too, and
+  (`child-joins-two-chains-only-in-a-grandchild`) through clause 2 too, and
   `two-chains-of-predecessors`, which has no feeds, only through clause 1 at
   the top level.
-- **Clause 2** is jinaga-spec#45's rule, and matches jinaga.js. No theorem
-  needs it: a feed takes only the givens it uses.
 
 The earlier `isConnected_of_connectedDescendants` assumed all of
 `ConnectedDescendants` and read only clause 1 at the specification itself; it
-is now `isConnected_asFeed`, with only the hypothesis it reads.
+is now `isConnected_asFeed`.
 
-**`ConnectedDescendants s → isConnected s` is false.** `child-uses-a-given`
-(chapter 12, Unused Givens) is the counterexample. Its post feed takes only the
-blog, its comment feed the blog and the user, and both are connected.
-`isConnected` reads only the top-level matches, where nothing uses the user,
-so it refuses. The strongest form that holds adds the hypothesis that the
-top-level matches use every given. So `isConnected` and the new check are
-incomparable. `isConnected` accepts N, J! and B, and refuses
-`child-uses-a-given`. Among specifications whose top-level matches use every
-given, the new check is strictly stricter, with N as the witness.
+The check is strictly stricter than `isConnected`: `isConnected` accepts N, J!
+and B, and the check refuses them. `child-uses-a-given` (chapter 12, Unused
+Givens), whose user only the comment feed uses, passes both. (Superseded:
+before jinaga-spec#60, `isConnected` counted every given and refused
+`child-uses-a-given`, so the two were incomparable, and `isConnected_asFeed`
+needed the hypothesis that the top-level matches use every given.)
 
 ### Mutants
 
 Each mutant of the check (`connectedMutants`, `CheckGen.lean`) is caught by a
 well-formedness vector, and on the random and named specifications of
-`check-feeds`, where `connectedBreaks` counts what each accepts that it should
-not:
+`check-feeds`, where `connectedBreaks` counts what each gets wrong:
 
-| mutant | accepts | caught on (seeds 1, 2) |
+| mutant | gets wrong | caught on (seeds 1, 2) |
 |---|---|---|
-| `isConnected` alone, the rule of jinaga/jinaga.js#436 | a product feed (N, J!, B) | 56, 67 |
-| descendants only, no feed checked (#55's first statement) | a product feed (N, J!, B) | 62, 78 |
-| feeds by `isConnected`, which a filter joins | a product feed (B) | 9, 12 |
-| feeds by their path conditions only | a feed `isConnected` refuses (`negative-condition-joined-only-inside-its-own`) | 1, 1 (the named vector only) |
-| feeds only, no descendant checked | a specification `isConnected` refuses (`two-chains-of-predecessors`, which has no feeds) | 2, 1 |
-| no given coverage | an unused given (`unused-given`, jinaga-spec#45) | 53, 51 |
+| `isConnected` alone, as the inverse checks it | accepts a product feed (N, J!, B) | 66, 79 |
+| descendants only, no feed checked (#55's first statement) | accepts a product feed (N, J!, B) | 62, 78 |
+| feeds by `isConnected`, which a filter joins | accepts a product feed (B) | 9, 12 |
+| feeds by their path conditions only | accepts a feed `isConnected` refuses (`negative-condition-joined-only-inside-its-own`) | 1, 1 (the named vector only) |
+| feeds only, no descendant checked | accepts a specification `isConnected` refuses (`two-chains-of-predecessors`, which has no feeds) | 2, 1 |
+| every given used, the rule of jinaga/jinaga-spec#45 | refuses an unused given (`unused-given`, jinaga-spec#60) | 55, 53 |
 
-The real check refuses 125 and 136 of 600 random specifications on the two seeds.
-It accepts none of the four on any of them, but three of the four are its own
-clauses, so that zero only checks that `connectedWith {}` and `connectedBreaks`
-agree with `isConnectedDeep`; the fourth is `isConnected_asFeed`. What the
-table shows is that each mutant is caught.
+The real check refuses 73 and 86 of 600 random specifications on the two
+seeds. It breaks none of the four statements on any of them, but two are its
+own clauses, the third is `isConnected_asFeed`, and the fourth says it has no
+clause about unused givens, so that zero only checks that `connectedWith {}`
+and `connectedBreaks` agree with `isConnectedDeep`. What the table shows is
+that each mutant is caught.
 
 The negative vectors are `child-joins-two-chains-only-in-a-grandchild` (P),
 `negative-condition-before-the-join` (J!),
 `negative-condition-joins-another-given` (N),
 `negative-condition-joins-two-chains` (B),
-`negative-condition-joined-only-inside-its-own`, `unused-given` and
+`negative-condition-joined-only-inside-its-own` and
 `two-chains-of-predecessors`. Every named feed vector passes the check and
 keeps its feeds, byte for byte, with `isJoined` in place of `isConnected`.
-`existential-joins-a-sibling-conditions-match`, which is not well formed, now
+`existential-joins-a-sibling-conditions-match`, which is not well formed,
 states `connected: false`: its second filter names `e1`, which is out of scope
 there, and with the filters dropped nothing joins it. Of the random feed
-vectors, `random-2` (an unused given) and `random-children-1` (P's shape) fail
-the check and are no longer generated. The later ones move up a number, with
-the same contents. One split vector, `given-only-an-existential-uses`, is N's
-shape. `isConnected` accepts it, and the new check refuses it. It stays, since
-the split does not assume the check.
+vectors, `random-children-1` (P's shape) fails the check and is no longer
+generated; the later ones move up a number, with the same contents.
+`random-2` (an unused given) was dropped too, and is generated again since
+jinaga-spec#60. One split vector, `given-only-an-existential-uses`, is N's
+shape. `isConnected` accepts it, and the check refuses it. It stays, since the
+split does not assume the check.
 
 ### jinaga.js
 
@@ -1535,6 +1534,90 @@ feed, `{ u: A [u->a = p2]  c: A [c->r = p1] }`, and its own
 rule jinaga/jinaga.js#436 puts in the parser, accepts N and J!. This session
 had no jinaga.js or jinaga-server checkout, so neither was confirmed with the
 `jinaga-conformance` runners, and no issue is drafted.
+
+## Unused givens are allowed (jinaga-spec#60)
+
+Decided 2026-11-23: a given no match uses must not cause refusal anywhere.
+This replaces jinaga-spec#45's rule, the former clause 2 of `ConnectedDescendants` above,
+which no theorem needed, and the part of `isConnected` that seeded every given
+into its reachability set. The shapes it admits are `(p1: R) { } => p1`,
+`(p1: R, p2: A) { } => p2` and `unused-given`,
+`(p1: R, p2: A) { u: A [u->r = p1] } => u`. None is a product: a feed takes
+only the givens its matches use (`asFeed`).
+
+- **`ConnectedDescendants`** has two clauses: each descendant, as a feed, passes
+  `isConnected`, and each feed is joined. `isConnectedDeep_iff` is restated for
+  them, with the same one-line proof.
+- **`isConnected`** (`Inverse.lean`) counts only the givens the matches use
+  (`usedGivens`, moved to `Syntax.lean` so that `Inverse.lean` can read it).
+  `isConnected_asFeed` loses its hypothesis that the top-level matches use
+  every given: `isConnected (asFeed s.given s.matchList) = isConnected s` for
+  every specification, since `usedGivens` is idempotent. So clause 1, at the
+  specification itself, is exactly `isConnected`, and `ConnectedDescendants s
+  → isConnected s` now holds; `child-uses-a-given` is no longer a
+  counterexample, because `isConnected` no longer counts the user.
+- **`invertSpecification`** gives an unused given no inverse. That inverse would
+  bind the given to the new fact `f` and keep only the solutions that agree
+  with the subscription's givens, so it reports a result only when `f` is that
+  given. No match reads the given, so no other fact can change a result
+  through it, and the given's own arrival changes what `read` returns
+  whatever the matches say: the self-inverse and `factCandidates`' full
+  re-read handle that. Nor could `shakeTree` build it: nothing joins the
+  given to the matches, so it throws `notConnected`. The self-inverse still
+  counts every given. This is a documented fact, not a theorem: nothing about
+  `invertSpecification` is proved (it is the port measured by `check-inverse`),
+  and the proved inverses (`inverses`, `candidates`) never consulted
+  `isConnected`, so no theorem changed. `Inverse.fire` now starts an unused
+  given, and only an unused one, from the subscription's binding, so a
+  projection that names it reads it. A used given still starts unbound, so an
+  inverse that fails to bind one still finds nothing and is still measured.
+
+What the checks show (seed 1 of `check-inverse`): 1341 specifications
+inverted and 176 refused, against 1144 and 373 before. The 197 newly accepted
+all have an unused given, since on a specification whose matches use every
+given both `isConnected` and `invertSpecification` are unchanged. Before
+`Inverse.fire` read the unused givens' bindings, 278 gained results were
+missed; the first projected the unused given `p2`, which no inverse binds.
+After, one is (the tallies are the same whether `fire` pre-binds every given
+or only the unused ones), and it is not about unused givens: the same
+specification with the unused given removed misses it too. It reuses the label
+`e2605` inside an existential condition and at the top level, the
+`findMatch` capture of jinaga/jinaga.js#343. The random inverse vectors are
+still filtered to specifications whose matches use every given, because
+jinaga.js's `invertSpecification` counts every given and refuses the rest; the
+named vectors `unused-given`, `no-matches` and `no-matches-two-givens` show
+the new shapes, and their candidates are what a store reads (the given's
+arrival is a full re-read).
+
+In `CheckGen.lean`, the mutant "no given coverage" becomes "every given used,
+the rule of jinaga/jinaga-spec#45", which refuses an unused given; the fourth
+of `connectedBreaks` counts a check refusing an otherwise connected
+specification with an unused given (caught on 55 and 53 of the random and
+named specifications on seeds 1 and 2). The real check refuses 73 and 86 of
+600 random specifications, against 125 and 136 before.
+
+Vectors: `well-formed/unused-given` now states `connected: true`, and
+`no-matches` and `no-matches-two-givens` are new, both connected.
+`path-joins-an-undefined-label` (not well formed) now states `connected: true`
+too: its only connectivity fault was its unused given `p1`. Every other
+well-formedness vector keeps its verdict. Of the feed vectors, the random
+seed now admits `(p1: R, p2: A) { u1: B [...] } => u1` with `p2` unused as
+`random-2` (it was `random-2` at `77aa47d`), and the former `random-2` moves
+to `random-3`.
+
+jinaga.js's `detectDisconnectedSpecification` (`UnionFind.ts`) and
+`invertSpecification` still seed every given, so they refuse these shapes.
+`run-vectors.ts` holds jinaga.js to `connected` on every well-formed vector
+and reports `unused-given` and `no-matches-two-givens`, named in
+`jinagaRefusesUnusedGiven`, as known rather than failing on them;
+`run-feed-vectors.ts` names the feed vector `random-2` in `jinagaMisses` and
+counts a `buildFeeds` that throws as covering nothing, since jinaga.js's may
+refuse it. Each is pending jinaga.js following (jinaga/jinaga.js#436, #437). `inverse-diff.ts`, which
+compares the port of `invertSpecification` with jinaga.js's line for line,
+counts a specification jinaga.js refuses as disconnected for an unused given
+instead of failing on it, since that difference is chosen. Not confirmed with the
+`jinaga-conformance` runners (no jinaga.js checkout in this session), and no
+issue is drafted.
 
 ## Content storage: SEC-1 to SEC-5
 

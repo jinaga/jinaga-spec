@@ -35,6 +35,11 @@ Differences from the TypeScript, each forced by the language rather than chosen:
   none. A child's labels are still counted where a label must be fresh or a
   given kept (`Projection.allLabels`). Deduplication, because results are
   compared as sets.
+
+One difference is chosen: a given the matches do not use is allowed
+(jinaga/jinaga-spec#60). `isConnected` does not count it and
+`invertSpecification` gives it no inverse, where the TypeScript refuses the
+specification as disconnected.
 -/
 namespace JinagaSpec
 
@@ -285,10 +290,13 @@ mutual
 end
 
 /-- Every label is joined to every other, through path conditions or through
-labels an existential condition names. -/
+labels an existential condition names. A given the matches do not use is not
+a label here, as it is not one of a feed's givens (`asFeed`): unused givens are
+allowed (jinaga/jinaga-spec#60). jinaga.js's `UnionFind.ts` counts every
+given, so it refuses one. -/
 def isConnected (s : Specification) : Bool :=
   let (labels, edges) := connectionsInMatches s.matchList
-  let labels := (s.given.map (·.name) ++ labels).eraseDups
+  let labels := ((usedGivens s.given s.matchList).map (·.name) ++ labels).eraseDups
   match labels with
   | [] => true
   | first :: _ =>
@@ -298,11 +306,23 @@ def isConnected (s : Specification) : Bool :=
     let reached := (List.range labels.length).foldl (fun r _ => step r) [first]
     labels.all reached.contains
 
-/-- Every inverse of a specification, or why it cannot be inverted. -/
+/-- Every inverse of a specification, or why it cannot be inverted.
+
+A given the matches do not use gets no inverse, where jinaga.js refuses the
+specification (jinaga/jinaga-spec#60). Its inverse would bind it to the new
+fact `f` and keep only the solutions that agree with the subscription's
+givens, so it reports a result only when `f` is that given itself. No match
+reads it, so nothing that arrives besides can change a result through it; and
+the given's own arrival is the self-inverse's, or a full re-read's
+(`factCandidates`). Nor could `shakeTree` build it: nothing joins it to the
+matches, so it would throw `notConnected`. The self-inverse still counts every
+given, since a given's arrival changes what `read` returns whether or not a
+match uses it. -/
 def invertSpecification (s : Specification) : Except InverseError (List Inverse) := do
   unless isConnected s do throw .disconnected
-  let ms := s.given.map (fun l => Match.mk l []) ++ s.matchList
-  let inverses ← invertLabels ms (s.given ++ s.matchList.map (·.unknown))
+  let given := usedGivens s.given s.matchList
+  let ms := given.map (fun l => Match.mk l []) ++ s.matchList
+  let inverses ← invertLabels ms (given ++ s.matchList.map (·.unknown))
   -- `createSelfInverse`: re-read the whole specification when its one given arrives.
   let selfInverse := match s.given with
     | [g0] => [{ given := .mk g0 [], matchList := s.matchList, operation := .add }]
@@ -314,10 +334,16 @@ def invertSpecification (s : Specification) : Except InverseError (List Inverse)
 /-- The results an inverse reports when `f` arrives in `g`, for a subscription
 whose givens are bound by `env`: run the inverse from `f`, keep the solutions
 that agree with the subscription's givens, and project them as the original
-specification does. -/
+specification does. The inverse binds every given the matches use, so only a
+given they do not use starts from the subscription's binding, which the
+projection may name; an inverse that fails to bind a used given still finds
+nothing. -/
 def Inverse.fire (ι : Inverse) (s : Specification) (g : Graph) (env : Env) (f : Fact) :
     List (List (Option FactId)) :=
-  let e0 : Env := Env.bind (fun _ => none) ι.given.unknown.name f.id
+  let used := usedGivens s.given s.matchList
+  let unused : Env := fun n =>
+    if s.given.any (·.name == n) && !used.any (·.name == n) then env n else none
+  let e0 : Env := Env.bind unused ι.given.unknown.name f.id
   if f.type == ι.given.unknown.type && allHold g e0 ι.given.unknown.name ι.given.conditions then
     ((evalMatches g e0 ι.matchList).filter fun σ => s.given.all fun l => σ l.name == env l.name).map
       fun σ => s.projection.labels.map σ
