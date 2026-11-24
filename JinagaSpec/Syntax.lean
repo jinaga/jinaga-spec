@@ -93,6 +93,26 @@ def Component.name : Component → Name
   | .fact name _ => name
   | .specification name .. => name
 
+mutual
+  /-- Structural equality, written out as `Condition.beq` is, so that a proof
+  can use it (`Proofs/Basic.lean`). -/
+  def Projection.beq : Projection → Projection → Bool
+    | .fact a, .fact b => a == b
+    | .composite cs1, .composite cs2 => Component.beqList cs1 cs2
+    | _, _ => false
+
+  def Component.beqList : List Component → List Component → Bool
+    | [], [] => true
+    | c1 :: r1, c2 :: r2 => Component.beq c1 c2 && Component.beqList r1 r2
+    | _, _ => false
+
+  def Component.beq : Component → Component → Bool
+    | .fact n1 l1, .fact n2 l2 => n1 == n2 && l1 == l2
+    | .specification n1 ms1 p1, .specification n2 ms2 p2 =>
+      n1 == n2 && Match.beqList ms1 ms2 && Projection.beq p1 p2
+    | _, _ => false
+end
+
 structure Specification where
   given : List Label
   matchList : List Match

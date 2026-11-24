@@ -35,26 +35,6 @@ namespace JinagaSpec
 
 /-! ## Comparing proofs -/
 
-mutual
-  /-- Structural equality, written out as `Condition.beq` is, so that a proof
-  can use it (`Proofs/ContentCache.lean`). -/
-  def Projection.beq : Projection → Projection → Bool
-    | .fact a, .fact b => a == b
-    | .composite cs1, .composite cs2 => Component.beqList cs1 cs2
-    | _, _ => false
-
-  def Component.beqList : List Component → List Component → Bool
-    | [], [] => true
-    | c1 :: r1, c2 :: r2 => Component.beq c1 c2 && Component.beqList r1 r2
-    | _, _ => false
-
-  def Component.beq : Component → Component → Bool
-    | .fact n1 l1, .fact n2 l2 => n1 == n2 && l1 == l2
-    | .specification n1 ms1 p1, .specification n2 ms2 p2 =>
-      n1 == n2 && Match.beqList ms1 ms2 && Projection.beq p1 p2
-    | _, _ => false
-end
-
 /-- The same specification, run with the same givens. -/
 def Proof.beq (p q : Proof) : Bool :=
   p.spec.given == q.spec.given && Match.beqList p.spec.matchList q.spec.matchList &&
@@ -123,12 +103,13 @@ def Request.event? : Request → Option Event
   | .event e => some e
   | .read .. => none
 
-/-- A save of a fresh batch drops every entry it may invalidate; a save that
-is not fresh changes nothing. An upload changes no fact, so no decision. -/
+/-- A save of a batch the store accepts (fresh and closed, `Graph.accepts`)
+drops every entry it may invalidate; a save the store refuses changes nothing.
+An upload changes no fact, so no decision. -/
 def Cached.step (P : Policy) (c : Cached) : Request → Cached
   | .event (.save B) =>
     { replicator := c.replicator.step P (.save B),
-      cache := if isFresh c.replicator.store B then c.cache.filter (!P.invalidates c.replicator.store B ·)
+      cache := if c.replicator.store.accepts B then c.cache.filter (!P.invalidates c.replicator.store B ·)
         else c.cache }
   | .event e => { c with replicator := c.replicator.step P e }
   | .read u key p => (c.read P u key p).1

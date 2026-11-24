@@ -8,15 +8,22 @@
 // (./well-formed.ts, every child specification included) for RR-1
 // (`Proof.bound`, `read_badRequest`), then `confirms` (./content-proof.ts),
 // proved to be `Proof.yields` on every proof that passes (`confirms_eq_yields`).
+// RR-1 also refuses a proof with conditions on a given (`hasGivenConditions`):
+// Lean's `Specification` has none, so no theorem covers one, and jinaga.js
+// evaluates them, so ignoring them would serve a reader they exclude.
 //
 // The distribution rules are proofs too (`Policy.distribution`): a user may run
 // a specification when every feed has a bound rule proof that names them
-// (`Policy.distributes`), checked with the same `confirms`. A save is a batch,
-// stored only if it is fresh (`isFresh`, JinagaSpec/Content.lean), which the
-// cache's invalidation needs (./content-cache.ts).
+// (`Policy.distributes`), checked with the same `confirms`; a rule proof with
+// conditions on a given is not bound, so it authorizes nothing. A save is a
+// batch, stored only if it is fresh (`isFresh`, JinagaSpec/Content.lean), which
+// the cache's invalidation needs (./content-cache.ts), and names no
+// predecessor outside the store and the batch (`isClosed`), so the store holds
+// every predecessor of each fact it holds (`Replicator.run_closed`).
 
 import { confirms } from "./content-proof.ts";
 import { isWellFormed } from "./well-formed.ts";
+import type { Specification } from "./well-formed.ts";
 
 export type FactId = number;
 export type User = number;
@@ -61,13 +68,34 @@ const status: Record<Code, number> = {
 const respond = (code: Code, bytes?: string): Response =>
     bytes === undefined ? { status: status[code], code } : { status: status[code], code, bytes };
 
-/** Every given is bound, and every descendant is well formed (RR-1, `Proof.bound`). */
+/**
+ * Some given carries conditions. A child specification has its parent's givens
+ * (`descendants`, ./well-formed.ts), so this covers every depth.
+ */
+export const hasGivenConditions = (specification: Specification): boolean =>
+    specification.given.some(g => (g.conditions ?? []).length > 0);
+
+/**
+ * Every given is bound, no given carries conditions, and every descendant is
+ * well formed (RR-1, `Proof.bound`). Lean's `Specification` cannot express
+ * conditions on a given, so `bound` refuses them rather than ignore them; a
+ * later extension could reduce them to a match instead (`reduceGivenConditions`,
+ * proved to keep what a replica reads by `read_reduceGivenConditions`).
+ */
 export const bound = (proof: Proof): boolean =>
-    proof.givens.length === proof.specification.given.length && isWellFormed(proof.specification);
+    proof.givens.length === proof.specification.given.length && !hasGivenConditions(proof.specification) &&
+    isWellFormed(proof.specification);
 
 /** No stored fact has the id of a fact of the batch, or names one as a predecessor (`isFresh`). */
 export const isFresh = (store: Fact[], batch: Fact[]): boolean =>
     batch.every(b => store.every(x => x.id !== b.id && x.predecessors.every(p => p.id !== b.id)));
+
+/** Every predecessor a fact of the batch names is in the store or the batch (`isClosed`). */
+export const isClosed = (store: Fact[], batch: Fact[]): boolean =>
+    batch.every(b => b.predecessors.every(p => [...store, ...batch].some(x => x.id === p.id)));
+
+/** A save stores the batch only if it is fresh and closed (`Graph.accepts`). */
+export const accepts = (store: Fact[], batch: Fact[]): boolean => isFresh(store, batch) && isClosed(store, batch);
 
 export class ContentStore {
     readonly store: Fact[] = [];
@@ -76,9 +104,9 @@ export class ContentStore {
 
     constructor(protected readonly policy: Policy) {}
 
-    /** Store the batch if it is fresh; otherwise leave the store as it is. */
+    /** Store the batch if it is fresh and closed; otherwise leave the store as it is. */
     save(batch: Fact[]) {
-        if (isFresh(this.store, batch)) this.store.push(...batch);
+        if (accepts(this.store, batch)) this.store.push(...batch);
     }
 
     /** Every clause has a bound rule proof whose results name the user (`Policy.distributes`). */

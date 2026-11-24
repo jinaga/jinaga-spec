@@ -5,8 +5,8 @@ import ContentMutants
 # Randomized check of the content store
 
 `lake exe check-content [seed]` tests SEC-1 to SEC-5, `read_admitted` and
-`confirms_eq_yields` (`Proofs/Content.lean`), and `cached_read`
-(`Proofs/ContentCache.lean`), as the theorems state them, on random histories
+`confirms_eq_yields` (`Proofs/Content.lean`), and `Replicator.save_fresh`,
+`Replicator.run_closed` and `cached_read` (`Proofs/ContentCache.lean`), as the theorems state them, on random histories
 of saves, uploads and reads: a random well-formed specification, a graph for
 it, and memberships in its givens' facts, some removed and some removals
 restored, saved in batches, with uploads by random users to random keys and
@@ -63,6 +63,13 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
       let refused := match s.store.factOf k with | some f => !P.mayCreate u s.store f | none => true
       if refused && (writeWith m P s (some u) k o).2 != (writeWith m P { s with objects := [] } (some u) k o).2 then
         out := "SEC-5" :: out
+  for ((e, s), s') in (evs.zip states).zip states.tail do
+    if let .save B := e then
+      -- save_fresh: a save stores the whole batch, and only if it is fresh, or nothing.
+      unless s'.store.length == s.store.length || (s'.store.length == s.store.length + B.length && isFresh s.store B) do
+        out := "save_fresh" :: out
+      -- run_closed: the store holds every predecessor of each fact it holds.
+      unless isClosed [] s'.store do out := "run_closed" :: out
   for (user, key, p) in reads do
     let resp := readWith m P r user key p
     if let .ok o := resp then
@@ -176,7 +183,9 @@ def genOrder (graph extra : List Fact) : Gen (List Fact) := do
 
 /-- A history: the users' facts, then `facts` saved in batches of one to four,
 with uploads and reads with proofs from `pool` among them. One batch in ten
-also repeats a fact already saved, so is not fresh, and is not stored. Some
+also repeats a fact already saved, so is not fresh, and is not stored; one in
+ten is preceded by a later fact saved alone before a predecessor it names, so
+not closed, and not stored. Some
 uploads are for a key that is not saved yet; many repeat a key. -/
 def genHistory (facts : List Fact) (pool : List (Option User × FactId × Proof)) : Gen (List Request) := do
   let mut hs : List Request := [.event (.save (users.map fun u => { id := u, type := "Jinaga.User", predecessors := [] }))]
@@ -190,6 +199,10 @@ def genHistory (facts : List Fact) (pool : List (Option User × FactId × Proof)
     saved := saved ++ B
     rest := rest.drop n
     if !saved.isEmpty && (← chance 1 10) then B := B ++ [← pick saved]
+    -- One batch in ten is preceded by a later fact alone, before a
+    -- predecessor it names: not closed, so not stored.
+    let early := rest.filter fun f => f.predecessors.any fun p => !users.contains p.2 && !saved.any (·.id == p.2)
+    if !early.isEmpty && (← chance 1 10) then hs := hs ++ [.event (.save [← pick early])]
     hs := hs ++ [.event (.save B)]
     for _ in [0:(← below 3) + 1] do
       let (u, k, p) ← pick pool
@@ -239,6 +252,7 @@ def main (args : List String) : IO UInt32 := do
   let mut cacheCaught : List Nat := cacheMutants.map fun _ => 0
   let mut requests := 0
   let mut notFresh := 0
+  let mut notClosed := 0
   -- `confirms_eq_yields`: on bound proofs, the check is `Proof.yields`.
   let mut confirmDisagree := 0
   -- How often `reorderChecked` refuses a pinned specification, so the check
@@ -293,6 +307,7 @@ def main (args : List String) : IO UInt32 := do
     for e in evs do
       if let .save B := e then
         if !isFresh before.store B then notFresh := notFresh + 1
+        if !isClosed before.store B then notClosed := notClosed + 1
       before := before.step policy e
     unless cacheFamilyAgrees policy hs do
       throw <| IO.userError "the cache mutant family differs from Cached.step"
@@ -309,8 +324,9 @@ def main (args : List String) : IO UInt32 := do
             pinned := pinned + 1
             if (reorderChecked (d.pinResult m.unknown)).isNone then fallback := fallback + 1
     -- The mutant family with no rule changed is the specification's handlers.
-    unless r.objects == (evs.foldl (stepWith {} policy) .empty).objects do
-      throw <| IO.userError "the mutant family's write differs from Replicator.write"
+    let r' := evs.foldl (stepWith {} policy) .empty
+    unless r.objects == r'.objects && r.store.map (·.id) == r'.store.map (·.id) do
+      throw <| IO.userError "the mutant family's write or save differs from Replicator.step"
     for (user, key, p) in rs do
       unless r.read policy user key p == readWith {} policy r user key p do
         throw <| IO.userError "the mutant family's read differs from Replicator.read"
@@ -330,7 +346,7 @@ def main (args : List String) : IO UInt32 := do
     caught := (caught.zip mutants).map fun ((n, by_), (_, mu)) =>
       let v := violations mu policy evs rs
       if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
-  IO.println s!"histories {histories}, requests {requests}, batches not fresh {notFresh}, objects stored {stored}, reads {reads}, served {served}"
+  IO.println s!"histories {histories}, requests {requests}, batches not fresh {notFresh}, not closed {notClosed}, objects stored {stored}, reads {reads}, served {served}"
   IO.println s!"real handlers: {real} histories break a statement; yields disagrees with readsOf on {disagree} reads, confirms with yields on {confirmDisagree} bound reads"
   IO.println s!"pinned specifications {pinned}, read in written order (reorderChecked refuses) {fallback}"
   for ((label, _), (n, by_)) in mutants.zip caught do

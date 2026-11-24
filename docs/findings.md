@@ -1641,6 +1641,7 @@ theorem holds for every policy.
 | | `read_admitted`, `write_accepted` | an admitted reader with a bound proof gets the object, or 404 `not_uploaded`; an authorized upload of matching bytes within the constraints is stored, or answered 200 if the key already holds one |
 | RR-4 | `confirms_eq_yields` | the check `read` runs, `Proof.confirms` (bind the content fact as a result and look for a solution), is `Proof.yields` for every proof whose specification's descendants are well formed |
 | RR-1 | `read_badRequest`, `Proof.bound_iff` | an authenticated read is 400 exactly when the proof is not `Proof.Bound`: a fact for every given, and every descendant well formed, which `Proof.bound` decides |
+| | `Replicator.save_fresh`, `Replicator.run_closed` | a save stores the whole batch, and only if it is fresh, or nothing; after any history the store holds every predecessor of each fact it holds |
 
 SEC-1 to SEC-5 only say when the replicator may serve or store. A handler that
 never serves, or answers 403 where RR-7 wants 404, meets all five. The last
@@ -1688,15 +1689,22 @@ Decisions the statements forced:
 - **A given absent from the store is 403, not 400.** RR-1's 400 is for a proof
   with the wrong number of givens or an ill-formed specification. A missing
   given makes `read` empty (`Specification.read`), so the proof yields nothing.
-- **A save checks freshness, and nothing else.** `save` takes a batch and
-  stores it only if it is fresh (`isFresh`, `isFresh_iff`: `Fresh`), so the
-  cache theorems below need no hypothesis on the history. A real replicator
-  first drops the facts it already stores; when the store holds every
-  predecessor of each fact it holds, what remains is fresh. Otherwise any
-  batch is stored, so SEC-1 to SEC-5 hold against every store. The fact
-  store's own authorization, and RW-2's combined fact-and-object request, are
-  not modelled. The vector `batch-not-fresh` is a batch that repeats a stored
-  fact, which is not stored.
+- **A save checks freshness and closure, and nothing else.** `save` takes a
+  batch and stores it only if it is fresh (`isFresh`, `isFresh_iff`: `Fresh`)
+  and closed (`isClosed`: every predecessor its facts name is in the store or
+  the batch), so the cache theorems below need no hypothesis on the history
+  (`Replicator.save_fresh`). Closure makes the store closed under
+  predecessors after any history (`Replicator.run_closed`), and on a closed
+  store a batch with the facts the store already holds dropped is fresh
+  (`Closed.fresh_new`): what a real replicator saves. Without the closure
+  check the store need not be closed: `save [Member -> group 1]` and then
+  `save [Group 1]` stores the membership and then refuses the group for good,
+  since the stored membership names it. Otherwise any batch is stored, so
+  SEC-1 to SEC-5 hold against every store. The fact store's own
+  authorization, and RW-2's combined fact-and-object request, are not
+  modelled. The vector `batch-not-fresh` is a batch that repeats a stored
+  fact, and `batch-not-closed` a membership saved before its group; neither
+  is stored.
 
 **Confirming yields by binding the result (RR-4).** RR-4 asks the replicator
 to confirm that the proof yields the content fact, preferably by binding the
@@ -1734,7 +1742,7 @@ that label: it starts at the givens. It refuses when some match is reached by
 no path condition from the pin or the givens, as in a product
 (`(g: Group) { d: Document [d->group: Group = g], e: Other } => d`, pinning
 `d`). On the random well-formed specifications of `check-content` it never
-refuses: 0 of 4367 pinned specifications on seed 1, and 0 of 4075 on seed 2.
+refuses: 0 of 4289 pinned specifications on seed 1, and 0 of 4316 on seed 2.
 
 `read` runs `Proof.confirms`, not `Proof.yields`, and SEC-1 and
 `read_admitted` are still stated against `Proof.yields` (through
@@ -1750,7 +1758,22 @@ false. The only hypothesis on the proof any content theorem assumes is
 decides `Proof.Bound`, their conjunction; `read_badRequest` proves `read`
 answers 400 exactly when the proof is not bound. Connectivity
 (`ConnectedDescendants`) is not checked: no content theorem uses it, and a
-disconnected proof is only read in written order (above). The TypeScript store
+disconnected proof is only read in written order (above).
+
+**Conditions on a given are refused at RR-1.** Lean's `Specification` has no
+conditions on its givens, so no content theorem covers a proof that has them.
+jinaga.js's specification type has them, and evaluates them. The TypeScript
+store first accepted them and ignored them, so it served
+`(d: Document [!E { a: Archived [a->doc: Document = d] }]) { } => d` for an
+archived `d`, and a rule proof's given conditions were ignored the same way.
+Its `bound` now refuses a specification with conditions on any given
+(`hasGivenConditions`; a child specification shares its parent's givens),
+which answers a reader's proof 400 and makes a rule proof with them authorize
+nothing, as an unbound rule proof already does. The Lean generator cannot
+express such a proof, so `run-content-vectors.ts` checks both on two
+port-only cases. A later extension could accept them by reducing them to a
+match first (`reduceGivenConditions`, proved to keep what a replica reads by
+`read_reduceGivenConditions`). The TypeScript store
 calls the deep `isWellFormed` of `ports/typescript/well-formed.ts` instead of
 taking a well-formedness check from its harness. The vectors
 `ill-formed-child-specification` (a child declares its parent's unknown again,
@@ -1763,9 +1786,10 @@ gives, for a specification and its givens, one clause per feed, each the rule
 proofs that may authorize that feed: a rule `share(feed).with(users)` is the
 proof that runs `users` from the feed's givens. Which rule matches which feed
 is fixed by the model, so `distribution` reads no store.
-`Policy.distributes u s gs g` asks every clause for a bound rule proof whose
-results on `g` name `u`; a rule proof that is not bound counts for nothing, so
-the policy needs no well-formedness hypothesis. The engine is the same as the
+`Policy.distributes u s gs g` asks every clause for a bound rule proof that
+`Proof.confirms` on `g` names `u` (on a bound proof that is `Proof.yields`,
+`confirms_eq_yields`, which `admits_stable` reads); a rule proof that is not
+bound counts for nothing, so the policy needs no well-formedness hypothesis. The engine is the same as the
 reader's proof's (RR-3), and so are its inverses, which is what lets a save
 invalidate a cached decision (below). The named cases use membership:
 `(g: Group) { m: Member [ m->group: Group = g, !E { r: Removal [ r->member:
@@ -1792,45 +1816,37 @@ SEC-1 to SEC-5 and `read_admitted`, it checks RR-1 (`read_badRequest`) and
 `confirms_eq_yields`, which it tests on the handler: for a bound proof, the
 handler's admission with distribution rules that admit everyone must be
 `Proof.yields`. It also checks `Proof.confirms` against `Proof.yields` on
-every bound read. The real handlers break none (they are proved). Seed 1:
-
-| mutant | caught on | by |
-|---|---|---|
-| no yields check | 2000 | SEC-1, SEC-5, `confirms_eq_yields` |
-| the check ignores child specifications | 25 | `confirms_eq_yields`, `read_admitted` |
-| the check binds only the first projected label | 93 | `confirms_eq_yields`, `read_admitted` |
-| the check drops the pinned match's own conditions | 833 | SEC-1, SEC-5, `confirms_eq_yields` |
-| the check skips the givens being held | 19 | SEC-1, SEC-5, `confirms_eq_yields` |
-| RR-1 checks only the top-level specification | 1797 | RR-1 |
-| no distribution check | 44 | SEC-1, SEC-5 |
-| store bytes without hashing them | 559 | SEC-2, SEC-3 |
-| authorize the fact's presence, not the writer (RW-4) | 708 | SEC-3, SEC-5 |
-| map a key to stored bytes of the same hash (ST-3) | 22 | SEC-3 |
-| look an object up by its content hash (ST-1) | 54 | SEC-4, `read_admitted` |
-| answer 404 before checking the proof (RR-5) | 1110 | SEC-5 |
-| answer a repeat upload before checking the writer (RW-8) | 157 | SEC-5 |
+every bound read, and that a save stores only a fresh batch
+(`Replicator.save_fresh`) and keeps the store closed
+(`Replicator.run_closed`). The real handlers break none (they are proved). The
+counts are in the handlers' table below, from the same run as the cache's.
 
 What each new statement rules out: `confirms_eq_yields` every mutant of the
 check (a check that ignores children or binds fewer labels refuses an
 admitted reader, which `read_admitted` also sees; one that drops the pinned
 match's conditions or skips the givens serves a reader whose proof yields
-nothing, which SEC-1 also sees); `read_badRequest` a 400 check that misses an
-ill-formed child specification, which `confirms_eq_yields` does not cover.
+nothing, which SEC-1 also sees for the dropped conditions on both seeds, and
+for the skipped givens on seed 1 but not seed 2); `read_badRequest` a 400 check that misses an
+ill-formed child specification, which `confirms_eq_yields` does not cover;
+`Replicator.save_fresh` a save that stores a batch that is not fresh, and
+`Replicator.run_closed` one that stores a batch naming a predecessor it does
+not hold. On the random histories each of the last two is caught by its own
+statement alone: the answers they change break none of the others.
 
 One history in three has child specifications (`genChildSpec`). One proof in
 eight binds a given to the key read, whatever its type, so that a given the
 store does not hold as one is tried, and each history reads one proof whose
 child specification declares its parent's unknowns again. Random
-specifications rarely yield a document, so only about a hundred of 82000
-random reads are served, and the success path is thin there. The vectors
-cover it: `vectors/content/` holds twenty-seven named histories on one
+specifications rarely yield a document, so only 48 of 82000 random reads are
+served on seed 1 (61 on seed 2), and the success path is thin there. The vectors
+cover it: `vectors/content/` holds twenty-eight named histories on one
 documents-in-groups model, among them the documents read as a child
 specification, a proof projecting both a given and an unknown, a pinned match
 with an existential condition, a given the store does not hold, and (for the
 cache, below) a revocation, a restore, a given arriving, a batch whose facts
-change a result only together, and a batch that is not fresh. Each is checked
-to catch the mutants it names, and together they catch all thirteen of the
-handlers' and all seven of the cache's.
+change a result only together, a batch that is not fresh, and one that is
+not closed. Each is checked to catch the mutants it names, and together they
+catch all fifteen of the handlers' and all six of the cache's.
 `ports/typescript/content-store.ts` is a reference port that passes them,
 computing yields with the port of `Proof.confirms`
 (`ports/typescript/content-proof.ts`), which the harness also checks against
@@ -1864,7 +1880,8 @@ B` (`Reorder.lean`) containing `k`. Reads change the state, so a history
 
 | theorem | statement |
 |---|---|
-| `isFresh_iff` | the check `save` runs decides `Fresh`, the hypothesis of `candidates_complete` |
+| `isFresh_iff` | the freshness check `save` runs decides `Fresh`, the hypothesis of `candidates_complete` |
+| `Replicator.save_fresh` | a save stores the whole batch, and only if it is fresh, or nothing |
 | `yields_stable` | for a bound proof and a fresh batch that `mayChange` does not flag, `yields` is unchanged |
 | `admits_stable` | for an entry with a bound proof that the save does not invalidate, `Policy.admits` is unchanged |
 | `cache_valid` | after any history, every cache entry's proof is bound and its decision is `Policy.admits` on the current store |
@@ -1882,43 +1899,58 @@ checks freshness. `candidates` is used rather than the exact `changes`
 memberships of random users in the facts of the first given's type (or of a
 predecessor of it, so that a given can arrive after the rule's group), half of
 them removed and half the removals restored, saved with the graph in batches
-of one to four, one batch in ten repeating a stored fact, with a few proofs read
-again and again through the history. Each cache mutant invalidates too little,
-in one way, and must be caught by `cached_read` and by a named vector. Seed 1:
+of one to four, one batch in ten repeating a stored fact and one in ten
+preceded by a later fact saved alone before a predecessor it names, with a few
+proofs read again and again through the history. Each cache mutant
+invalidates too little, in one way, and must be caught by `cached_read` and
+by a named vector. Every count in this section is from one run of
+`check-content` at the commit that adds `Replicator.run_closed`, on seeds 1
+and 2 (`verify.sh` runs both):
 
-| cache mutant | caught on | named vector | what `cached_read` rules out |
+| cache mutant | caught on (seed 1, seed 2) | named vector | what `cached_read` rules out |
 |---|---|---|---|
-| invalidate only on a fact of the content fact's type | 43 | `membership-revoked` | a cache keyed to the content's own facts misses a `Removal`, which the rule reads |
-| ignore a given arriving in the batch | 3 | `given-arrives` | a given was not stored, so nothing was read; when it arrives every result is new, and no inverse need find it |
-| read each fact of a batch alone | 3 | `batch-arrives-together` | facts that change a result only together (a group, its document and a membership): each fact's inverses must read the whole batch (jinaga/jinaga-spec#11) |
-| never invalidate on a revocation (gained-direction inverses only) | 12 | `membership-revoked` | the SEC-7 scenario: a removal under a negative existential condition is a loss, which only the other direction's inverses find |
-| keep the entries the rules refused | 133 | `membership-restored` | a restore turns a refusal into an admission, so refusals must be dropped too |
-| invalidate on the reader's proof only, never the rules | 38 | `membership-revoked` | a reader who loses distribution rights, with the proof still yielding the fact |
-| store a batch without checking it is fresh | 21 | `batch-not-fresh` | the hypothesis of `candidates_complete`, which `save` enforces |
+| invalidate only on a fact of the content fact's type | 47, 30 | `membership-revoked` | a cache keyed to the content's own facts misses a `Removal`, which the rule reads |
+| ignore a given arriving in the batch | 2, 2 | `given-arrives` | a given was not stored, so nothing was read; when it arrives every result is new, and no inverse need find it |
+| read each fact of a batch alone | 2, 2 | `batch-arrives-together` | facts that change a result only together (a group, its document and a membership): each fact's inverses must read the whole batch (jinaga/jinaga-spec#11) |
+| never invalidate on a revocation (gained-direction inverses only) | 16, 12 | `membership-revoked` | the SEC-7 scenario: a removal under a negative existential condition is a loss, which only the other direction's inverses find |
+| keep the entries the rules refused | 115, 106 | `membership-restored` | a restore turns a refusal into an admission, so refusals must be dropped too |
+| invalidate on the reader's proof only, never the rules | 43, 31 | `membership-revoked` | a reader who loses distribution rights, with the proof still yielding the fact |
 
-The arrival and batch mutants are rare on random histories (3 of 2000 each on
-seed 1, 2 and 11 on seed 2): a given usually arrives before anything that
-could admit a reader, and a result that needs two facts of one batch needs a
-reader already admitted. The named vectors catch each one directly.
+The arrival and batch mutants are rare on random histories (2 of 2000 each on
+both seeds): a given usually arrives before anything that could admit a
+reader, and a result that needs two facts of one batch needs a reader already
+admitted. The named vectors catch each one directly.
 
-The handlers' statements and mutants above are unchanged, though the counts
-moved with the generator (seed 1):
+An earlier draft listed a seventh cache mutant, "store a batch without
+checking it is fresh", as a test of `candidates_complete`'s hypothesis. It
+was not one: it was caught because the stored facts diverged from the
+uncached replicator's, and an uncached replicator that skips `isFresh`
+diverges on the same vector. It is now a handler mutant, caught by the
+statement it breaks, `Replicator.save_fresh`.
 
-| mutant | caught on | by |
+The handlers' mutants, from the same run:
+
+| mutant | caught on (seed 1, seed 2) | by |
 |---|---|---|
-| no yields check | 2000 | SEC-1, SEC-5, `confirms_eq_yields` |
-| the check ignores child specifications | 19 | `confirms_eq_yields`, `read_admitted` |
-| the check binds only the first projected label | 71 | `confirms_eq_yields`, `read_admitted` |
-| the check drops the pinned match's own conditions | 730 | SEC-1, SEC-5, `confirms_eq_yields` |
-| the check skips the givens being held | 17 | `confirms_eq_yields` |
-| RR-1 checks only the top-level specification | 1819 | RR-1 |
-| no distribution check | 67 | SEC-1, SEC-5 |
-| store bytes without hashing them | 637 | SEC-2, SEC-3 |
-| authorize the fact's presence, not the writer (RW-4) | 689 | SEC-3, SEC-5 |
-| map a key to stored bytes of the same hash (ST-3) | 48 | SEC-3 |
-| look an object up by its content hash (ST-1) | 28 | SEC-4, `read_admitted` |
-| answer 404 before checking the proof (RR-5) | 1107 | SEC-5 |
-| answer a repeat upload before checking the writer (RW-8) | 116 | SEC-5 |
+| no yields check | 2000, 2000 | SEC-1, SEC-5, `confirms_eq_yields` |
+| the check ignores child specifications | 17, 18 | `confirms_eq_yields`, `read_admitted` |
+| the check binds only the first projected label | 53, 47 | `confirms_eq_yields`, `read_admitted` |
+| the check drops the pinned match's own conditions | 691, 683 | SEC-1, SEC-5, `confirms_eq_yields` |
+| the check skips the givens being held | 16, 13 | SEC-1, SEC-5, `confirms_eq_yields` (seed 2: `confirms_eq_yields` alone) |
+| RR-1 checks only the top-level specification | 1837, 1782 | RR-1 |
+| no distribution check | 62, 59 | SEC-1, SEC-5 |
+| store bytes without hashing them | 625, 642 | SEC-2, SEC-3 |
+| authorize the fact's presence, not the writer (RW-4) | 642, 644 | SEC-3, SEC-5 |
+| map a key to stored bytes of the same hash (ST-3) | 36, 34 | SEC-3 |
+| look an object up by its content hash (ST-1) | 23, 21 | SEC-4, `read_admitted` |
+| answer 404 before checking the proof (RR-5) | 1153, 1127 | SEC-5 |
+| answer a repeat upload before checking the writer (RW-8) | 144, 143 | SEC-5 |
+| store a batch without checking it is fresh | 512, 591 | `Replicator.save_fresh` |
+| store a batch that names a predecessor not stored | 820, 860 | `Replicator.run_closed` |
+
+Seed 1 saves 560 batches that are not fresh and 1299 that are not closed
+(seed 2: 653 and 1454): a batch the replicator refuses drops its new facts,
+so later batches that name them are not closed either.
 
 The TypeScript port `ports/typescript/content-cache.ts` caches and
 invalidates in the same way, with `candidateInverses` from

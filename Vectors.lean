@@ -656,7 +656,7 @@ def contentVector (c : ContentCase) : Json := Id.run do
     match step with
     | .event (.save B) =>
       steps := steps.push (Json.mkObj [("save", Json.arr (B.map factToJson).toArray),
-        ("fresh", isFresh r.store B)])
+        ("fresh", isFresh r.store B), ("closed", isClosed r.store B)])
       r := r.step P (.save B)
     | .event (.write u k o) =>
       let (r', resp) := r.write P u k o

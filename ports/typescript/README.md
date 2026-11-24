@@ -67,23 +67,28 @@ PORT=./my-content-store.ts npm run content
 Runs each `vectors/content/` history against `content-store.ts`, the
 reference port of `JinagaSpec/Content.lean`, or against the `ContentStore`
 class that `PORT` exports. The harness builds each vector's policy from its
-data. The store checks each proof itself: the given count and the deep
-`isWellFormed` of `well-formed.ts` (RR-1), then `confirms` in
+data. The store checks each proof itself: the given count, no conditions on a
+given (`hasGivenConditions`: Lean's `Specification` has none, so no theorem
+covers them), and the deep `isWellFormed` of `well-formed.ts` (RR-1), then `confirms` in
 `content-proof.ts`, the port of `Proof.confirms` (RR-4), which binds the
 content fact as a result, pins it with `reorderInverse`'s `__f` and looks for
 a solution, with a port of the naive evaluator. The harness checks `confirms`
 against each bound read's `yields`. The distribution rules are the vector's
 `rule`, a specification the store runs with the proof's givens and checks with
-the same `confirms` (`Policy.distributes`). A save is a batch, stored only if
-it is fresh (`isFresh`); the harness checks `isFresh` against each save's
-`fresh`. Every response and the objects stored at the end must equal the
-vector's.
+the same `confirms` (`Policy.distributes`); a rule proof that is not bound
+authorizes nothing. A save is a batch, stored only if it is fresh (`isFresh`)
+and closed (`isClosed`: every predecessor it names is in the store or the
+batch); the harness checks both against each save's `fresh` and `closed`.
+Every response and the objects stored at the end must equal the vector's.
+Two port-only cases, which the Lean generator cannot express, check that a
+reader's proof with conditions on a given is refused with 400 and a rule
+proof with them authorizes nothing.
 
 Each history runs a second time against `content-cache.ts`, the port of
 `JinagaSpec/ContentCache.lean` (or the `CachedContentStore` that `CACHE_PORT`
 exports), which caches each read's decision per user, proof and key, and drops
-an entry when a fresh batch's inverse candidates (`candidateInverses` of
-`inverse-candidates.ts`, read on the store with the whole batch, and every
+an entry when a fresh batch's inverse candidates (`buildInverses` of
+`inverse-candidates.ts`, each reordered by `reorderInverse`, read on the store with the whole batch, and every
 result when a given arrives) name the key for the reader's proof, or the user
 for a rule proof. A cache never changes an answer (`cached_read`), so it must
 give the same responses. Needs no jinaga.js checkout.

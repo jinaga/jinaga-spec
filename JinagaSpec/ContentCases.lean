@@ -15,7 +15,8 @@ too. Each case names the mutants of `ContentMutants.lean` it must catch, the
 handlers' and the cache's, and the generator refuses a case that does not
 catch them, or a set of cases that leaves a mutant uncaught.
 
-A save is a batch of facts, stored only if it is fresh (`isFresh`).
+A save is a batch of facts, stored only if it is fresh (`isFresh`) and names
+no predecessor outside the store and the batch (`isClosed`).
 
 The policy is data, so that a port's harness can supply it in place of its
 model, rules and hash function:
@@ -315,7 +316,12 @@ def contentCases : List ContentCase := [
     "A batch that repeats a fact the store holds is not fresh, and is not stored: the plan in it is not saved, so its upload is refused. A replicator first drops the facts it already holds; the plan alone is fresh, and is stored."
     "NF-2, RW-2"
     [saveAll [groupA, plan], write alice 10 "plan", save plan, write alice 10 "plan", .read alice 10 [1]]
-    ["cached_read: store a batch without checking it is fresh"]
+    ["save_fresh: store a batch without checking it is fresh"],
+  make "batch-not-closed"
+    "A batch that names a predecessor neither the store nor the batch holds is not stored: Alice's membership of group C, saved before group C, is refused. Stored, it would name group C, so no batch holding group C, and the minutes in it, would be fresh again. Saved after group C, the membership is stored, and Alice reads the minutes."
+    "NF-2"
+    [save aliceInC, saveAll [groupC, minutes], save aliceInC, write alice 13 "minutes", .read alice 13 [3]]
+    ["run_closed: store a batch that names a predecessor not stored"]
 ]
 
 end JinagaSpec

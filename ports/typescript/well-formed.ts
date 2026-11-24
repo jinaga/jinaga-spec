@@ -35,7 +35,8 @@ export type Projection =
     | { type: "composite"; components: Component[] }
     | { type: "fact" | "field" | "hash" | "time"; label: string };
 export interface Specification {
-    given: { label: Label }[];
+    /** jinaga.js's givens carry conditions; Lean's `Specification` has none (see `bound`, ./content-store.ts). */
+    given: { label: Label; conditions?: unknown[] }[];
     matches: Match[];
     projection: Projection;
 }
@@ -66,7 +67,8 @@ function isWellFormedCondition(inner: string[], outer: string[], condition: Cond
         : isWellFormedMatches(inner, condition.matches);
 }
 
-function projectedLabels(projection: Projection): string[] {
+/** The labels whose facts a projection names; a child specification names its own (`Projection.labels`). */
+export function projectedLabels(projection: Projection): string[] {
     return projection.type === "composite"
         ? projection.components.flatMap(c => c.type === "specification" ? [] : [c.label])
         : [projection.label];

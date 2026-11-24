@@ -3,15 +3,16 @@ import JinagaSpec
 /-!
 # Mutants of the content store
 
-One read handler and one write handler, parameterized over the rule each
-mutant breaks. Shared by `check-content`, which checks that SEC-1 to SEC-5 rule
-out each one, and `lake exe vectors`, which checks that the content vectors
+One read handler, one write handler and one save step, parameterized over the
+rule each mutant breaks. Shared by `check-content`, which checks that SEC-1 to
+SEC-5, `read_badRequest`, `confirms_eq_yields`, `read_admitted`,
+`Replicator.save_fresh` and `Replicator.run_closed` rule out each one, and `lake exe vectors`, which checks that the content vectors
 catch each one.
 -/
 open JinagaSpec
 
-/-- What a mutant changes. With no field changed, `readWith` and `writeWith`
-are `Replicator.read` and `Replicator.write`, which `check-content` confirms on
+/-- What a mutant changes. With no field changed, `readWith`, `writeWith` and
+`stepWith` are `Replicator.read`, `Replicator.write` and `Replicator.step`, which `check-content` confirms on
 every request. The specification's own handlers stay unparameterized. -/
 structure Mutant where
   /-- Which proofs a read accepts (RR-1). -/
@@ -32,6 +33,11 @@ structure Mutant where
   repeatFirst : Bool := false
   /-- Bytes that do not match take the stored bytes of the same hash instead. -/
   hashShortcut : Bool := false
+  /-- A save stores a batch only if it is fresh. -/
+  checkFresh : Bool := true
+  /-- A save stores a batch only if the store and the batch hold every
+  predecessor it names. -/
+  checkClosed : Bool := true
 
 def readWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (key : FactId) (p : Proof) :
     Response :=
@@ -67,7 +73,10 @@ def writeWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (k
           | none => ({ r with objects := (key, o) :: r.objects }, .stored)
 
 def stepWith (m : Mutant) (P : Policy) (r : Replicator) : Event → Replicator
-  | .save B => if isFresh r.store B then { r with store := r.store ++ B } else r
+  | .save B =>
+    if (!m.checkFresh || isFresh r.store B) && (!m.checkClosed || isClosed r.store B) then
+      { r with store := r.store ++ B }
+    else r
   | .write u key o => (writeWith m P r u key o).1
 
 /-- The spoof: any object stored under a key whose fact has the same content
@@ -125,7 +134,9 @@ def mutants : List (String × Mutant) := [
   ("SEC-3: map a key to stored bytes of the same hash", { hashShortcut := true }),
   ("SEC-4: look an object up by its content hash", { lookup := byContentHash }),
   ("SEC-5: answer 404 before checking the proof", { existenceFirst := true }),
-  ("SEC-5: answer a repeat upload before checking the writer", { repeatFirst := true })
+  ("SEC-5: answer a repeat upload before checking the writer", { repeatFirst := true }),
+  ("save_fresh: store a batch without checking it is fresh", { checkFresh := false }),
+  ("run_closed: store a batch that names a predecessor not stored", { checkClosed := false })
 ]
 
 
@@ -160,8 +171,6 @@ structure CacheMutant where
   refused : Bool := true
   /-- Any fact may invalidate, not only one of the content fact's type. -/
   anyType : Bool := true
-  /-- A batch is stored only if it is fresh. -/
-  checkFresh : Bool := true
 
 def CacheMutant.mayChange (m : CacheMutant) (p : Proof) (g : Graph) (B : List Fact) (k : FactId) : Bool :=
   p.spec.descendants.any fun d =>
@@ -175,9 +184,8 @@ def CacheMutant.invalidates (m : CacheMutant) (P : Policy) (g : Graph) (B : List
 
 def cachedStepWith (m : CacheMutant) (P : Policy) (c : Cached) : Request → Cached
   | .event (.save B) =>
-    if !m.checkFresh || isFresh c.replicator.store B then
-      { replicator := { c.replicator with store := c.replicator.store ++ B },
-        cache := c.cache.filter (!m.invalidates P c.replicator.store B ·) }
+    if c.replicator.store.accepts B then
+      { replicator := c.replicator.step P (.save B), cache := c.cache.filter (!m.invalidates P c.replicator.store B ·) }
     else c
   | q => c.step P q
 
@@ -187,6 +195,5 @@ def cacheMutants : List (String × CacheMutant) := [
   ("cached_read: read each fact of a batch alone", { graph := fun g _ f => g ++ [f] }),
   ("cached_read: never invalidate on a revocation", { inverses := inversesFor true }),
   ("cached_read: keep the entries the rules refused", { refused := false }),
-  ("cached_read: invalidate on the reader's proof only, never the rules", { rules := false }),
-  ("cached_read: store a batch without checking it is fresh", { checkFresh := false })
+  ("cached_read: invalidate on the reader's proof only, never the rules", { rules := false })
 ]

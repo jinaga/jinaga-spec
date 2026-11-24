@@ -13,11 +13,12 @@
 // Proved equal to `Proof.yields`, whether some result of the specification
 // names the fact, for every proof whose specification and child specifications
 // are well formed (`confirms_eq_yields`), which `read` checks first
-// (`isWellFormed`, ./well-formed.ts).
+// (`bound`, ./content-store.ts). `bound` also refuses conditions on a given,
+// which `confirms`, like Lean's `Specification`, does not read.
 
 import { pinLabel, reorderInverse } from "./inverse-candidates.ts";
-import { descendants } from "./well-formed.ts";
-import type { Condition, Label, Match, PathCondition, Projection, Specification } from "./well-formed.ts";
+import { descendants, projectedLabels } from "./well-formed.ts";
+import type { Condition, Label, Match, PathCondition, Specification } from "./well-formed.ts";
 import type { Fact, FactId } from "./content-store.ts";
 
 export type Graph = Fact[];
@@ -66,10 +67,6 @@ const allHold = (g: Graph, env: Env, unknown: string, cs: Condition[]): boolean 
 const holds = (g: Graph, env: Env, unknown: string, c: Condition): boolean =>
     c.type === "path" ? holdsPath(g, env, unknown, c) : c.exists === (evalMatches(g, env, c.matches).length > 0);
 
-/** The labels whose facts a projection names; a child specification names its own. */
-export const labels = (p: Projection): string[] =>
-    p.type === "composite" ? p.components.flatMap(c => c.type === "specification" ? [] : [c.label]) : [p.label];
-
 /** The label is bound to a fact of `g` of the label's type. */
 export function has(g: Graph, env: Env, l: Label): boolean {
     const id = env.get(l.name);
@@ -93,7 +90,7 @@ const pinUnknown = (l: string, ms: Match[]): Match[] =>
 
 /** `d`, with the unknown `u` pinned to the new fact, given as `pinLabel`, and projected. */
 const pinResult = (d: Specification, u: Label): Specification => ({
-    given: [...d.given, { label: { name: pinLabel, type: u.type } }],
+    given: [...d.given, { label: { name: pinLabel, type: u.type }, conditions: [] }],
     matches: pinUnknown(u.name, d.matches),
     projection: { type: "fact", label: u.name }
 });
@@ -102,8 +99,7 @@ const pinResult = (d: Specification, u: Label): Specification => ({
 function bindsResult(d: Specification, g: Graph, env: Env, key: FactId, l: string): boolean {
     const m = d.matches.find(m => m.unknown.name === l);
     if (m !== undefined) {
-        const pinned = pinResult(d, m.unknown);
-        const reordered = reorderInverse({ ...pinned, given: pinned.given.map(g => ({ label: g.label, conditions: [] })) });
+        const reordered = reorderInverse(pinResult(d, m.unknown) as any);
         return evalMatches(g, bind(env, pinLabel, key), reordered.matches).length > 0;
     }
     return env.get(l) === key && evalMatches(g, env, d.matches).length > 0;
@@ -116,6 +112,6 @@ function bindsResult(d: Specification, g: Graph, env: Env, key: FactId, l: strin
 export function confirms(specification: Specification, givens: FactId[], g: Graph, key: FactId): boolean {
     return descendants(specification).some(d => {
         const env = bindGivens(d, givens);
-        return d.given.every(l => has(g, env, l.label)) && labels(d.projection).some(l => bindsResult(d, g, env, key, l));
+        return d.given.every(l => has(g, env, l.label)) && projectedLabels(d.projection).some(l => bindsResult(d, g, env, key, l));
     });
 }

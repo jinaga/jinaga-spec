@@ -67,7 +67,7 @@ theorem Replicator.store_grows (P : Policy) (evs : List Event) (r : Replicator) 
     obtain ⟨g, hg⟩ := ih (r.step P e)
     simp only [List.foldl, hg]
     cases e with
-    | save B => by_cases h : isFresh r.store B <;> simp [step, h] <;> exact ⟨_, rfl⟩
+    | save B => by_cases h : r.store.accepts B <;> simp [step, h] <;> exact ⟨_, rfl⟩
     | write u k o => exact ⟨g, by simp [step, write_store]⟩
 
 /-- An object in the state after an event was there before, or that event is

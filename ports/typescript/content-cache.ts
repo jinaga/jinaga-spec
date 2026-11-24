@@ -13,21 +13,21 @@
 // Proved: after any history of saves, uploads and reads, the cached store
 // answers every read as the uncached one does (`cached_read`), so every read,
 // cached or not, satisfies SEC-1 at that moment (`cached_read_authorized`).
-// The proof needs each batch to be fresh, which `save` checks.
+// The proof needs each batch to be fresh, which `save` checks (`accepts`).
 
-import { ContentStore, isFresh } from "./content-store.ts";
+import { ContentStore, accepts } from "./content-store.ts";
 import type { Fact, FactId, Proof, User } from "./content-store.ts";
-import { bind, bindGivens, evalMatches, has, labels } from "./content-proof.ts";
+import { bind, bindGivens, evalMatches, has } from "./content-proof.ts";
 import type { Env, Graph } from "./content-proof.ts";
-import { candidateInverses, pinLabel } from "./inverse-candidates.ts";
-import { descendants } from "./well-formed.ts";
+import { buildInverses, pinLabel, reorderInverse } from "./inverse-candidates.ts";
+import { descendants, projectedLabels } from "./well-formed.ts";
 import type { Specification } from "./well-formed.ts";
 
 type Row = (FactId | undefined)[];
 
 /** The rows the specification reads (`Specification.evaluate`). */
 const evaluate = (s: Specification, g: Graph, env: Env): Row[] =>
-    evalMatches(g, env, s.matches).map(e => labels(s.projection).map(l => e.get(l)));
+    evalMatches(g, env, s.matches).map(e => projectedLabels(s.projection).map(l => e.get(l)));
 
 /** Nothing until every given is held (`Specification.read`). */
 const read = (s: Specification, g: Graph, env: Env): Row[] =>
@@ -47,7 +47,7 @@ function pinEnv(s: Specification, env: Env, f: Fact): Env {
  */
 function candidates(s: Specification, env: Env, g: Graph, batch: Fact[]): Row[] {
     const now = [...g, ...batch];
-    const inverses = candidateInverses({ ...s, given: s.given.map(l => ({ label: l.label, conditions: [] })) } as any);
+    const inverses = buildInverses(s as any).map(reorderInverse);
     return batch.flatMap(f => s.given.some(l => env.get(l.label.name) === f.id)
         ? read(s, now, env)
         : inverses.flatMap(i => evaluate(i as any, now, pinEnv(s, env, f))));
@@ -83,9 +83,9 @@ export class CachedContentStore extends ContentStore {
                 .some(clause => clause.some(q => mayChange(q, this.store, batch, e.user)));
     }
 
-    /** A fresh batch drops every entry it may invalidate, then is stored (`Cached.step`). */
+    /** A batch the store accepts drops every entry it may invalidate, then is stored (`Cached.step`). */
     save(batch: Fact[]) {
-        if (isFresh(this.store, batch)) {
+        if (accepts(this.store, batch)) {
             for (const [k, e] of [...this.cache]) if (this.invalidates(batch, e)) this.cache.delete(k);
         }
         super.save(batch);

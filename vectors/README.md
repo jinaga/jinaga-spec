@@ -368,10 +368,18 @@ hash function:
   revoked by a `Removal` of the membership and given back by a `Restore` of
   the removal.
 
-A save is a batch: `save` holds its facts, and `fresh` says whether the batch
+A save is a batch: `save` holds its facts, `fresh` says whether the batch
 is fresh on the store before it (`isFresh`: no stored fact has the id of one of
-its facts, or names one as a predecessor). A batch that is not fresh is not
-stored at all; a replicator first drops the facts it already holds.
+its facts, or names one as a predecessor), and `closed` whether every
+predecessor its facts name is in the store or the batch (`isClosed`). A batch
+that is not both is not stored at all; a replicator first drops the facts it
+already holds, and what remains of a closed batch is then fresh
+(`Closed.fresh_new`).
+
+A content specification's givens carry no conditions: Lean's `Specification`
+cannot express them. The TypeScript store refuses a proof with conditions on a
+given with 400 (RR-1), and a rule proof with them authorizes nothing;
+`run-content-vectors.ts` checks both on its own, port-only cases.
 
 The responses are those of the uncached replicator, and a replicator that
 caches read decisions (NF-2, `ContentCache.lean`) must give the same ones
@@ -397,7 +405,7 @@ expect 400 (RR-1).
     "rule": { ... }, "ruleText": "(g: Group) { m: Member [ ... ] ... } => u"
   },
   "steps": [
-    { "save": [ { "id": 1, "type": "Group", "predecessors": [] } ], "fresh": true },
+    { "save": [ { "id": 1, "type": "Group", "predecessors": [] } ], "fresh": true, "closed": true },
     { "write": { "user": 100, "key": 10, "bytes": "plan" },          // user null: no valid token
       "expected": { "status": 201, "code": "stored" } },
     { "read": { "user": 101, "key": 11, "givens": [2] }, "yields": true,

@@ -6,10 +6,15 @@ import JinagaSpec.Proofs.WellFormedCheck
 /-!
 # The cache never changes an answer (NF-2, SEC-7)
 
-* `isFresh_iff`: the check `Replicator.step` runs before storing a batch
-  decides `Fresh`, the hypothesis of `candidates_complete`.
-* `yields_stable`: a fresh batch that `Proof.mayChange` does not flag leaves
-  `Proof.yields` as it was. This is `candidates_complete` read for one fact:
+* `isFresh_iff`: the freshness check `Replicator.step` runs before storing a
+  batch decides `Fresh`, the hypothesis of `candidates_complete`.
+* `Replicator.save_fresh`: a save stores the whole batch, and only if it is
+  fresh, or nothing.
+* `Replicator.run_closed`: the store holds every predecessor of each fact it
+  holds, so a batch with the facts it already stores dropped is fresh
+  (`Closed.fresh_new`).
+* `yields_stable`: for a bound proof (`p.bound = true`), a fresh batch that
+  `Proof.mayChange` does not flag leaves `Proof.yields` as it was. This is `candidates_complete` read for one fact:
   whether a proof yields `k` depends only on which rows naming `k` it reads,
   and every such row that the batch adds or removes is a candidate.
 * `admits_stable`: so does the whole decision, for an entry the save does not
@@ -28,7 +33,7 @@ a revocation is a negative existential condition, and a later fact can undo it
 what the cache must not break, is SEC-1 at the moment of each read.
 
 No theorem here has a hypothesis on the history: `Replicator.step` stores only
-a fresh batch.
+a fresh batch (`Replicator.save_fresh`).
 -/
 namespace JinagaSpec
 
@@ -37,27 +42,53 @@ theorem isFresh_iff (g : Graph) (B : List Fact) : isFresh g B = true ↔ Fresh g
   exact ⟨fun h => ⟨fun x hx b hb => (h b hb x hx).1, fun x hx p hp b hb => (h b hb x hx).2 p hp⟩,
     fun h b hb x hx => ⟨h.idNew x hx b hb, fun p hp => h.unreferenced x hx p hp b hb⟩⟩
 
-mutual
-  theorem Projection.eq_of_beq : ∀ {a b : Projection}, Projection.beq a b = true → a = b
-    | .fact _, .fact _, h => by simp [Projection.beq] at h; rw [h]
-    | .composite _, .composite _, h => by rw [Component.eq_of_beqList h]
-    | .fact _, .composite _, h | .composite _, .fact _, h => by simp [Projection.beq] at h
+/-- **A save stores the whole batch, and only if it is fresh, or nothing.** -/
+theorem Replicator.save_fresh (P : Policy) (r : Replicator) (B : List Fact) :
+    (r.step P (.save B)).store = r.store ∨ (r.step P (.save B)).store = r.store ++ B ∧ Fresh r.store B := by
+  unfold step Graph.accepts
+  by_cases h : (isFresh r.store B && isClosed r.store B) = true
+  · simp only [Bool.and_eq_true] at h
+    simp [h, (isFresh_iff _ _).1 h.1]
+  · simp [h]
 
-  theorem Component.eq_of_beqList : ∀ {a b : List Component}, Component.beqList a b = true → a = b
-    | [], [], _ => rfl
-    | _ :: _, _ :: _, h => by
-      simp only [Component.beqList, Bool.and_eq_true] at h
-      rw [Component.eq_of_beq h.1, Component.eq_of_beqList h.2]
-    | [], _ :: _, h | _ :: _, [], h => by simp [Component.beqList] at h
+/-- The graph holds every predecessor of each fact it holds. -/
+def Closed (g : Graph) : Prop := ∀ x ∈ g, ∀ p ∈ x.predecessors, ∃ y ∈ g, y.id = p.2
 
-  theorem Component.eq_of_beq : ∀ {a b : Component}, Component.beq a b = true → a = b
-    | .fact _ _, .fact _ _, h => by
-      simp only [Component.beq, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1, h.2]
-    | .specification _ _ _, .specification _ _ _, h => by
-      simp only [Component.beq, Bool.and_eq_true, beq_iff_eq] at h
-      rw [h.1.1, Match.eq_of_beqList h.1.2, Projection.eq_of_beq h.2]
-    | .fact _ _, .specification _ _ _, h | .specification _ _ _, .fact _ _, h => by simp [Component.beq] at h
-end
+theorem isClosed_iff (g : Graph) : isClosed [] g = true ↔ Closed g := by
+  simp [isClosed, Closed]
+
+/-- **The store is closed under predecessors**, after any history. -/
+theorem Replicator.run_closed (P : Policy) (evs : List Event) : Closed (Replicator.run P evs).store := by
+  unfold Replicator.run
+  suffices ∀ r : Replicator, Closed r.store → Closed (evs.foldl (step P) r).store from this _ nofun
+  induction evs with
+  | nil => exact fun _ h => h
+  | cons e evs ih =>
+    refine fun r hr => ih _ ?_
+    cases e with
+    | write u k o => show Closed (r.write P u k o).1.store; rw [write_store]; exact hr
+    | save B =>
+      by_cases h : r.store.accepts B
+      · simp only [step, h, ite_true]
+        simp only [Graph.accepts, Bool.and_eq_true, isClosed, List.all_eq_true, List.any_eq_true,
+          beq_iff_eq] at h
+        have hc := h.2
+        intro x hx p hp
+        rcases List.mem_append.1 hx with hx | hx
+        · obtain ⟨y, hy, e⟩ := hr x hx p hp; exact ⟨y, List.mem_append_left _ hy, e⟩
+        · exact hc x hx p hp
+      · simpa [step, h] using hr
+
+/-- On a closed store, a batch with the facts the store already holds dropped
+is fresh: what a real replicator saves. -/
+theorem Closed.fresh_new {g : Graph} (hc : Closed g) (B : List Fact) :
+    Fresh g (B.filter fun b => !g.any (·.id == b.id)) := by
+  refine ⟨fun x hx b hb he => ?_, fun x hx p hp b hb he => ?_⟩
+  · simp only [List.mem_filter, Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at hb
+    exact hb.2 x hx he
+  · simp only [List.mem_filter, Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at hb
+    obtain ⟨y, hy, e⟩ := hc x hx p hp
+    exact hb.2 y hy (e.trans he)
 
 theorem Proof.eq_of_beq {p q : Proof} (h : p.beq q = true) : p = q := by
   obtain ⟨⟨g, ms, pr⟩, gs⟩ := p
@@ -78,11 +109,10 @@ theorem all_congr_mem {l : List α} {p q : α → Bool} (h : ∀ a ∈ l, p a = 
 /-- **A fresh batch that `mayChange` does not flag leaves `yields` as it was.** -/
 theorem yields_stable {p : Proof} {g : Graph} {B : List Fact} {k : FactId} (hb : p.bound = true)
     (hf : Fresh g B) (h : p.mayChange g B k = false) : p.yields (g ++ B) k = p.yields g k := by
-  have hwf := (isWellFormedDeep_iff p.spec).1 (by simp_all [Proof.bound])
   simp only [Proof.mayChange, List.any_eq_false, Bool.not_eq_true] at h
   refine any_congr_mem fun d hd => ?_
   rw [Bool.eq_iff_iff, List.any_eq_true, List.any_eq_true]
-  have hc := candidates_complete d (hwf d hd) hf (d.bindGivens p.givens)
+  have hc := candidates_complete d ((p.bound_iff.1 hb).2 d hd) hf (d.bindGivens p.givens)
   have hk : ∀ r, r.contains (some k) = true → (r ∈ d.read g _ ↔ r ∈ d.read (g ++ B) _) := fun r hr =>
     (hc r).resolve_right fun hm => Bool.eq_false_iff.1 (h d hd r hm) hr
   exact ⟨fun ⟨r, hr, hk'⟩ => ⟨r, (hk r hk').2 hr, hk'⟩, fun ⟨r, hr, hk'⟩ => ⟨r, (hk r hk').1 hr, hk'⟩⟩
@@ -97,7 +127,8 @@ theorem admits_stable {P : Policy} {g : Graph} {B : List Fact} {e : Entry} (hb :
   refine all_congr_mem fun clause hc => any_congr_mem fun q hq => ?_
   cases hq' : q.bound
   · rfl
-  · simp [yields_stable hq' hf (h.2 clause hc q hq)]
+  · have hwf := (q.bound_iff.1 hq').2
+    simp [confirms_eq_yields hwf, yields_stable hq' hf (h.2 clause hc q hq)]
 
 /-- Every cached decision is the one the store gives now, for a bound proof. -/
 def Cached.Valid (P : Policy) (c : Cached) : Prop :=
@@ -144,9 +175,10 @@ theorem Cached.step_valid {P : Policy} {c : Cached} (hv : c.Valid P) (q : Reques
   | .event (.save B) =>
     refine ⟨fun e he => ?_, rfl⟩
     rw [Cached.step] at he ⊢
-    by_cases hB : isFresh c.replicator.store B
+    by_cases hB : c.replicator.store.accepts B
     · simp only [hB, ite_true, List.mem_filter, Bool.not_eq_true'] at he
-      simpa [Replicator.step, hB, admits_stable (hv e he.1).1 ((isFresh_iff _ _).1 hB) he.2] using hv e he.1
+      have hf : Fresh c.replicator.store B := (isFresh_iff _ _).1 (by simp_all [Graph.accepts])
+      simpa [Replicator.step, hB, admits_stable (hv e he.1).1 hf he.2] using hv e he.1
     · simp only [hB, Bool.false_eq_true, ite_false] at he
       simpa [Replicator.step, hB] using hv e he
 

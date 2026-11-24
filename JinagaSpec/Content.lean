@@ -70,7 +70,12 @@ structure Policy where
 specifications are well formed (RR-1). A proof that leaves a given unbound
 says nothing about which facts its reader can reach, and `Proof.confirms`
 is `Proof.yields` only on well-formed descendants (`confirms_eq_yields`).
-`Proof.bound_iff` proves this decides `Proof.Bound`. -/
+`Proof.bound_iff` proves this decides `Proof.Bound`.
+
+`Specification` has no conditions on its givens, so no theorem covers a proof
+that has them. A port whose specification type can carry them (jinaga.js's
+does) refuses such a proof here too: `bound` in
+`ports/typescript/content-store.ts`. -/
 def Proof.bound (p : Proof) : Bool :=
   p.givens.length == p.spec.given.length && isWellFormedDeep p.spec
 
@@ -125,15 +130,17 @@ def Proof.confirms (p : Proof) (g : Graph) (key : FactId) : Bool :=
     d.given.all (g.has env) && d.projection.labels.any (d.bindsResult g env key)
 
 /-- The distribution rules let `u` run the specification with these givens on
-`g`: every clause (feed) has a bound rule proof whose results name `u`. A rule
-proof that is not bound counts for nothing.
+`g`: every clause (feed) has a bound rule proof whose results name `u`, which
+the replicator checks with `Proof.confirms` (it is `Proof.yields` on a bound
+proof, `confirms_eq_yields`). A rule proof that is not bound counts for
+nothing.
 
 With no clauses this is `true`: the engine must not authorize a specification
 merely because it has no feeds to check. `distribution` must give a
 specification at least one clause, as the feeds endpoint gives every
 specification at least one feed. -/
 def Policy.distributes (P : Policy) (u : User) (s : Specification) (gs : List FactId) (g : Graph) : Bool :=
-  (P.distribution s gs).all fun clause => clause.any fun q => q.bound && q.yields g u
+  (P.distribution s gs).all fun clause => clause.any fun q => q.bound && q.confirms g u
 
 /-- The distribution rules let `u` run the proof, and it yields `key`. -/
 def Policy.admits (P : Policy) (g : Graph) (u : User) (key : FactId) (p : Proof) : Bool :=
@@ -222,18 +229,29 @@ or names one as a predecessor (`Fresh`, `Proofs/Fresh.lean`; `isFresh_iff`). -/
 def isFresh (g : Graph) (B : List Fact) : Bool :=
   B.all fun b => g.all fun x => x.id != b.id && x.predecessors.all (·.2 != b.id)
 
+/-- Every predecessor a fact of `B` names is a fact of `g` or of `B`. So
+`isClosed [] g` says the store `g` holds every predecessor of each fact it
+holds (`isClosed_iff`). -/
+def isClosed (g : Graph) (B : List Fact) : Bool :=
+  B.all fun b => b.predecessors.all fun p => (g ++ B).any (·.id == p.2)
+
+/-- A save stores the batch `B` on `g` only if it is fresh and closed. -/
+def Graph.accepts (g : Graph) (B : List Fact) : Bool := isFresh g B && isClosed g B
+
 /-- What changes the replicator's state: a batch of facts saved through the
 normal path, or an upload. A read changes nothing. A batch is stored only if it
-is fresh, and otherwise ignored. A real replicator first drops the facts it
-already stores; when the store holds every predecessor of each fact it holds,
-what remains is fresh. The fact store's own authorization is not modelled, so
-the theorems hold against every store. -/
+is fresh and names no predecessor outside the store and the batch, and is
+otherwise ignored. So the store holds every predecessor of each fact it holds
+(`Replicator.run_closed`), and a batch from which a real replicator has
+dropped the facts it already stores is fresh (`Closed.fresh_new`). The fact
+store's own authorization is not modelled, so the theorems hold against every
+store. -/
 inductive Event where
   | save (B : List Fact)
   | write (user : Option User) (key : FactId) (o : Bytes)
 
 def Replicator.step (P : Policy) (r : Replicator) : Event → Replicator
-  | .save B => if isFresh r.store B then { r with store := r.store ++ B } else r
+  | .save B => if r.store.accepts B then { r with store := r.store ++ B } else r
   | .write u key o => (r.write P u key o).1
 
 /-- The state after a history of events, from an empty replicator. -/
