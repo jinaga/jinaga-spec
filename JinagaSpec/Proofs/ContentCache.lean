@@ -117,18 +117,23 @@ theorem yields_stable {p : Proof} {g : Graph} {B : List Fact} {k : FactId} (hb :
     (hc r).resolve_right fun hm => Bool.eq_false_iff.1 (h d hd r hm) hr
   exact ⟨fun ⟨r, hr, hk'⟩ => ⟨r, (hk r hk').2 hr, hk'⟩, fun ⟨r, hr, hk'⟩ => ⟨r, (hk r hk').1 hr, hk'⟩⟩
 
+/-- **A fresh batch that changes no rule proof's yields of the user leaves
+`distributes` as it was.** -/
+theorem distributes_stable {P : Policy} {g : Graph} {B : List Fact} (hf : Fresh g B)
+    (h : (P.distribution s gs).any (·.any (·.mayChange g B u)) = false) :
+    P.distributes u s gs (g ++ B) = P.distributes u s gs g := by
+  simp only [List.any_eq_false, Bool.not_eq_true] at h
+  refine all_congr_mem fun clause hc => any_congr_mem fun q hq => ?_
+  cases hq' : q.bound
+  · rfl
+  · simp [confirms_eq_yields (q.bound_iff.1 hq').2, yields_stable hq' hf (h clause hc q hq)]
+
 /-- **A decision the save does not invalidate stands.** -/
 theorem admits_stable {P : Policy} {g : Graph} {B : List Fact} {e : Entry} (hb : e.proof.bound = true)
     (hf : Fresh g B) (h : P.invalidates g B e = false) :
     P.admits (g ++ B) e.user e.key e.proof = P.admits g e.user e.key e.proof := by
-  simp only [Policy.invalidates, Bool.or_eq_false_iff, List.any_eq_false, Bool.not_eq_true] at h
-  simp only [Policy.admits, Policy.distributes, yields_stable hb hf h.1]
-  congr 1
-  refine all_congr_mem fun clause hc => any_congr_mem fun q hq => ?_
-  cases hq' : q.bound
-  · rfl
-  · have hwf := (q.bound_iff.1 hq').2
-    simp [confirms_eq_yields hwf, yields_stable hq' hf (h.2 clause hc q hq)]
+  simp only [Policy.invalidates, Bool.or_eq_false_iff] at h
+  simp only [Policy.admits, yields_stable hb hf h.1, distributes_stable hf h.2]
 
 /-- Every cached decision is the one the store gives now, for a bound proof. -/
 def Cached.Valid (P : Policy) (c : Cached) : Prop :=
@@ -169,6 +174,7 @@ theorem Cached.step_valid {P : Policy} {c : Cached} (hv : c.Valid P) (q : Reques
       | none => c.replicator := by
   match q with
   | .read u key p => exact (read_valid hv u key p).2
+  | .hold .. | .tick => exact ⟨hv, rfl⟩
   | .event (.write u key o) =>
     refine ⟨fun e he => ?_, rfl⟩
     simpa [Cached.step, Replicator.step, Replicator.write_store] using hv e he

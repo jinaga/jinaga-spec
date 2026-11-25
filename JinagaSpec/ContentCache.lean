@@ -94,14 +94,18 @@ def Cached.read (P : Policy) (c : Cached) (user : Option User) (key : FactId) (p
           | none => .notUploaded
           | some o => .ok o)
 
-/-- An event or a read, in the order the replicator handles them. -/
+/-- An event or a read, in the order the replicator handles them. A `hold` is
+a read that may be held until its timeout, in ticks, and a `tick` is the clock
+advancing (RR-6, `ContentHold.lean`); neither changes the cache. -/
 inductive Request where
   | event (e : Event)
   | read (user : Option User) (key : FactId) (p : Proof)
+  | hold (user : Option User) (key : FactId) (p : Proof) (timeout : Nat)
+  | tick
 
 def Request.event? : Request → Option Event
   | .event e => some e
-  | .read .. => none
+  | _ => none
 
 /-- A save of a batch the store accepts (fresh and closed, `Graph.accepts`)
 drops every entry it may invalidate; a save the store refuses changes nothing.
@@ -113,6 +117,7 @@ def Cached.step (P : Policy) (c : Cached) : Request → Cached
         else c.cache }
   | .event e => { c with replicator := c.replicator.step P e }
   | .read u key p => (c.read P u key p).1
+  | .hold .. | .tick => c
 
 /-- The state after a history of requests, from an empty replicator and cache. -/
 def Cached.run (P : Policy) (hs : List Request) : Cached :=

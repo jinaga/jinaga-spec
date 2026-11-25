@@ -30,7 +30,8 @@ store with the same engine as every other proof. Because the rules are
 specifications, a save invalidates a cached decision exactly as it invalidates
 any other query (`ContentCache.lean`).
 
-Reactive authorization (RR-6), chunked uploads and the client are out of scope.
+A read that the rules may yet admit is held (RR-6, SEC-6) in
+`ContentHold.lean`. Chunked uploads and the client are out of scope.
 
 Written in the same portable subset as `Split.lean`.
 -/
@@ -177,6 +178,9 @@ inductive Response where
   | unprocessable
   /-- 413: the object breaks the declared constraints (RW-6). -/
   | tooLarge
+  /-- 409 with Retry-After: a held read still Reactive at its deadline (RR-6,
+  `ContentHold.lean`). -/
+  | retryAfter
 deriving DecidableEq, Repr
 
 /-- `PUT /content/{key}`: store `o` under `key`. The user is the one behind the
