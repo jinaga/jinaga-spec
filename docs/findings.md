@@ -1641,6 +1641,7 @@ theorem holds for every policy.
 | | `read_admitted`, `write_accepted` | an admitted reader with a bound proof gets the object, or 404 `not_uploaded`; an authorized upload of matching bytes within the constraints is stored, or answered 200 if the key already holds one |
 | RR-4 | `confirms_eq_yields` | the check `read` runs, `Proof.confirms` (bind the content fact as a result and look for a solution), is `Proof.yields` for every proof whose specification's descendants are well formed |
 | RR-1 | `read_badRequest`, `Proof.bound_iff` | an authenticated read is 400 exactly when the proof is not `Proof.Bound`: a fact for every given, and every descendant well formed, which `Proof.bound` decides |
+| RW-6 | `write_tooLarge` | an authorized upload to a content-bearing fact that breaks the constraints is 413, and stores nothing, whether or not its bytes match the content hash |
 | | `Replicator.save_fresh`, `Replicator.run_closed` | a save stores the whole batch, and only if it is fresh, or nothing; after any history the store holds every predecessor of each fact it holds |
 
 SEC-1 to SEC-5 only say when the replicator may serve or store. A handler that
@@ -1668,6 +1669,16 @@ Decisions the statements forced:
   object is consulted. Only a missing fact (RW-2) is answered first, because
   there is no fact to authorize; that answer reveals only the fact store,
   which the writer named.
+- **The constraints are checked before the hash.** RW-6 requires the
+  replicator to abort an oversized stream with 413 before all of it has
+  arrived, so before its hash is known. A handler that hashes first cannot do
+  that, so `write` checks `fits` (413) before comparing the hash (422), after
+  the writer (403) and the content-bearing check (422, RW-3), which need only
+  the fact. Bytes that are both too large and mismatched get 413
+  (`write_tooLarge`; vector `too-large-and-mismatched`, which the old order
+  answered 422). No security theorem tells the two orders apart: either way
+  nothing is stored. The mutant that hashes first is caught only by
+  `write_tooLarge` (jinaga/jinaga-spec#63).
 - **"Yields" is any projected fact, at any depth.** A proof yields `F` when
   some result names it, at any position: a reader the rules admit may see
   everything the specification returns. A child specification counts: its
@@ -1851,6 +1862,42 @@ catch all fifteen of the handlers' and all six of the cache's.
 computing yields with the port of `Proof.confirms`
 (`ports/typescript/content-proof.ts`), which the harness also checks against
 each vector's `yields`.
+
+### The content hash (jinaga-spec#64)
+
+`Policy.hash` stays abstract, and no theorem changes. But a client hashes a
+blob when it stages it (CW-1), a replicator while it streams the upload
+(RW-5), and a client again on arrival (CR-7), so the libraries must agree
+byte for byte. The content hash is defined (`vectors/README.md`) as the fact
+hash's digest and encoding applied to the object's raw bytes, with no
+serialization: standard, padded base64 of SHA-512.
+
+The fact hash is read from jinaga.js 6.17.0 as published on npm (`npm pack
+jinaga`): `computeObjectHash` (`src/fact/hash.ts`, lines 53 to 59) hashes the
+canonical string with `computeStringHash` (`src/util/encoding.ts`, lines 5 to
+10), which takes the string's UTF-8 (`@stablelib/utf8`), its SHA-512
+(`@stablelib/sha512` 1.0.1) and `encode` of `@stablelib/base64` 1.0.1, the
+standard alphabet with `=` padding. `npm run content-hash` checks the vectors
+against those primitives when `JINAGA_JS` names a checkout; it passed against
+that package with its dependencies installed. jinaga.net's fact hash is
+unverified: no checkout was available.
+
+The content hash has no prefix or other domain separation from fact hashes,
+and needs none. Nothing is looked up by content hash: an object is stored and
+read under its content key, a `FactId` (ST-1). A read depends on the fact
+store and, among objects, only on the one under that key (`read_isolated`,
+SEC-4: two replicators with the same store and the same object under the key
+answer alike). A content hash can equal a fact's hash without any collision:
+upload a fact's canonical string and the two are equal by construction. The
+argument therefore rests on SEC-4 and ST-1, not on collision resistance:
+since no read path takes a hash as a key, equal strings cannot be confused.
+A prefix added for safety would only break agreement with the libraries that
+hash the bytes as they are.
+
+`computeStringHash` itself is not the content hash: it takes a string, and
+bytes that are not valid UTF-8 do not survive decoding. The runner checks
+that `computeStringHash` of `not-utf8`'s lossily decoded text differs from its
+content hash.
 
 ### Revocation and the proof cache: SEC-7 and NF-2
 

@@ -31,6 +31,8 @@ structure Mutant where
   mayCreate : Policy → User → Graph → Fact → Bool := Policy.mayCreate
   /-- Compare the uploaded bytes with the content hash. -/
   checkHash : Bool := true
+  /-- Compare the bytes with the content hash before checking the constraints. -/
+  hashFirst : Bool := false
   /-- Answer a repeat upload (RW-8) before checking the writer. -/
   repeatFirst : Bool := false
   /-- Bytes that do not match take the stored bytes of the same hash instead. -/
@@ -66,10 +68,11 @@ def writeWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (k
       else match P.contentHash f with
       | none => (r, .unprocessable)
       | some h =>
+        if !m.hashFirst && !P.fits f o then (r, .tooLarge) else
         let known := if m.hashShortcut then (r.objects.find? fun (_, b) => P.hash b == h).map (·.2) else none
         let o := if P.hash o != h then known.getD o else o
         if m.checkHash && P.hash o != h then (r, .unprocessable)
-        else if !P.fits f o then (r, .tooLarge)
+        else if m.hashFirst && !P.fits f o then (r, .tooLarge)
         else match r.objects.lookup key with
           | some _ => (r, .alreadyStored)
           | none => ({ r with objects := (key, o) :: r.objects }, .stored)
@@ -137,6 +140,7 @@ def mutants : List (String × Mutant) := [
   ("SEC-4: look an object up by its content hash", { lookup := byContentHash }),
   ("SEC-5: answer 404 before checking the proof", { existenceFirst := true }),
   ("SEC-5: answer a repeat upload before checking the writer", { repeatFirst := true }),
+  ("write_tooLarge: check the hash before the constraints", { hashFirst := true }),
   ("save_fresh: store a batch without checking it is fresh", { checkFresh := false }),
   ("run_closed: store a batch that names a predecessor not stored", { checkClosed := false })
 ]

@@ -216,6 +216,11 @@ def contentCases : List ContentCase := [
     "Bytes that match the content hash but exceed the declared maximum are refused with 413."
     "MD-2, RW-6"
     [save notes, write alice 12 "notes!", .read alice 12 [1]],
+  make "too-large-and-mismatched"
+    "Bytes that exceed the declared maximum and also do not match the content hash are refused with 413, not 422: the constraints are checked first, since an oversized stream is aborted before its hash is known. Nothing is stored."
+    "RW-6, RW-5"
+    [save notes, write alice 12 "notex", .read alice 12 [1]]
+    ["write_tooLarge: check the hash before the constraints"],
   make "not-content-bearing"
     "A fact whose type is not declared content-bearing takes no object: 422."
     "RW-3"

@@ -99,3 +99,17 @@ The histories with `hold` and `tick` steps run only against
 deadline, woken by the saves `invalidates` names, and answered through a
 callback. Every step's answers to held reads must equal its `answers`.
 
+## Content-hash vectors
+
+```
+npm run content-hash
+JINAGA_JS=/path/to/jinaga.js npm run content-hash
+```
+
+Hashes each `vectors/content-hash/` object with Node's crypto, one shot and in
+chunks of 1, 3, 64, 1000 and 65536 bytes, and compares each with the vector's
+hash. With a jinaga.js checkout it also hashes the bytes with the primitives
+its fact hash uses (`@stablelib/sha512`, then `@stablelib/base64`'s `encode`,
+resolved from `src/util/encoding.ts`), and checks that `computeStringHash` of
+`not-utf8`'s lossily decoded text gives a different hash: decoding the bytes
+to text is not the content hash. Without a checkout, both checks are skipped.

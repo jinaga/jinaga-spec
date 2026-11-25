@@ -4,7 +4,7 @@ import ContentMutants
 /-!
 # Randomized check of the content store
 
-`lake exe check-content [seed]` tests SEC-1 to SEC-5, `read_admitted` and
+`lake exe check-content [seed]` tests SEC-1 to SEC-5, `read_admitted`, `write_tooLarge` and
 `confirms_eq_yields` (`Proofs/Content.lean`), and `Replicator.save_fresh`,
 `Replicator.run_closed` and `cached_read` (`Proofs/ContentCache.lean`), and the
 hold's theorems (`Proofs/ContentHold.lean`), as the theorems state them, on
@@ -66,6 +66,15 @@ def violations (m : Mutant) (P : Policy) (evs : List Event) (reads : List (Optio
       let refused := match s.store.factOf k with | some f => !P.mayCreate u s.store f | none => true
       if refused && (writeWith m P s (some u) k o).2 != (writeWith m P { s with objects := [] } (some u) k o).2 then
         out := "SEC-5" :: out
+  -- write_tooLarge: an authorized upload to a content-bearing fact that breaks
+  -- the constraints is refused with 413, whatever its hash.
+  for (e, s) in evs.zip states do
+    if let .write (some u) k o := e then
+      if let some f := s.store.factOf k then
+        let (s', resp) := writeWith m P s (some u) k o
+        if P.mayCreate u s.store f && (P.contentHash f).isSome && !P.fits f o &&
+            (resp != .tooLarge || s'.objects != s.objects) then
+          out := "write_tooLarge" :: out
   for ((e, s), s') in (evs.zip states).zip states.tail do
     if let .save B := e then
       -- save_fresh: a save stores the whole batch, and only if it is fresh, or nothing.

@@ -47,6 +47,9 @@ is 400 exactly when the proof is not bound.
 SEC-1 to SEC-5 only say when the replicator may serve or store. The success
 path is `read_admitted` and `write_accepted`: an admitted reader is served, or
 told nothing is stored, and an authorized, matching upload is stored.
+`write_tooLarge` (RW-6): an authorized upload to a content-bearing fact that
+breaks the constraints is 413 whatever its hash, so a replicator may abort an
+oversized stream before the hash is known.
 
 `CheckContent.lean` tests each statement as written against mutants of the
 handlers, one per way of breaking it.
@@ -311,6 +314,16 @@ theorem write_accepted {P : Policy} {r : Replicator} (hf : r.store.factOf key = 
       | some _ => (r, .alreadyStored)
       | none => ({ r with objects := (key, o) :: r.objects }, .stored) := by
   simp [Replicator.write, hf, hm, hh, hfit]; cases r.objects.lookup key <;> rfl
+
+/-- RW-6: an authorized writer's upload to a content-bearing fact that breaks
+the constraints is refused with 413, whether or not the bytes match the content
+hash. The constraints are checked before the hash, because an oversized stream
+is aborted before its last byte arrives, and so before its hash is known. -/
+theorem write_tooLarge {P : Policy} {r : Replicator} (hf : r.store.factOf key = some f)
+    (hm : P.mayCreate u r.store f = true) (hh : P.contentHash f = some h)
+    (hfit : P.fits f o = false) :
+    r.write P (some u) key o = (r, .tooLarge) := by
+  simp [Replicator.write, hf, hm, hh, hfit]
 
 /-- Running the matches `ms` from `env`, the projection `p` names `key`: some
 solution projects it, or names it through a child specification, read from
