@@ -1,0 +1,6 @@
+{
+  "name": "not-utf8",
+  "description": "Bytes that are not valid UTF-8. Decoding them to a string first, and hashing that string's UTF-8 as the fact hash does its canonical string, replaces them with U+FFFD and gives another hash: the content hash takes the bytes as they are.",
+  "bytes": "c328ff80fe",
+  "hash": "J3rWoiA3S34XniIUJ3r2vNYTHj3bgtt2FzsVDmjrHf6C3xdJo2YgB6fG43HhjgEZzQh1XGNtSlJa1jtQZOAqvA=="
+}

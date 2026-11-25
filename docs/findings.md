@@ -1863,6 +1863,42 @@ computing yields with the port of `Proof.confirms`
 (`ports/typescript/content-proof.ts`), which the harness also checks against
 each vector's `yields`.
 
+### The content hash (jinaga-spec#64)
+
+`Policy.hash` stays abstract, and no theorem changes. But a client hashes a
+blob when it stages it (CW-1), a replicator while it streams the upload
+(RW-5), and a client again on arrival (CR-7), so the libraries must agree
+byte for byte. The content hash is defined (`vectors/README.md`) as the fact
+hash's digest and encoding applied to the object's raw bytes, with no
+serialization: standard, padded base64 of SHA-512.
+
+The fact hash is read from jinaga.js 6.17.0 as published on npm (`npm pack
+jinaga`): `computeObjectHash` (`src/fact/hash.ts`, lines 53 to 59) hashes the
+canonical string with `computeStringHash` (`src/util/encoding.ts`, lines 5 to
+10), which takes the string's UTF-8 (`@stablelib/utf8`), its SHA-512
+(`@stablelib/sha512` 1.0.1) and `encode` of `@stablelib/base64` 1.0.1, the
+standard alphabet with `=` padding. `npm run content-hash` checks the vectors
+against those primitives when `JINAGA_JS` names a checkout; it passed against
+that package with its dependencies installed. jinaga.net's fact hash is
+unverified: no checkout was available.
+
+The content hash has no prefix or other domain separation from fact hashes,
+and needs none. Nothing is looked up by content hash: an object is stored and
+read under its content key, a `FactId` (ST-1). A read depends on the fact
+store and, among objects, only on the one under that key (`read_isolated`,
+SEC-4: two replicators with the same store and the same object under the key
+answer alike). A content hash can equal a fact's hash without any collision:
+upload a fact's canonical string and the two are equal by construction. The
+argument therefore rests on SEC-4 and ST-1, not on collision resistance:
+since no read path takes a hash as a key, equal strings cannot be confused.
+A prefix added for safety would only break agreement with the libraries that
+hash the bytes as they are.
+
+`computeStringHash` itself is not the content hash: it takes a string, and
+bytes that are not valid UTF-8 do not survive decoding. The runner checks
+that `computeStringHash` of `not-utf8`'s lossily decoded text differs from its
+content hash.
+
 ### Revocation and the proof cache: SEC-7 and NF-2
 
 NF-2 lets the replicator cache proof results per user, specification and

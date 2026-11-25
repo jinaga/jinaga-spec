@@ -9,7 +9,8 @@
     "inverse": "tsx run-inverse-vectors.ts",
     "cascade": "tsx run-cascade-vectors.ts",
     "feeds": "tsx run-feed-vectors.ts",
-    "content": "tsx run-content-vectors.ts"
+    "content": "tsx run-content-vectors.ts",
+    "content-hash": "tsx run-content-hash-vectors.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

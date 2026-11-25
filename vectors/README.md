@@ -424,3 +424,35 @@ token (401), fact present (404), writer (403), content-bearing (422), size
 (413), hash (422). Size comes before hash because RW-6 aborts an oversized
 stream before its hash is known (`too-large-and-mismatched`).
 
+
+## `content-hash/<name>.json`
+
+The content hash a content fact's content hash field holds, and that a client
+computes when it stages a blob (CW-1), a replicator while it streams an upload
+(RW-5) and a client again on arrival (CR-7). `Policy.hash` is abstract, and
+the theorems hold for every hash; these vectors fix the concrete one, so that
+every library computes the same string:
+
+> the content hash of an object is the standard base64 encoding (RFC 4648 §4,
+> with `=` padding) of the SHA-512 digest of its raw bytes.
+
+That is the fact hash's digest and encoding (jinaga.js's `computeStringHash`,
+`src/util/encoding.ts`), applied to the bytes as they are: no serialization,
+no UTF-8 decoding or encoding, no prefix. Hashing the bytes in chunks of any
+size, in order, must give the one-shot result.
+
+Written by hand, not by `lake exe vectors`: the Lean model has no concrete hash.
+
+```jsonc
+{
+  "name": "not-utf8",
+  "description": "...",
+  "bytes": "c328ff80fe",          // the object, in hex; "" is the empty object
+  "hash": "J3rWoiA3...ZOAqvA=="   // the content hash
+}
+```
+
+A vector has `bytes` or `ramp`, never both: `"ramp": n` is the object of `n`
+bytes whose byte `i` is `i mod 256`, for an object too large to inline.
+`ports/typescript/run-content-hash-vectors.ts` (`npm run content-hash`) runs
+them.

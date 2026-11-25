@@ -1,0 +1,6 @@
+{
+  "name": "larger-than-chunk",
+  "description": "131073 bytes, two 64 KiB chunks and one byte more; byte i is i mod 256.",
+  "ramp": 131073,
+  "hash": "EzkPPHfZ0EfiL9X8yd09x1UvKhNfA01UisraKQ7fu5MJWE/Mtu5mlR3WCT0TUW6Lclm8INbNU4mbtxNgS9Dyig=="
+}

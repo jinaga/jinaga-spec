@@ -48,16 +48,21 @@ echo "== Randomized check of the content store"
 lake build check-content
 for seed in 1 2; do lake exe check-content "$seed" | grep -E "^histories|^real|mutant"; done
 
+# Absolute, since the steps below run from ports/typescript.
+jinaga="${JINAGA_JS:-../jinaga.js}"
+case "$jinaga" in /*) ;; *) jinaga="$PWD/$jinaga" ;; esac
+if [ -d "$jinaga" ]; then jinaga="$(cd "$jinaga" && pwd)"; fi
+
 echo "== Content vectors against the TypeScript reference store"
 (
   cd ports/typescript
   npm ci --silent
   npm run --silent content | grep -E "content vectors pass|FAIL"
+  # Checked against jinaga.js's hashing primitives too, when $jinaga is a checkout.
+  JINAGA_JS="$jinaga" npm run --silent content-hash | grep -E "content-hash vectors pass|FAIL"
 )
 
-jinaga="${JINAGA_JS:-../jinaga.js}"
 if [ -d "$jinaga/src/specification" ]; then
-  jinaga="$(cd "$jinaga" && pwd)"
   echo "== TypeScript port against $jinaga"
   # Each step is its own statement, not chained with && or ;: under set -e, a
   # failure partway through an && list (e.g. cd or npm ci) does not stop the
@@ -80,7 +85,7 @@ if [ -d "$jinaga/src/specification" ]; then
     # buildFeeds is reported, and must miss a result only where the runner says.
     JINAGA_JS="$jinaga" PORT=./feed-builder.ts npm run --silent feeds | grep -E "feed vectors|FAIL"
     JINAGA_JS="$jinaga" npm run --silent feeds | grep -E "feed vectors|FAIL|expected"
-    npm run --silent audit | tail -2
+    JINAGA_JS="$jinaga" npm run --silent audit | tail -2
   )
 else
   echo "== TypeScript port skipped (no jinaga.js checkout at $jinaga)"
