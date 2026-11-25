@@ -1641,6 +1641,7 @@ theorem holds for every policy.
 | | `read_admitted`, `write_accepted` | an admitted reader with a bound proof gets the object, or 404 `not_uploaded`; an authorized upload of matching bytes within the constraints is stored, or answered 200 if the key already holds one |
 | RR-4 | `confirms_eq_yields` | the check `read` runs, `Proof.confirms` (bind the content fact as a result and look for a solution), is `Proof.yields` for every proof whose specification's descendants are well formed |
 | RR-1 | `read_badRequest`, `Proof.bound_iff` | an authenticated read is 400 exactly when the proof is not `Proof.Bound`: a fact for every given, and every descendant well formed, which `Proof.bound` decides |
+| RW-6 | `write_tooLarge` | an authorized upload to a content-bearing fact that breaks the constraints is 413, and stores nothing, whether or not its bytes match the content hash |
 | | `Replicator.save_fresh`, `Replicator.run_closed` | a save stores the whole batch, and only if it is fresh, or nothing; after any history the store holds every predecessor of each fact it holds |
 
 SEC-1 to SEC-5 only say when the replicator may serve or store. A handler that
@@ -1668,6 +1669,16 @@ Decisions the statements forced:
   object is consulted. Only a missing fact (RW-2) is answered first, because
   there is no fact to authorize; that answer reveals only the fact store,
   which the writer named.
+- **The constraints are checked before the hash.** RW-6 requires the
+  replicator to abort an oversized stream with 413 before all of it has
+  arrived, so before its hash is known. A handler that hashes first cannot do
+  that, so `write` checks `fits` (413) before comparing the hash (422), after
+  the writer (403) and the content-bearing check (422, RW-3), which need only
+  the fact. Bytes that are both too large and mismatched get 413
+  (`write_tooLarge`; vector `too-large-and-mismatched`, which the old order
+  answered 422). No security theorem tells the two orders apart: either way
+  nothing is stored. The mutant that hashes first is caught only by
+  `write_tooLarge` (jinaga/jinaga-spec#63).
 - **"Yields" is any projected fact, at any depth.** A proof yields `F` when
   some result names it, at any position: a reader the rules admit may see
   everything the specification returns. A child specification counts: its
