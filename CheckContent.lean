@@ -185,8 +185,7 @@ def genOrder (graph extra : List Fact) : Gen (List Fact) := do
   return out
 
 /-- A history: the users' facts, then `facts` saved in batches of one to four,
-with uploads, reads and held reads with proofs from `pool` among them, and
-ticks. One batch in ten
+with uploads and reads with proofs from `pool` among them. One batch in ten
 also repeats a fact already saved, so is not fresh, and is not stored; one in
 ten is preceded by a later fact saved alone before a predecessor it names, so
 not closed, and not stored. Some
@@ -210,17 +209,28 @@ def genHistory (facts : List Fact) (pool : List (Option User × FactId × Proof)
     hs := hs ++ [.event (.save B)]
     for _ in [0:(← below 3) + 1] do
       let (u, k, p) ← pick pool
-      let t ← below 4
-      if ← chance 1 2 then hs := hs ++ [.read u k p]
-      else
-        hs := hs ++ [.hold u k p t]
-        -- Half the time an upload for the key follows, so that the object can
-        -- arrive while the read is held.
-        if ← chance 1 2 then hs := hs ++ [.event (← genUpload k)]
-    if ← chance 1 2 then hs := hs ++ [.tick]
+      hs := hs ++ [.read u k p]
   for _ in [0:(← below 4)] do
     hs := hs ++ [.event (← genUpload)]
   return hs
+
+/-- The history with held reads and ticks added: after half the reads, the
+same read held for zero to three ticks, and half of those followed by an upload
+for its key, so that the object can arrive while the read is held; after half
+the saves, a tick. Drawn from a generator of its own, so the history it adds to
+is the same as without holds. -/
+def addHolds (hs : List Request) : Gen (List Request) := do
+  let mut out := []
+  for q in hs do
+    out := out ++ [q]
+    match q with
+    | .read u k p =>
+      if ← chance 1 2 then
+        out := out ++ [.hold u k p (← below 4)]
+        if ← chance 1 2 then out := out ++ [.event (← genUpload k)]
+    | .event (.save _) => if ← chance 1 2 then out := out ++ [.tick]
+    | _ => pure ()
+  return out
 
 /-- `cached_read`: every read in the history, answered by the cached
 replicator whose saves invalidate as `m` makes them, is answered as
@@ -316,6 +326,7 @@ def cacheFamilyAgrees (P : Policy) (hs : List Request) : Bool := Id.run do
 def main (args : List String) : IO UInt32 := do
   let seed := (args.head?.bind String.toNat?).getD 1
   let mut gen : StdGen × Nat := (mkStdGen seed, 0)
+  let mut holdGen : StdGen × Nat := (mkStdGen (seed + 7919), 0)
   let histories := 2000
   let mut reads := 0
   let mut served := 0
@@ -378,6 +389,8 @@ def main (args : List String) : IO UInt32 := do
         rs := (some 0, 0, { spec := bad, givens := ← genGivens bad g 0 : Proof }) :: rs
       return (g, hs, rs, policyVia via) : Gen (Graph × List Request × List (Option User × FactId × Proof) × Policy)).run gen
     gen := gen'
+    let (hs, holdGen') := (addHolds hs).run holdGen
+    holdGen := holdGen'
     let evs := hs.filterMap Request.event?
     requests := requests + hs.length
     let mut before := Replicator.empty

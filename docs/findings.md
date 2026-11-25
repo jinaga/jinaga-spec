@@ -2028,18 +2028,25 @@ cannot admit a read that was Reactive. SEC-6 needs no more than `held_live`
 and `held_reactive`: a held read is answered only by a save that ends its
 Reactive state or by its timeout.
 
-`check-content` runs the hold's statements on its random histories, with half
-of the pool's reads held for zero to three ticks and a tick after half the
-batches. Each hold mutant breaks one rule, and is caught by the statement its
-label names and by a named vector:
+`check-content` runs the hold's statements on its random histories: after
+half the reads, the same read held for zero to three ticks, half of those
+followed by an upload for its key, and a tick after half the saves, drawn
+from a generator of its own so that the histories the cache's counts above
+come from are unchanged (the uploads change only the handlers' counts). Each
+hold mutant breaks one rule, and is caught by the statement its label names
+and by a named vector. Counts from one run of `check-content` on seeds 1 and
+2 at the commit that adds the hold:
 
-| hold mutant | caught by | named vector |
-|---|---|---|
-| answer 403 while Reactive | `held_not_forbidden` | `hold-membership-arrives` |
-| hold only while an object is stored (the hold reads `objects`) | `held_noninterference` | `hold-uploaded-mid-hold` |
-| wake only on a save of the content fact's type | `held_live`, `wake_on_invalidates` | `hold-membership-arrives` |
-| look the object up when the hold starts | `held_live`, `held_answer` | `hold-uploaded-mid-hold` |
-| never time out | `held_timeout` | `hold-times-out` |
+| hold mutant | caught on (seed 1, seed 2) | by | named vector |
+|---|---|---|---|
+| answer 403 while Reactive | 1734, 1758 | `held_not_forbidden`, `held_answer` | `hold-membership-arrives` |
+| hold only while an object is stored (the hold reads `objects`) | 1734, 1758 | `held_noninterference`, `held_not_forbidden`, `held_answer` | `hold-uploaded-mid-hold` |
+| wake only on a save of the content fact's type | 591, 591 | `held_live`, `wake_on_invalidates`, `held_reactive` | `hold-membership-arrives` |
+| look the object up when the hold starts | 8, 6 | `held_live`, `held_answer` | `hold-uploaded-mid-hold` |
+| never time out | 899, 914 | `held_timeout` | `hold-times-out` |
+
+The lookup mutant is rare on random histories: it needs an upload between a
+hold and the save that admits it. The named vector catches it directly.
 
 `hold-revoked-while-held` holds Eve's read while her membership arrives
 already removed: the save wakes the read, which is still Reactive, so it
