@@ -47,6 +47,9 @@ is 400 exactly when the proof is not bound.
 SEC-1 to SEC-5 only say when the replicator may serve or store. The success
 path is `read_admitted` and `write_accepted`: an admitted reader is served, or
 told nothing is stored, and an authorized, matching upload is stored.
+`write_tooLarge` (RW-6): an authorized upload to a content-bearing fact that
+breaks the constraints is 413 whatever its hash, so a replicator may abort an
+oversized stream before the hash is known.
 
 `CheckContent.lean` tests each statement as written against mutants of the
 handlers, one per way of breaking it.

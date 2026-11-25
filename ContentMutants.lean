@@ -70,7 +70,7 @@ def writeWith (m : Mutant) (P : Policy) (r : Replicator) (user : Option User) (k
         let known := if m.hashShortcut then (r.objects.find? fun (_, b) => P.hash b == h).map (·.2) else none
         let o := if P.hash o != h then known.getD o else o
         if m.checkHash && P.hash o != h then (r, .unprocessable)
-        else if !P.fits f o then (r, .tooLarge)
+        else if m.hashFirst && !P.fits f o then (r, .tooLarge)
         else match r.objects.lookup key with
           | some _ => (r, .alreadyStored)
           | none => ({ r with objects := (key, o) :: r.objects }, .stored)
