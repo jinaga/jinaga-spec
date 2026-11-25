@@ -318,7 +318,7 @@ theorem write_accepted {P : Policy} {r : Replicator} (hf : r.store.factOf key = 
 /-- RW-6: an authorized writer's upload to a content-bearing fact that breaks
 the constraints is refused with 413, whether or not the bytes match the content
 hash. The constraints are checked before the hash, because an oversized stream
-is aborted before all of it, and so its hash, is known. -/
+is aborted before its last byte arrives, and so before its hash is known. -/
 theorem write_tooLarge {P : Policy} {r : Replicator} (hf : r.store.factOf key = some f)
     (hm : P.mayCreate u r.store f = true) (hh : P.contentHash f = some h)
     (hfit : P.fits f o = false) :
