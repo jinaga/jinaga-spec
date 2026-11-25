@@ -93,3 +93,9 @@ result when a given arrives) name the key for the reader's proof, or the user
 for a rule proof. A cache never changes an answer (`cached_read`), so it must
 give the same responses. Needs no jinaga.js checkout.
 
+The histories with `hold` and `tick` steps run only against
+`HoldingContentStore` (`content-cache.ts`, the port of
+`JinagaSpec/ContentHold.lean`, RR-6): a Reactive read is held until its
+deadline, woken by the saves `invalidates` names, and answered through a
+callback. Every step's answers to held reads must equal its `answers`.
+

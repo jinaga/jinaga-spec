@@ -15,7 +15,11 @@
 // `yields`, the oracle's answer, for every bound proof.
 //
 // Every write's and read's response must equal `expected`, and the objects
-// stored at the end must equal `expected.objects`.
+// stored at the end must equal `expected.objects`. A vector with `hold` and
+// `tick` steps runs only against the holding store (RR-6), content-cache.ts's
+// `HoldingContentStore`, or the module CACHE_PORT names: the answers each step
+// gives held reads, by the index of the step that held the read, must equal
+// its `answers`, or none if it has none.
 import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -27,7 +31,8 @@ import { confirms } from "./content-proof.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const vectorsDir = join(resolve(process.env.VECTORS ?? join(here, "../../vectors")), "content");
 const { ContentStore } = await import(pathToFileURL(resolve(process.env.PORT ?? join(here, "content-store.ts"))).href);
-const { CachedContentStore } = await import(pathToFileURL(resolve(process.env.CACHE_PORT ?? join(here, "content-cache.ts"))).href);
+const { CachedContentStore, HoldingContentStore } =
+    await import(pathToFileURL(resolve(process.env.CACHE_PORT ?? join(here, "content-cache.ts"))).href);
 
 /** The vector's policy. */
 function policyOf(v: any): Policy {
@@ -45,18 +50,34 @@ function policyOf(v: any): Policy {
 const vectors = readdirSync(vectorsDir).filter(f => f.endsWith(".json")).sort()
     .map(file => JSON.parse(readFileSync(join(vectorsDir, file), "utf8")));
 
-function run(Store: any, label: string): number {
+const holds = (v: any) => v.steps.some((s: any) => s.hold || s.tick);
+
+function run(Store: any, label: string, all: boolean): number {
     let passed = 0, failures = 0;
-    for (const v of vectors) {
+    for (const v of vectors.filter(v => all || !holds(v))) {
         const store = new Store(policyOf(v));
         const problems: string[] = [];
+        // The answers held reads get during the current step.
+        let answers: { hold: number; expected: any }[] = [];
         v.steps.forEach((step: any, i: number) => {
             let actual;
+            answers = [];
+            const check = () => {
+                try { deepStrictEqual(answers, step.answers ?? []); }
+                catch { problems.push(`step ${i}: answers ${JSON.stringify(answers)}, expected ${JSON.stringify(step.answers ?? [])}`); }
+            };
+            if (step.hold) {
+                const proof: Proof = { specification: v.specification, givens: step.hold.givens };
+                store.hold(step.hold.user, step.hold.key, proof, step.hold.timeout,
+                    (r: any) => answers.push({ hold: i, expected: r }));
+                return check();
+            }
+            if (step.tick) { store.tick(); return check(); }
             if (step.save) {
                 if (isFresh(store.store, step.save) !== step.fresh) problems.push(`step ${i}: isFresh is ${!step.fresh}`);
                 if (isClosed(store.store, step.save) !== step.closed) problems.push(`step ${i}: isClosed is ${!step.closed}`);
                 store.save(step.save as Fact[]);
-                return;
+                return check();
             }
             if (step.write) actual = store.write(step.write.user, step.write.key, step.write.bytes);
             else {
@@ -116,6 +137,7 @@ function runGivenConditions(Store: any, label: string): number {
     return failures;
 }
 
-const failures = run(ContentStore, "uncached") + run(CachedContentStore, "cached") +
+const failures = run(ContentStore, "uncached", false) + run(CachedContentStore, "cached", false) +
+    run(HoldingContentStore, "holding", true) +
     runGivenConditions(ContentStore, "uncached") + runGivenConditions(CachedContentStore, "cached");
 process.exit(failures === 0 ? 0 : 1);

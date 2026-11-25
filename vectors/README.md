@@ -415,9 +415,30 @@ expect 400 (RR-1).
 }
 ```
 
+A `hold` step is a read that may be held (RR-6, `JinagaSpec/ContentHold.lean`):
+`{ "hold": { "user", "key", "givens", "timeout" }, "yields" }`, the timeout in
+ticks. A `tick` step, `{ "tick": true }`, advances the clock. A read that is
+Reactive (authenticated, bound, not distributed to the user now, and some
+rule proof of the distribution bound, so some rule could admit it) is held;
+any other is answered at once. A save re-evaluates the held reads whose
+decision it may change, and answers those no longer Reactive as a read is
+answered on the new store; a tick answers `retry_after` (409) every held read
+whose deadline, the clock when it was held plus its timeout, the tick passes:
+a hold with timeout `t` survives `t` ticks. Every hold, save and tick step
+that answers held reads lists them in `answers`, by the index of the step
+that held each one, in the order they were held:
+
+```jsonc
+{ "save": [ ... ], "fresh": true, "closed": true,
+  "answers": [ { "hold": 4, "expected": { "status": 200, "code": "ok", "bytes": "plan" } } ] }
+```
+
+A step with no `answers` answers no held read. A hold answered at once lists
+itself.
+
 The codes and statuses: `ok` and `already_stored` 200, `stored` 201,
 `bad_request` 400, `unauthenticated` 401, `forbidden` 403, `not_uploaded` 404,
-`fact_missing` 404, `too_large` 413, `unprocessable` 422. The requirements
+`fact_missing` 404, `retry_after` 409, `too_large` 413, `unprocessable` 422. The requirements
 give no status for an upload whose fact is not in the store (RW-2); 404
 `fact_missing` is this model's choice.
 

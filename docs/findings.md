@@ -1957,9 +1957,98 @@ invalidates in the same way, with `candidateInverses` from
 `inverse-candidates.ts`, and passes every content vector, as does the
 uncached `content-store.ts`.
 
-Not covered: the reactive hold (RR-6, SEC-6), purging (ST-4), chunked
-uploads, notifications and the batch status endpoint (RR-10, RR-11), and the
-client (SEC-8). A cache with a bound on its size, or entries that expire, only
+### Holding a Reactive read: RR-6 and SEC-6
+
+RR-6: a read the rules may yet admit is held for up to a timeout and
+re-evaluated as facts are saved; it is answered with the object or 403, or
+409 Retry-After if still undecided, and never 403 while still Reactive.
+SEC-6: if the granting facts are saved within the timeout, a read that began
+while Reactive returns the object.
+
+**What Reactive means** is the distribution rules' decision, not a parameter
+(jinaga-spec#65, comment 7151572317). jinaga-server's `POST /feeds` gives
+each feed a `decision`: authorized when `canDistributeToAll` succeeds;
+reactive when it fails but `intersectForSubscribe` (jinaga
+`distribution-engine.ts`) finds a rule with a user specification, a share
+feed whose skeleton equals one of the target's feeds, and the target's given
+types, in which case the server subscribes to the specification intersected
+with that rule's user condition, which yields as soon as the authorizing fact
+arrives; denied otherwise. The second condition is structural, and one rule
+is enough. In the model `Policy.distribution` already lists, clause by
+clause, the rule proofs that match the specification's shape, and a rule
+proof is usable when it is bound, so:
+
+```lean
+def Policy.rewrites (P : Policy) (p : Proof) : Bool :=
+  (P.distribution p.spec p.givens).any (·.any Proof.bound)
+
+def Policy.reactive (P : Policy) (g : Graph) (user : Option User) (p : Proof) : Bool :=
+  match user with
+  | some u => p.bound && P.rewrites p && !P.distributes u p.spec p.givens g
+  | none => false
+```
+
+It reads the rules, the proof and, through `distributes` only, the fact
+store; never `objects`. `rewrites` is `any` over clauses, not `all`: a
+clause with no bound rule proof cannot be distributed, but jinaga.js still
+intersects when some feed matches a rule, so the read is Reactive until its
+timeout. A proof whose specification the rules authorize but which does not
+yield the content fact is not Reactive: the server can answer, with 403
+(RR-5). Nothing says a Reactive read will be admitted (a guest bound to the
+sentinel user stays Reactive until login).
+
+`ContentHold.lean` models the hold. `Request` gains `hold user key proof
+timeout` and `tick`; `Cached` ignores both. `Holding` is the cached
+replicator, a clock counted in ticks, and the held reads, each with a
+deadline (the clock when held plus the timeout). A hold that is not Reactive
+is answered at once, as `Replicator.read` answers it. A save re-evaluates
+each held read whose entry `(user, proof, key, false)` the cache's
+`Policy.invalidates` names (`Hold.wakes`), and answers those no longer
+Reactive as `read` does on the new store; the object is looked up then. A
+tick answers 409 each held read whose deadline it passes. The Reactive test
+is recomputed each time, never cached.
+
+| theorem | statement |
+|---|---|
+| `distributes_stable` | a fresh batch that changes no rule proof's yields of the user leaves `distributes` as it was (now the half of `admits_stable` about the rules) |
+| `held_answer` | every answer to a held read is 409, or `Replicator.read`'s on the store at that moment, given while the read is not Reactive there |
+| `held_authorized` | SEC-1 at answer time: a held read answered with an object is by a user the rules admit on the store then, whose proof yields the fact there |
+| `held_not_forbidden` | a held read answered 403 is not Reactive on the store then |
+| `held_reactive` | after any history, every held read is Reactive on the current store, so a 409 too is given only while Reactive |
+| `held_live` | SEC-6: after any history, a save that makes a held read admitted answers it with the object stored then, or 404 `not_uploaded`; never 403 or 409 |
+| `held_timeout` | a tick answers 409 every held read whose deadline it passes |
+| `wake_on_invalidates` | after any history, waking only the held reads `invalidates` names gives the same state and answers as re-evaluating every held read on every save |
+| `held_noninterference` | SEC-5: with other objects stored, every request answers each held read the rules do not admit exactly as before, and moves to the same state but for the objects; by induction, the sequence of such a reader's answers and the moment of each do not depend on `objects` |
+
+`wake_on_invalidates` is `distributes_stable` read for a held read: a save
+`invalidates` does not name leaves `distributes` as it was, so a Reactive read
+stays Reactive and re-evaluating it changes nothing. `held_live` takes no
+hypothesis that the save is accepted: a refused save changes no store, so it
+cannot admit a read that was Reactive. SEC-6 needs no more than `held_live`
+and `held_reactive`: a held read is answered only by a save that ends its
+Reactive state or by its timeout.
+
+`check-content` runs the hold's statements on its random histories, with half
+of the pool's reads held for zero to three ticks and a tick after half the
+batches. Each hold mutant breaks one rule, and is caught by the statement its
+label names and by a named vector:
+
+| hold mutant | caught by | named vector |
+|---|---|---|
+| answer 403 while Reactive | `held_not_forbidden` | `hold-membership-arrives` |
+| hold only while an object is stored (the hold reads `objects`) | `held_noninterference` | `hold-uploaded-mid-hold` |
+| wake only on a save of the content fact's type | `held_live`, `wake_on_invalidates` | `hold-membership-arrives` |
+| look the object up when the hold starts | `held_live`, `held_answer` | `hold-uploaded-mid-hold` |
+| never time out | `held_timeout` | `hold-times-out` |
+
+`hold-revoked-while-held` holds Eve's read while her membership arrives
+already removed: the save wakes the read, which is still Reactive, so it
+stays held; the restore admits it. `ports/typescript/content-cache.ts`'s
+`HoldingContentStore` holds, wakes and times out in the same way, answering
+through a callback, and passes every content vector.
+
+Not covered: purging (ST-4), chunked uploads, notifications and the batch
+status endpoint (RR-10, RR-11), and the client (SEC-8). A cache with a bound on its size, or entries that expire, only
 drops more, so `cached_read` covers it.
 
 ## Where the proof effort went
@@ -2002,6 +2091,7 @@ drops more, so `cached_read` covers it.
 | `Proofs/Cover.lean` | A flat level, then any level, agrees on a replica holding what its feeds deliver; every flat feed is scoped and binds each label once; a replica holding what the flat feeds deliver finds the replicator's solutions. |
 | `Proofs/Content.lean` | The content store's read and write meet SEC-1 to SEC-5 for every policy, after any history of saves and uploads; an admitted reader is served and an authorized upload stored. |
 | `Proofs/ContentCache.lean` | A cache of read decisions that drops an entry on every fresh batch whose inverse candidates name its key or user never changes an answer, so SEC-1 holds at every read (SEC-7, pointwise). |
+| `Proofs/ContentHold.lean` | A Reactive read held until its timeout and woken by the saves the cache's invalidation names is answered only once it is no longer Reactive, as a read would be then, or 409; a save that admits it serves it (SEC-6), and its answers to a reader not admitted do not depend on the objects (SEC-5). |
 | `Proofs/Children.lean` | The feeds of a specification are the flat feeds of its descendants; so each requirement holds with child specifications, the replica reads their results at every depth, and a replica that has paged every feed converges. |
 
 The redesign changed the proofs less than it changed the definitions. The

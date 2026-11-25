@@ -24,16 +24,6 @@ No theorem has a hypothesis on the history.
 -/
 namespace JinagaSpec
 
-theorem Cached.read_replicator (P : Policy) (c : Cached) (user : Option User) (key : FactId) (p : Proof) :
-    (c.read P user key p).1.replicator = c.replicator := by
-  cases user with
-  | none => rfl
-  | some u =>
-    have : (c.admits P u key p).1.replicator = c.replicator := by unfold Cached.admits; split <;> rfl
-    simp only [Cached.read]; split
-    · rfl
-    · generalize c.admits P u key p = x at this ⊢; exact this
-
 theorem List.partition_congr {l : List α} {f g : α → Bool} (h : ∀ a ∈ l, f a = g a) :
     l.partition f = l.partition g := by
   rw [List.partition_eq_filter_filter, List.partition_eq_filter_filter, List.filter_congr h,
@@ -50,6 +40,10 @@ theorem Cached.read_objects (P : Policy) (c : Cached) (objects : List (FactId ×
     · simp [Cached.read, hb]
     · cases hf : c.cache.find? fun e => e.user == u && e.key == key && e.proof.beq p <;>
         simp [Cached.read, Cached.admits, hb, hf]
+
+theorem Cached.read_replicator (P : Policy) (c : Cached) (user : Option User) (key : FactId) (p : Proof) :
+    (c.read P user key p).1.replicator = c.replicator :=
+  have := congrArg Cached.replicator (c.read_objects P c.replicator.objects user key p); this
 
 /-- The held read stays Reactive across a save that does not wake it. -/
 theorem Hold.reactive_stable {P : Policy} {c : Cached} {h : Hold}
@@ -162,12 +156,11 @@ theorem held_live {P : Policy} {hs : List Request} (hh : h ∈ (Holding.run P hs
   rw [Holding.step_cached] at ha ⊢
   have hr := (Holding.run_valid P hs).1 h hh
   have hb : h.proof.bound = true := by simp_all [Policy.reactive]
-  have hd : P.distributes u h.proof.spec h.proof.givens _ = true := (Bool.and_eq_true _ _ ▸ ha).1
   simp only [Holding.step, Holding.settle, List.partition_eq_filter_filter, List.mem_map, List.mem_filter,
     Prod.mk.injEq] at ha ⊢
   refine ⟨h, ⟨hh, ?_⟩, rfl, by rw [hu, read_admitted hb ha]; rfl⟩
   have hn : P.reactive (Cached.step P (Holding.run P hs).cached (.event (.save B))).replicator.store h.user
-      h.proof = false := by simp [Policy.reactive, hu, hd]
+      h.proof = false := by simp [Policy.reactive, hu, (Bool.and_eq_true _ _ ▸ ha).1]
   cases hw : h.wakes P (Holding.run P hs).cached.replicator.store B
   · rw [Hold.reactive_stable hr hw] at hn; cases hn
   · simp [hn]
@@ -212,31 +205,26 @@ theorem held_noninterference (P : Policy) (s : Holding) (objects : List (FactId 
     ((s.withObjects objects).step P q).2.filter (!P.admitsHold (s.step P q).1.cached.replicator.store ·.1) =
       (s.step P q).2.filter (!P.admitsHold (s.step P q).1.cached.replicator.store ·.1) ∧
     ∃ objects', ((s.withObjects objects).step P q).1 = (s.step P q).1.withObjects objects' := by
-  -- A read answered on `r` is answered so on `r` with other objects, if the rules do not admit it.
-  have hr : ∀ (r : Replicator) (h : Hold), P.admitsHold r.store h = false →
-      { r with objects := objects }.read P h.user h.key h.proof = r.read P h.user h.key h.proof := by
-    intro r h ha
-    refine (read_noninterference (fun u hu => ?_) objects).symm
-    simpa [Policy.admitsHold, hu] using ha
-  have hm : ∀ (r : Replicator) (l : List Hold) (g : Graph), g = r.store →
-      (l.map fun h => (h, { r with objects := objects }.read P h.user h.key h.proof)).filter (!P.admitsHold g ·.1) =
-        (l.map fun h => (h, r.read P h.user h.key h.proof)).filter (!P.admitsHold g ·.1) := by
-    intro r l g hg
+  -- A held read the rules do not admit is answered the same with other objects.
+  have hm : ∀ (r : Replicator) (l : List Hold),
+      (l.map fun h => (h, { r with objects }.read P h.user h.key h.proof)).filter (!P.admitsHold r.store ·.1) =
+        (l.map fun h => (h, r.read P h.user h.key h.proof)).filter (!P.admitsHold r.store ·.1) := by
+    intro r l
     simp only [List.filter_map]
     exact List.map_congr_left fun h hh => by
-      rw [hr r h (by simpa [hg] using (List.mem_filter.1 hh).2)]
+      rw [← read_noninterference fun u hu => by simpa [Policy.admitsHold, hu] using (List.mem_filter.1 hh).2]
   match q with
   | .tick => exact ⟨rfl, objects, rfl⟩
   | .hold u k p t =>
     by_cases hc : P.reactive s.cached.replicator.store u p = true
     · simp only [Holding.step, Holding.withObjects, hc, ite_true]; exact ⟨trivial, objects, rfl⟩
     · simp only [Holding.step, Holding.withObjects, hc, Bool.false_eq_true, ite_false]
-      exact ⟨hm s.cached.replicator [_] _ rfl, objects, rfl⟩
+      exact ⟨hm s.cached.replicator [_], objects, rfl⟩
   | .event (.save B) =>
     have : ({ s.cached.replicator with objects }.step P (.save B)) = { s.cached.replicator.step P (.save B) with objects } := by
       by_cases ha : s.cached.replicator.store.accepts B <;> simp [Replicator.step, ha]
     simp only [Holding.step, Holding.settle, Holding.withObjects, Cached.step, this]
-    exact ⟨hm _ _ _ rfl, objects, rfl⟩
+    exact ⟨hm _ _, objects, rfl⟩
   | .event (.write u k o) =>
     refine ⟨rfl, ({ s.cached.replicator with objects }.write P u k o).1.objects, ?_⟩
     simp only [Holding.step, Holding.withObjects, Cached.step, Replicator.step]

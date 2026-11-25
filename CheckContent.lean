@@ -6,8 +6,10 @@ import ContentMutants
 
 `lake exe check-content [seed]` tests SEC-1 to SEC-5, `read_admitted` and
 `confirms_eq_yields` (`Proofs/Content.lean`), and `Replicator.save_fresh`,
-`Replicator.run_closed` and `cached_read` (`Proofs/ContentCache.lean`), as the theorems state them, on random histories
-of saves, uploads and reads: a random well-formed specification, a graph for
+`Replicator.run_closed` and `cached_read` (`Proofs/ContentCache.lean`), and the
+hold's theorems (`Proofs/ContentHold.lean`), as the theorems state them, on
+random histories of saves, uploads, reads, held reads and ticks: a random
+well-formed specification, a graph for
 it, and memberships in its givens' facts, some removed and some removals
 restored, saved in batches, with uploads by random users to random keys and
 reads with a few random proofs among them; then reads by every user of every
@@ -19,7 +21,8 @@ share a hash.
 The theorems are proved, so the real handlers fail none of them. What the check
 measures is that each statement rules out the mutant it is meant to: each
 mutant breaks one rule of `read` or `write`, or of the cache's invalidation,
-and must be caught on some histories, by the statement named in its label.
+and must be caught on some histories, by the statement named in its label;
+so must each mutant of the hold (`ContentMutants.lean`).
 -/
 open JinagaSpec
 
@@ -137,8 +140,8 @@ def genGivens (s : Specification) (g : Graph) (key : FactId) : Gen (List FactId)
 
 /-- An upload to a random key. Half its bytes match the key's content hash in
 `policyVia`, so that most writers who may create the fact get it stored. -/
-def genUpload : Gen Event := do
-  let key ← below 8
+def genUpload (key? : Option FactId := none) : Gen Event := do
+  let key ← match key? with | some k => pure k | none => below 8
   let matching := String.ofList (← repeatGen (key % 3 + 3 * (← below 2)) (pick ['a', 'b']))
   let bytes ← if ← chance 1 2 then genBytes else pure matching
   return .write (← genUser) key bytes
@@ -182,7 +185,8 @@ def genOrder (graph extra : List Fact) : Gen (List Fact) := do
   return out
 
 /-- A history: the users' facts, then `facts` saved in batches of one to four,
-with uploads and reads with proofs from `pool` among them. One batch in ten
+with uploads, reads and held reads with proofs from `pool` among them, and
+ticks. One batch in ten
 also repeats a fact already saved, so is not fresh, and is not stored; one in
 ten is preceded by a later fact saved alone before a predecessor it names, so
 not closed, and not stored. Some
@@ -206,7 +210,14 @@ def genHistory (facts : List Fact) (pool : List (Option User × FactId × Proof)
     hs := hs ++ [.event (.save B)]
     for _ in [0:(← below 3) + 1] do
       let (u, k, p) ← pick pool
-      hs := hs ++ [.read u k p]
+      let t ← below 4
+      if ← chance 1 2 then hs := hs ++ [.read u k p]
+      else
+        hs := hs ++ [.hold u k p t]
+        -- Half the time an upload for the key follows, so that the object can
+        -- arrive while the read is held.
+        if ← chance 1 2 then hs := hs ++ [.event (← genUpload k)]
+    if ← chance 1 2 then hs := hs ++ [.tick]
   for _ in [0:(← below 4)] do
     hs := hs ++ [.event (← genUpload)]
   return hs
@@ -224,7 +235,71 @@ def cacheViolations (m : CacheMutant) (P : Policy) (hs : List Request) : List St
       if resp != r.read P u k p then return ["cached_read"]
       c := c'
     | .event e => c := cachedStepWith m P c q; r := r.step P e
+    | _ => c := cachedStepWith m P c q
   return []
+
+/-- A held read, as data a check compares. -/
+def holdKey (h : Hold) : Option User × FactId × List FactId × Nat := (h.user, h.key, h.proof.givens, h.deadline)
+
+def answerKeys (as : List (Hold × Response)) : List ((Option User × FactId × List FactId × Nat) × Response) :=
+  as.map fun (h, a) => (holdKey h, a)
+
+/-- Which of the hold's statements a history breaks, with the hold `m` makes,
+each checked as its theorem states it, on the state before each request. -/
+def holdViolations (m : HoldMutant) (P : Policy) (hs : List Request) : List String := Id.run do
+  let mut s : MutantHolding := {}
+  let mut out := []
+  for q in hs do
+    let (s', answers) := holdStepWith m P s q
+    let r := s'.cached.replicator
+    for (h, a) in answers do
+      -- held_answer: 409, or `read`'s answer now, given while not Reactive.
+      unless a == .retryAfter || (!P.reactive r.store h.user h.proof && a == r.read P h.user h.key h.proof) do
+        out := "held_answer" :: out
+      -- held_authorized
+      if let .ok _ := a then
+        unless h.user.any (fun u => P.distributes u h.proof.spec h.proof.givens r.store && h.proof.yields r.store h.key) do
+          out := "held_authorized" :: out
+      -- held_not_forbidden
+      if a == .forbidden && P.reactive r.store h.user h.proof then out := "held_not_forbidden" :: out
+    -- held_reactive
+    unless s'.held.all fun (h, _) => P.reactive r.store h.user h.proof do out := "held_reactive" :: out
+    match q with
+    | .event (.save _) =>
+      -- held_live: a held read the save admits is answered as `read_admitted` says.
+      for (h, _) in s.held do
+        if P.admitsHold r.store h then
+          let expected := match r.objects.lookup h.key with | none => .notUploaded | some o => .ok o
+          unless (answerKeys answers).contains (holdKey h, expected) do out := "held_live" :: out
+      -- wake_on_invalidates: the same answers as waking every held read.
+      unless answerKeys answers == answerKeys (holdStepWith { m with wakes := fun _ _ _ _ => true } P s q).2 do
+        out := "wake_on_invalidates" :: out
+    | .tick =>
+      -- held_timeout
+      for (h, _) in s.held do
+        if h.deadline < s.clock + 1 && !(answerKeys answers).contains (holdKey h, .retryAfter) then
+          out := "held_timeout" :: out
+    | _ => pure ()
+    -- held_noninterference: with no objects stored, the same answers to readers
+    -- not admitted. A read or an upload answers no held read.
+    let bare := { s with cached := { s.cached with replicator := { s.cached.replicator with objects := [] } } }
+    let unadmitted (as : List (Hold × Response)) := answerKeys (as.filter (!P.admitsHold r.store ·.1))
+    if (match q with | .event (.write ..) | .read .. => false | _ => true) &&
+        unadmitted answers != unadmitted (holdStepWith m P bare q).2 then
+      out := "held_noninterference" :: out
+    s := s'
+  return out.eraseDups
+
+/-- The hold mutant family with no field changed is `Holding.step`. -/
+def holdFamilyAgrees (P : Policy) (hs : List Request) : Bool := Id.run do
+  let mut s : Holding := {}
+  let mut s' : MutantHolding := {}
+  for q in hs do
+    let (t, a) := s.step P q
+    let (t', a') := holdStepWith {} P s' q
+    unless answerKeys a == answerKeys a' && t.held.map holdKey == t'.held.map (holdKey ·.1) do return false
+    s := t; s' := t'
+  return true
 
 /-- The cache mutant family with no field changed is `Cached.step`: the same
 entries after every request. -/
@@ -250,6 +325,8 @@ def main (args : List String) : IO UInt32 := do
   let mut first : Option String := none
   let mut caught : List (Nat × List String) := mutants.map fun _ => (0, [])
   let mut cacheCaught : List Nat := cacheMutants.map fun _ => 0
+  let mut holdCaught : List (Nat × List String) := holdMutants.map fun _ => (0, [])
+  let mut holds := 0
   let mut requests := 0
   let mut notFresh := 0
   let mut notClosed := 0
@@ -311,6 +388,16 @@ def main (args : List String) : IO UInt32 := do
       before := before.step policy e
     unless cacheFamilyAgrees policy hs do
       throw <| IO.userError "the cache mutant family differs from Cached.step"
+    unless holdFamilyAgrees policy hs do
+      throw <| IO.userError "the hold mutant family differs from Holding.step"
+    let hv := holdViolations {} policy hs
+    unless hv.isEmpty do
+      real := real + 1
+      if first.isNone then first := some s!"{hv}: {hs.length} requests"
+    holdCaught := (holdCaught.zip holdMutants).map fun ((n, by_), (_, m)) =>
+      let v := holdViolations m policy hs
+      if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
+    holds := holds + (hs.filter fun | .hold .. => true | _ => false).length
     unless (cacheViolations {} policy hs).isEmpty do
       real := real + 1
       if first.isNone then first := some s!"cached_read: {hs.length} requests"
@@ -353,10 +440,14 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"  mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
   for ((label, _), n) in cacheMutants.zip cacheCaught do
     IO.println s!"  cache mutant \"{label}\": caught on {n} of {histories} histories, by cached_read"
+  IO.println s!"held reads {holds}"
+  for ((label, _), (n, by_)) in holdMutants.zip holdCaught do
+    IO.println s!"  hold mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
   if disagree > 0 || confirmDisagree > 0 then return 1
   match first with
   | some f => IO.println s!"\nFIRST FAILURE\n{f}"; return 1
   | none =>
     -- Each mutant must be caught by the statement its label names.
-    let named := (caught.zip mutants).all fun ((_, by_), (label, _)) => by_.any (label.startsWith ·)
+    let named := (caught.zip (mutants.map (·.1)) ++ holdCaught.zip (holdMutants.map (·.1))).all
+      fun ((_, by_), label) => by_.any (label.startsWith ·)
     return if named && cacheCaught.all (· > 0) then 0 else 1

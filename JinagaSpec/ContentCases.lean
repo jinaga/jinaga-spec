@@ -9,7 +9,8 @@ groups: `(g: Group) { d: Document [ d->group: Group = g ] } => d`, or the same
 documents as a child specification of their group. `lake exe
 vectors` writes one content vector per case (`vectors/content/`): every
 upload's and read's response from `Replicator.write` and `Replicator.read`, and
-the objects stored at the end. The cached replicator (`ContentCache.lean`)
+the objects stored at the end, and the answers to held reads
+(`Holding.step`). The cached replicator (`ContentCache.lean`)
 must give the same responses (`cached_read`), so every vector checks a cache
 too. Each case names the mutants of `ContentMutants.lean` it must catch, the
 handlers' and the cache's, and the generator refuses a case that does not
@@ -42,6 +43,9 @@ open Build
 inductive ContentStep where
   | event (e : Event)
   | read (user : Option User) (key : FactId) (givens : List FactId)
+  /-- A read that may be held for `timeout` ticks (RR-6, `ContentHold.lean`). -/
+  | hold (user : Option User) (key : FactId) (givens : List FactId) (timeout : Nat)
+  | tick
 
 def documentsInGroup : Specification :=
   spec [("g", "Group")] [unknown "d" "Document" [path [role "group" "Group"] "g"]] (fact "d")
@@ -166,6 +170,13 @@ def aliceRestored : Fact := restore 43 aliceRemoved
 def groupC : Fact := { id := 3, type := "Group", predecessors := [] }
 def minutes : Fact := { id := 13, type := "Document", predecessors := [("group", 3)] }
 def aliceInC : Fact := member 44 groupC alice
+
+/-- Eve's membership of group A, its removal and its restore, and her
+membership of group B. -/
+def eveInA : Fact := member 45 groupA eve
+def eveRemoved : Fact := removal 46 eveInA
+def eveRestored : Fact := restore 47 eveRemoved
+def eveInB : Fact := member 48 groupB eve
 
 /-- The store every case starts from, saved as one batch. -/
 def initial : List ContentStep :=
@@ -321,7 +332,26 @@ def contentCases : List ContentCase := [
     "A batch that names a predecessor neither the store nor the batch holds is not stored: Alice's membership of group C, saved before group C, is refused. Stored, it would name group C, so no batch holding group C, and the minutes in it, would be fresh again. Saved after group C, the membership is stored, and Alice reads the minutes."
     "NF-2"
     [save aliceInC, saveAll [groupC, minutes], save aliceInC, write alice 13 "minutes", .read alice 13 [3]]
-    ["run_closed: store a batch that names a predecessor not stored"]
+    ["run_closed: store a batch that names a predecessor not stored"],
+  make "hold-membership-arrives"
+    "Mallory may run the specification for group B, which does not yield the plan: her held read is answered 403 at once. Eve may not run it for group A, but the rule could admit her: her read is held. Her membership of group A arrives within the deadline, and she gets the plan. Her read through group B is held too; her membership of B lets her run that specification, which does not yield the plan: 403, now that she is no longer Reactive."
+    "RR-6, SEC-6"
+    (planStored ++ [.hold mallory 10 [2] 2, .hold eve 10 [1] 2, .hold eve 10 [2] 2, .tick, save eveInA, save eveInB])
+    ["held_not_forbidden: answer 403 while Reactive", "held_live: wake only on a save of the content fact's type"],
+  make "hold-times-out"
+    "Eve's read is held for one tick. It survives the first; at the second it is still Reactive and is answered 409. Her membership arrives after: the held read is answered already, and a new read gets the plan."
+    "RR-6"
+    (planStored ++ [.hold eve 10 [1] 1, .tick, .tick, save eveInA, .read eve 10 [1]])
+    ["held_timeout: never time out"],
+  make "hold-revoked-while-held"
+    "Eve's read is held. Her membership arrives already removed, in one batch: the save wakes the read, which is still Reactive, so it stays held rather than answered 403. The restore admits her, and she gets the plan."
+    "RR-6, SEC-6"
+    (planStored ++ [.hold eve 10 [1] 3, saveAll [eveInA, eveRemoved], .tick, save eveRestored]),
+  make "hold-uploaded-mid-hold"
+    "Eve's read of the plan is held before any object is uploaded. Alice uploads it; then Eve's membership arrives, and she gets the bytes, looked up when the read is answered, not when it was held."
+    "RR-6, RR-7, SEC-5"
+    [save plan, .hold eve 10 [1] 2, write alice 10 "plan", save eveInA]
+    ["held_live: look the object up when the hold starts", "held_noninterference: hold only while an object is stored"]
 ]
 
 end JinagaSpec

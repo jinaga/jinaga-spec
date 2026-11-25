@@ -57,15 +57,15 @@ export interface Policy {
 
 export type Code =
     | "ok" | "stored" | "already_stored" | "bad_request" | "unauthenticated"
-    | "forbidden" | "not_uploaded" | "fact_missing" | "too_large" | "unprocessable";
+    | "forbidden" | "not_uploaded" | "fact_missing" | "too_large" | "unprocessable" | "retry_after";
 
 export interface Response { status: number; code: Code; bytes?: string }
 
 const status: Record<Code, number> = {
     ok: 200, stored: 201, already_stored: 200, bad_request: 400, unauthenticated: 401,
-    forbidden: 403, not_uploaded: 404, fact_missing: 404, too_large: 413, unprocessable: 422
+    forbidden: 403, not_uploaded: 404, fact_missing: 404, too_large: 413, unprocessable: 422, retry_after: 409
 };
-const respond = (code: Code, bytes?: string): Response =>
+export const respond = (code: Code, bytes?: string): Response =>
     bytes === undefined ? { status: status[code], code } : { status: status[code], code, bytes };
 
 /**

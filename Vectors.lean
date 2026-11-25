@@ -604,6 +604,7 @@ def JinagaSpec.Response.status : Response → Nat
   | .notUploaded | .factMissing => 404
   | .tooLarge => 413
   | .unprocessable => 422
+  | .retryAfter => 409
 
 def JinagaSpec.Response.code : Response → String
   | .ok _ => "ok"
@@ -616,6 +617,7 @@ def JinagaSpec.Response.code : Response → String
   | .factMissing => "fact_missing"
   | .tooLarge => "too_large"
   | .unprocessable => "unprocessable"
+  | .retryAfter => "retry_after"
 
 def responseToJson (r : Response) : Json :=
   Json.mkObj ([("status", Json.num r.status), ("code", r.code)] ++
@@ -631,7 +633,8 @@ def JinagaSpec.ContentCase.runWith (c : ContentCase) (m : Mutant) : List (Option
   c.steps.foldl (fun (out, r) step => match step with
     | .event (.save B) => (out ++ [none], stepWith m c.policy r (.save B))
     | .event (.write u k o) => let (r', resp) := writeWith m c.policy r u k o; (out ++ [some resp], r')
-    | .read u k gs => (out ++ [some (readWith m c.policy r u k { spec := c.spec, givens := gs })], r))
+    | .read u k gs => (out ++ [some (readWith m c.policy r u k { spec := c.spec, givens := gs })], r)
+    | _ => (out ++ [none], r))
     ([], .empty)
 
 /-- The case's steps, as requests to a cached replicator. -/
@@ -639,6 +642,27 @@ def JinagaSpec.ContentCase.requests (c : ContentCase) : List Request :=
   c.steps.map fun
     | .event e => .event e
     | .read u k gs => .read u k { spec := c.spec, givens := gs }
+    | .hold u k gs t => .hold u k { spec := c.spec, givens := gs } t
+    | .tick => .tick
+
+/-- The answers to held reads at each step, by the index of the step that
+holds the read, from a hold whose step is `step`. A hold is found by its user,
+key, givens and deadline: the ticks before it, and its timeout. -/
+def JinagaSpec.ContentCase.answersBy {σ : Type} (c : ContentCase) (step : σ → Request → σ × List (Hold × Response))
+    (init : σ) : List (List (Nat × Response)) := Id.run do
+  let mut s := init
+  let mut holds : List (Nat × Hold) := []
+  let mut ticks := 0
+  let mut out := []
+  for (q, i) in c.requests.zip (List.range c.requests.length) do
+    if let .hold u k p t := q then holds := holds ++ [(i, { user := u, key := k, proof := p, deadline := ticks + t })]
+    if let .tick := q then ticks := ticks + 1
+    let (s', answers) := step s q
+    s := s'
+    out := out ++ [answers.filterMap fun (h, a) =>
+      (holds.find? fun (_, h') => h'.user == h.user && h'.key == h.key && h'.proof.givens == h.proof.givens &&
+        h'.deadline == h.deadline).map (·.1, a)]
+  return out
 
 /-- Each step's response (none for a save) from a cached replicator whose
 saves invalidate as `m` makes them. -/
@@ -646,17 +670,24 @@ def JinagaSpec.ContentCase.runCached (c : ContentCase) (m : CacheMutant) : List 
   (c.requests.foldl (fun (out, s) q => match q with
     | .read u k p => let (s', resp) := s.read c.policy u k p; (out ++ [some resp], s')
     | .event (.write u k o) => (out ++ [some (s.replicator.write c.policy u k o).2], cachedStepWith m c.policy s q)
-    | .event (.save _) => (out ++ [none], cachedStepWith m c.policy s q)) (([] : List (Option Response)), Cached.empty)).1
+    | _ => (out ++ [none], cachedStepWith m c.policy s q)) (([] : List (Option Response)), Cached.empty)).1
 
 def contentVector (c : ContentCase) : Json := Id.run do
   let P := c.policy
   let mut r : Replicator := .empty
   let mut steps : Array Json := #[]
-  for step in c.steps do
+  let answers := c.answersBy (Holding.step P) {}
+  for (step, i) in c.steps.zip (List.range c.steps.length) do
+    let held := match answers[i]? with
+      | some (a :: as) => [("answers", Json.arr ((a :: as).map fun (j, resp) =>
+          Json.mkObj [("hold", Json.num j), ("expected", responseToJson resp)]).toArray)]
+      | _ => []
+    let read (u : Option User) (k : FactId) (gs : List FactId) : List (String × Json) :=
+      [("user", userToJson u), ("key", Json.num k), ("givens", Json.arr (gs.map fun (g : Nat) => Json.num g).toArray)]
     match step with
     | .event (.save B) =>
-      steps := steps.push (Json.mkObj [("save", Json.arr (B.map factToJson).toArray),
-        ("fresh", isFresh r.store B), ("closed", isClosed r.store B)])
+      steps := steps.push (Json.mkObj ([("save", Json.arr (B.map factToJson).toArray),
+        ("fresh", (isFresh r.store B : Json)), ("closed", (isClosed r.store B : Json))] ++ held))
       r := r.step P (.save B)
     | .event (.write u k o) =>
       let (r', resp) := r.write P u k o
@@ -667,10 +698,13 @@ def contentVector (c : ContentCase) : Json := Id.run do
     | .read u k gs =>
       let p : Proof := { spec := c.spec, givens := gs }
       steps := steps.push (Json.mkObj [
-        ("read", Json.mkObj [("user", userToJson u), ("key", Json.num k),
-          ("givens", Json.arr (gs.map fun (g : Nat) => Json.num g).toArray)]),
+        ("read", Json.mkObj (read u k gs)),
         ("yields", p.yields r.store k),
         ("expected", responseToJson (r.read P u k p))])
+    | .hold u k gs t =>
+      steps := steps.push (Json.mkObj ([("hold", Json.mkObj (read u k gs ++ [("timeout", Json.num t)])),
+        ("yields", (({ spec := c.spec, givens := gs } : Proof).yields r.store k : Json))] ++ held))
+    | .tick => steps := steps.push (Json.mkObj ([("tick", (true : Json))] ++ held))
   return Json.mkObj [
     ("name", c.name),
     ("description", c.description),
@@ -700,19 +734,25 @@ def checkContentCases : IO Unit := do
       | .event (.save B) => oracle := oracle ++ [none]; r := r.step c.policy (.save B)
       | .event (.write u k o) => let (r', resp) := r.write c.policy u k o; oracle := oracle ++ [some resp]; r := r'
       | .read u k gs => oracle := oracle ++ [some (r.read c.policy u k { spec := c.spec, givens := gs })]
+      | _ => oracle := oracle ++ [none]
     unless real.1 == oracle do
       throw <| IO.userError s!"content case {c.name}: the mutant family differs from the specification's handlers"
     -- `cached_read`: the cached replicator answers as the uncached one.
     unless c.runCached {} == oracle do
       throw <| IO.userError s!"content case {c.name}: the cached replicator answers differently"
+    let held := c.answersBy (Holding.step c.policy) {}
+    unless c.answersBy (holdStepWith {} c.policy) {} == held do
+      throw <| IO.userError s!"content case {c.name}: the hold mutant family differs from Holding.step"
     for label in c.catches do
-      let caught ← match mutants.find? (·.1 == label), cacheMutants.find? (·.1 == label) with
-        | some (_, m), _ => pure ((c.runWith m).1 != oracle)
-        | none, some (_, m) => pure (c.runCached m != oracle)
-        | none, none => throw <| IO.userError s!"content case {c.name}: no mutant named {label}"
+      let caught ← match mutants.find? (·.1 == label), cacheMutants.find? (·.1 == label),
+          holdMutants.find? (·.1 == label) with
+        | some (_, m), _, _ => pure ((c.runWith m).1 != oracle)
+        | none, some (_, m), _ => pure (c.runCached m != oracle)
+        | none, none, some (_, m) => pure (c.answersBy (holdStepWith m c.policy) {} != held)
+        | none, none, none => throw <| IO.userError s!"content case {c.name}: no mutant named {label}"
       unless caught do
         throw <| IO.userError s!"content case {c.name} does not catch the mutant \"{label}\""
-  for label in mutants.map (·.1) ++ cacheMutants.map (·.1) do
+  for label in mutants.map (·.1) ++ cacheMutants.map (·.1) ++ holdMutants.map (·.1) do
     unless contentCases.any (·.catches.contains label) do
       throw <| IO.userError s!"no content vector catches the mutant \"{label}\""
 

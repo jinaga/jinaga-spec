@@ -4,10 +4,12 @@ import JinagaSpec
 # Mutants of the content store
 
 One read handler, one write handler and one save step, parameterized over the
-rule each mutant breaks. Shared by `check-content`, which checks that SEC-1 to
-SEC-5, `read_badRequest`, `confirms_eq_yields`, `read_admitted`,
-`Replicator.save_fresh` and `Replicator.run_closed` rule out each one, and `lake exe vectors`, which checks that the content vectors
-catch each one.
+rule each mutant breaks; the same for the cache and for the hold. Shared by
+`check-content`, which checks that SEC-1 to SEC-5, `read_badRequest`,
+`confirms_eq_yields`, `read_admitted`, `Replicator.save_fresh`,
+`Replicator.run_closed`, `cached_read` and the hold's theorems rule out each
+one, and `lake exe vectors`, which checks that the content vectors catch each
+one.
 -/
 open JinagaSpec
 
@@ -196,4 +198,63 @@ def cacheMutants : List (String × CacheMutant) := [
   ("cached_read: never invalidate on a revocation", { inverses := inversesFor true }),
   ("cached_read: keep the entries the rules refused", { refused := false }),
   ("cached_read: invalidate on the reader's proof only, never the rules", { rules := false })
+]
+
+
+/-! ## Mutants of the hold
+
+One hold, parameterized over how it decides, wakes, answers and times out
+(`ContentHold.lean`). With no field changed, `holdStepWith` is
+`Holding.step`, which `check-content` confirms on every request. A held read
+keeps the object looked up when it started, which only `lookupAtStart` reads. -/
+
+structure HoldMutant where
+  /-- A Reactive read is held; otherwise it is answered at once. -/
+  hold : Bool := true
+  /-- A Reactive read is held only while an object is stored under its key. -/
+  objectsDecide : Bool := false
+  /-- Which held reads a save wakes. -/
+  wakes : Policy → Graph → List Fact → Hold → Bool := Hold.wakes
+  /-- A held read is answered with the object looked up when it started. -/
+  lookupAtStart : Bool := false
+  /-- A tick answers 409 the held reads past their deadline. -/
+  timeout : Bool := true
+
+structure MutantHolding where
+  cached : Cached := .empty
+  clock : Nat := 0
+  held : List (Hold × Option Bytes) := []
+
+def HoldMutant.reactive (m : HoldMutant) (P : Policy) (r : Replicator) (h : Hold) : Bool :=
+  m.hold && P.reactive r.store h.user h.proof && (!m.objectsDecide || (r.objects.lookup h.key).isSome)
+
+def HoldMutant.answer (m : HoldMutant) (P : Policy) (r : Replicator) : Hold × Option Bytes → Hold × Response
+  | (h, b) => (h, readWith (if m.lookupAtStart then { lookup := fun _ _ _ => b } else {}) P r h.user h.key h.proof)
+
+def holdStepWith (m : HoldMutant) (P : Policy) (s : MutantHolding) : Request → MutantHolding × List (Hold × Response)
+  | .event (.save B) =>
+    let c := s.cached.step P (.event (.save B))
+    let (done, held) := s.held.partition fun (h, _) =>
+      m.wakes P s.cached.replicator.store B h && !m.reactive P c.replicator h
+    ({ s with cached := c, held }, done.map (m.answer P c.replicator))
+  | .hold user key p t =>
+    let h : Hold := { user, key, proof := p, deadline := s.clock + t }
+    let r := s.cached.replicator
+    if m.reactive P r h then ({ s with held := s.held ++ [(h, r.objects.lookup key)] }, [])
+    else (s, [m.answer P r (h, r.objects.lookup key)])
+  | .tick =>
+    let (late, held) := s.held.partition fun (h, _) => m.timeout && h.deadline < s.clock + 1
+    ({ s with clock := s.clock + 1, held }, late.map fun (h, _) => (h, .retryAfter))
+  | q => ({ s with cached := s.cached.step P q }, [])
+
+/-- Wake only on a save holding a fact of the content fact's type. -/
+def wakeOnContentType (P : Policy) (g : Graph) (B : List Fact) (h : Hold) : Bool :=
+  h.wakes P g B && B.any fun f => ((g ++ B).factOf h.key).any (·.type == f.type)
+
+def holdMutants : List (String × HoldMutant) := [
+  ("held_not_forbidden: answer 403 while Reactive", { hold := false }),
+  ("held_noninterference: hold only while an object is stored", { objectsDecide := true }),
+  ("held_live: wake only on a save of the content fact's type", { wakes := wakeOnContentType }),
+  ("held_live: look the object up when the hold starts", { lookupAtStart := true }),
+  ("held_timeout: never time out", { timeout := false })
 ]

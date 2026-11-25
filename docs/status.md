@@ -20,6 +20,19 @@ last checked; check the issue before acting on one.
 - **Unused givens are allowed** (jinaga-spec#60, decided 2026-11-23). A given
   no match uses causes no refusal: not in `isConnectedDeep`, `isConnected` or
   `invertSpecification`.
+- **Reactive is derived from the distribution rules** (jinaga-spec#65, the
+  repository owner's comment 7151572317, decided 2026-11-25). A read is
+  Reactive when the rules do not admit it now and some rule could: in
+  jinaga-server, `canDistributeToAll` fails and `intersectForSubscribe` finds
+  a rule with a user specification, a share feed of the target's shape and
+  the same given types (`decision = "reactive"` in `POST /feeds`). Otherwise
+  it is Denied, 403 at once. Rules combine with OR, so one rule is enough. In
+  the model this is `Policy.reactive`: an authenticated read with a bound
+  proof, not `Policy.distributes` now, and `Policy.rewrites` (some clause of
+  `Policy.distribution` has a bound rule proof), which reads only the proof
+  and the rules. Reactive is not a free policy parameter, never reads
+  `objects`, and does not promise a later admission (a guest stays Reactive
+  until login), so no theorem says a held read will be admitted.
 - **A disconnected feed is refused, not reordered** (jinaga-spec#55, option
   (A)). `buildFeeds` keeps written order, and `feed-builder.ts` refuses a
   specification `isConnectedDeep` refuses. Reordering cannot connect, cover,
