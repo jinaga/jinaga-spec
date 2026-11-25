@@ -210,7 +210,9 @@ def cacheMutants : List (String × CacheMutant) := [
 One hold, parameterized over how it decides, wakes, answers and times out
 (`ContentHold.lean`). With no field changed, `holdStepWith` is
 `Holding.step`, which `check-content` confirms on every request. A held read
-keeps the object looked up when it started, which only `lookupAtStart` reads. -/
+keeps the object looked up when it started, which only `lookupAtStart` reads.
+The hold answers from the replicator alone, never the cache, so the family
+keeps a replicator, not a cached one. -/
 
 structure HoldMutant where
   /-- A Reactive read is held; otherwise it is answered at once. -/
@@ -225,7 +227,7 @@ structure HoldMutant where
   timeout : Bool := true
 
 structure MutantHolding where
-  cached : Cached := .empty
+  replicator : Replicator := .empty
   clock : Nat := 0
   held : List (Hold × Option Bytes) := []
 
@@ -237,19 +239,19 @@ def HoldMutant.answer (m : HoldMutant) (P : Policy) (r : Replicator) : Hold × O
 
 def holdStepWith (m : HoldMutant) (P : Policy) (s : MutantHolding) : Request → MutantHolding × List (Hold × Response)
   | .event (.save B) =>
-    let c := s.cached.step P (.event (.save B))
-    let (done, held) := s.held.partition fun (h, _) =>
-      m.wakes P s.cached.replicator.store B h && !m.reactive P c.replicator h
-    ({ s with cached := c, held }, done.map (m.answer P c.replicator))
+    let r := s.replicator.step P (.save B)
+    let (done, held) := s.held.partition fun (h, _) => m.wakes P s.replicator.store B h && !m.reactive P r h
+    ({ s with replicator := r, held }, done.map (m.answer P r))
   | .hold user key p t =>
     let h : Hold := { user, key, proof := p, deadline := s.clock + t }
-    let r := s.cached.replicator
+    let r := s.replicator
     if m.reactive P r h then ({ s with held := s.held ++ [(h, r.objects.lookup key)] }, [])
     else (s, [m.answer P r (h, r.objects.lookup key)])
   | .tick =>
     let (late, held) := s.held.partition fun (h, _) => m.timeout && h.deadline < s.clock + 1
     ({ s with clock := s.clock + 1, held }, late.map fun (h, _) => (h, .retryAfter))
-  | q => ({ s with cached := s.cached.step P q }, [])
+  | .event e => ({ s with replicator := s.replicator.step P e }, [])
+  | .read .. => (s, [])
 
 /-- Wake only on a save holding a fact of the content fact's type. -/
 def wakeOnContentType (P : Policy) (g : Graph) (B : List Fact) (h : Hold) : Bool :=

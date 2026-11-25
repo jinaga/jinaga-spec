@@ -223,12 +223,14 @@ def genHistory (facts : List Fact) (pool : List (Option User × FactId × Proof)
     hs := hs ++ [.event (← genUpload)]
   return hs
 
-/-- The history with held reads and ticks added: after half the reads, the
-same read held for zero to three ticks, and half of those followed by an upload
-for its key, so that the object can arrive while the read is held; after half
-the saves, a tick. Drawn from a generator of its own, so the history it adds to
-is the same as without holds. -/
+/-- The history with held reads and ticks added, in one history in two:
+after half the reads, the same read held for zero to three ticks, and half of
+those followed by an upload of bytes that match its key's content hash, by an
+authenticated user, so that the object can arrive while the read is held;
+after half the saves, a tick. Drawn from a generator of its own, so the
+history it adds to is the same as without holds. -/
 def addHolds (hs : List Request) : Gen (List Request) := do
+  unless ← chance 1 2 do return hs
   let mut out := []
   for q in hs do
     out := out ++ [q]
@@ -236,7 +238,8 @@ def addHolds (hs : List Request) : Gen (List Request) := do
     | .read u k p =>
       if ← chance 1 2 then
         out := out ++ [.hold u k p (← below 4)]
-        if ← chance 1 2 then out := out ++ [.event (← genUpload k)]
+        if ← chance 1 2 then
+          out := out ++ [.event (.write (some (← pick users)) k (String.ofList (← repeatGen (k % 3) (pick ['a', 'b']))))]
     | .event (.save _) => if ← chance 1 2 then out := out ++ [.tick]
     | _ => pure ()
   return out
@@ -270,7 +273,7 @@ def holdViolations (m : HoldMutant) (P : Policy) (hs : List Request) : List Stri
   let mut out := []
   for q in hs do
     let (s', answers) := holdStepWith m P s q
-    let r := s'.cached.replicator
+    let r := s'.replicator
     for (h, a) in answers do
       -- held_answer: 409, or `read`'s answer now, given while not Reactive.
       unless a == .retryAfter || (!P.reactive r.store h.user h.proof && a == r.read P h.user h.key h.proof) do
@@ -301,7 +304,7 @@ def holdViolations (m : HoldMutant) (P : Policy) (hs : List Request) : List Stri
     | _ => pure ()
     -- held_noninterference: with no objects stored, the same answers to readers
     -- not admitted. A read or an upload answers no held read.
-    let bare := { s with cached := { s.cached with replicator := { s.cached.replicator with objects := [] } } }
+    let bare := { s with replicator := { s.replicator with objects := [] } }
     let unadmitted (as : List (Hold × Response)) := answerKeys (as.filter (!P.admitsHold r.store ·.1))
     if (match q with | .event (.write ..) | .read .. => false | _ => true) &&
         unadmitted answers != unadmitted (holdStepWith m P bare q).2 then
@@ -347,6 +350,7 @@ def main (args : List String) : IO UInt32 := do
   let mut cacheCaught : List Nat := cacheMutants.map fun _ => 0
   let mut holdCaught : List (Nat × List String) := holdMutants.map fun _ => (0, [])
   let mut holds := 0
+  let mut holdHistories := 0
   let mut requests := 0
   let mut notFresh := 0
   let mut notClosed := 0
@@ -410,16 +414,19 @@ def main (args : List String) : IO UInt32 := do
       before := before.step policy e
     unless cacheFamilyAgrees policy hs do
       throw <| IO.userError "the cache mutant family differs from Cached.step"
-    unless holdFamilyAgrees policy hs do
-      throw <| IO.userError "the hold mutant family differs from Holding.step"
-    let hv := holdViolations {} policy hs
-    unless hv.isEmpty do
-      real := real + 1
-      if first.isNone then first := some s!"{hv}: {hs.length} requests"
-    holdCaught := (holdCaught.zip holdMutants).map fun ((n, by_), (_, m)) =>
-      let v := holdViolations m policy hs
-      if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
-    holds := holds + (hs.filter fun | .hold .. => true | _ => false).length
+    let held := (hs.filter fun | .hold .. => true | _ => false).length
+    if held > 0 then
+      unless holdFamilyAgrees policy hs do
+        throw <| IO.userError "the hold mutant family differs from Holding.step"
+      let hv := holdViolations {} policy hs
+      unless hv.isEmpty do
+        real := real + 1
+        if first.isNone then first := some s!"{hv}: {hs.length} requests"
+      holdCaught := (holdCaught.zip holdMutants).map fun ((n, by_), (_, m)) =>
+        let v := holdViolations m policy hs
+        if v.isEmpty then (n, by_) else (n + 1, (by_ ++ v).eraseDups)
+      holds := holds + held
+      holdHistories := holdHistories + 1
     unless (cacheViolations {} policy hs).isEmpty do
       real := real + 1
       if first.isNone then first := some s!"cached_read: {hs.length} requests"
@@ -462,7 +469,7 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"  mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
   for ((label, _), n) in cacheMutants.zip cacheCaught do
     IO.println s!"  cache mutant \"{label}\": caught on {n} of {histories} histories, by cached_read"
-  IO.println s!"held reads {holds}"
+  IO.println s!"held reads {holds}, in {holdHistories} histories"
   for ((label, _), (n, by_)) in holdMutants.zip holdCaught do
     IO.println s!"  hold mutant \"{label}\": caught on {n} of {histories} histories, by {by_.mergeSort (· ≤ ·)}"
   if disagree > 0 || confirmDisagree > 0 then return 1
