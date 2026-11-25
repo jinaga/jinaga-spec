@@ -131,8 +131,9 @@ export class ContentStore {
         if (!P.mayCreate(user, this.store, fact)) return respond("forbidden");
         const hash = P.contentHash(fact);
         if (hash === undefined) return respond("unprocessable");
-        if (P.hash(bytes) !== hash) return respond("unprocessable");
+        // The constraints before the hash: an oversized stream is aborted before its hash is known (RW-6).
         if (!P.fits(fact, bytes)) return respond("too_large");
+        if (P.hash(bytes) !== hash) return respond("unprocessable");
         if (this.objects.has(key)) return respond("already_stored");
         this.objects.set(key, bytes);
         return respond("stored");

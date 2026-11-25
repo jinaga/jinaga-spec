@@ -312,6 +312,16 @@ theorem write_accepted {P : Policy} {r : Replicator} (hf : r.store.factOf key = 
       | none => ({ r with objects := (key, o) :: r.objects }, .stored) := by
   simp [Replicator.write, hf, hm, hh, hfit]; cases r.objects.lookup key <;> rfl
 
+/-- RW-6: an authorized writer's upload to a content-bearing fact that breaks
+the constraints is refused with 413, whether or not the bytes match the content
+hash. The constraints are checked before the hash, because an oversized stream
+is aborted before all of it, and so its hash, is known. -/
+theorem write_tooLarge {P : Policy} {r : Replicator} (hf : r.store.factOf key = some f)
+    (hm : P.mayCreate u r.store f = true) (hh : P.contentHash f = some h)
+    (hfit : P.fits f o = false) :
+    r.write P (some u) key o = (r, .tooLarge) := by
+  simp [Replicator.write, hf, hm, hh, hfit]
+
 /-- Running the matches `ms` from `env`, the projection `p` names `key`: some
 solution projects it, or names it through a child specification, read from
 that solution: the nested reading of a specification's results, at every

@@ -419,5 +419,8 @@ The codes and statuses: `ok` and `already_stored` 200, `stored` 201,
 `bad_request` 400, `unauthenticated` 401, `forbidden` 403, `not_uploaded` 404,
 `fact_missing` 404, `too_large` 413, `unprocessable` 422. The requirements
 give no status for an upload whose fact is not in the store (RW-2); 404
-`fact_missing` is this model's choice.
+`fact_missing` is this model's choice. An upload is checked in this order:
+token (401), fact present (404), writer (403), content-bearing (422), size
+(413), hash (422). Size comes before hash because RW-6 aborts an oversized
+stream before its hash is known (`too-large-and-mismatched`).
 

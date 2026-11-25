@@ -188,7 +188,11 @@ The writer is checked as soon as the fact is found, so a writer who may not
 create it learns only that it is in the store (which naming its key implies
 they know), not whether its type is content-bearing or an object is stored.
 Only the fact being missing (RW-2) is answered first: there is no fact to
-authorize. -/
+authorize.
+
+The constraints (RW-6) are checked before the hash (RW-5): an oversized stream
+is aborted with 413 before all of it has arrived, so before its hash is known.
+Bytes that are both too large and mismatched get 413. -/
 def Replicator.write (P : Policy) (r : Replicator) (user : Option User) (key : FactId) (o : Bytes) :
     Replicator × Response :=
   match user with
@@ -201,8 +205,8 @@ def Replicator.write (P : Policy) (r : Replicator) (user : Option User) (key : F
       else match P.contentHash f with
       | none => (r, .unprocessable)
       | some h =>
-        if P.hash o != h then (r, .unprocessable)
-        else if !P.fits f o then (r, .tooLarge)
+        if !P.fits f o then (r, .tooLarge)
+        else if P.hash o != h then (r, .unprocessable)
         else match r.objects.lookup key with
           | some _ => (r, .alreadyStored)
           | none => ({ r with objects := (key, o) :: r.objects }, .stored)
