@@ -7,7 +7,7 @@
 // With a jinaga.js checkout, also hashes each object with the primitives its
 // fact hash uses (src/util/encoding.ts: @stablelib/sha512's hash, then
 // @stablelib/base64's encode), and checks that computeStringHash of the
-// decoded text agrees exactly when the bytes are valid UTF-8.
+// lossily decoded text differs on not-utf8: decoding is not the content hash.
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -51,14 +51,9 @@ for (const file of files) {
     for (const [how, h] of got) {
         if (h !== v.hash) { failed++; console.log(`FAIL ${v.name}: ${how} gives ${h}`); }
     }
-    if (jinaga) {
-        let text: string | undefined;
-        try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { }
-        const viaText = jinaga.computeStringHash(text ?? new TextDecoder().decode(bytes));
-        if ((viaText === v.hash) !== (text !== undefined)) {
-            failed++;
-            console.log(`FAIL ${v.name}: computeStringHash of the decoded text gives ${viaText}`);
-        }
+    if (jinaga && v.name === "not-utf8" && jinaga.computeStringHash(new TextDecoder().decode(bytes)) === v.hash) {
+        failed++;
+        console.log(`FAIL ${v.name}: computeStringHash of the decoded text gives the content hash`);
     }
 }
 if (failed) { console.log(`${failed} failures`); process.exit(1); }

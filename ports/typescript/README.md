@@ -106,5 +106,5 @@ chunks of 1, 3, 64, 1000 and 65536 bytes, and compares each with the vector's
 hash. With a jinaga.js checkout it also hashes the bytes with the primitives
 its fact hash uses (`@stablelib/sha512`, then `@stablelib/base64`'s `encode`,
 resolved from `src/util/encoding.ts`), and checks that `computeStringHash` of
-the decoded text gives the same hash exactly when the bytes are valid UTF-8.
-Without one, that check is skipped.
+`not-utf8`'s lossily decoded text gives a different hash: decoding the bytes
+to text is not the content hash. Without a checkout, both checks are skipped.

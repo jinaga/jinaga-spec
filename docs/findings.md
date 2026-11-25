@@ -1873,15 +1873,20 @@ unverified: no checkout was available.
 
 The content hash has no prefix or other domain separation from fact hashes,
 and needs none. Nothing is looked up by content hash: an object is stored and
-read under its content key (ST-1), and a read depends on the object under
-that key alone (`read_isolated`, SEC-4). A content hash equal to some fact's
-hash therefore cannot be confused with it. A prefix added for safety would
-only break agreement with the libraries that hash the bytes as they are.
+read under its content key, a `FactId` (ST-1). A read depends on the fact
+store and, among objects, only on the one under that key (`read_isolated`,
+SEC-4: two replicators with the same store and the same object under the key
+answer alike). A content hash can equal a fact's hash without any collision:
+upload a fact's canonical string and the two are equal by construction. The
+argument therefore rests on SEC-4 and ST-1, not on collision resistance:
+since no read path takes a hash as a key, equal strings cannot be confused.
+A prefix added for safety would only break agreement with the libraries that
+hash the bytes as they are.
 
 `computeStringHash` itself is not the content hash: it takes a string, and
-bytes that are not valid UTF-8 do not survive decoding (`not-utf8`). The
-runner checks that it agrees on the decoded text exactly when the bytes are
-valid UTF-8.
+bytes that are not valid UTF-8 do not survive decoding. The runner checks
+that `computeStringHash` of `not-utf8`'s lossily decoded text differs from its
+content hash.
 
 ### Revocation and the proof cache: SEC-7 and NF-2
 
