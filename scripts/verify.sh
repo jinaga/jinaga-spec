@@ -50,6 +50,7 @@ for seed in 1 2; do lake exe check-content "$seed" | grep -E "^histories|^real|m
 
 # Absolute, since the steps below run from ports/typescript.
 jinaga="${JINAGA_JS:-../jinaga.js}"
+case "$jinaga" in /*) ;; *) jinaga="$PWD/$jinaga" ;; esac
 if [ -d "$jinaga" ]; then jinaga="$(cd "$jinaga" && pwd)"; fi
 
 echo "== Content vectors against the TypeScript reference store"
