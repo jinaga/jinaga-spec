@@ -50,7 +50,8 @@ structure Proof where
 
 /-- What the content store reads from the model and its rules. -/
 structure Policy where
-  /-- The hash of an object's bytes, by the algorithm Jinaga uses for facts. -/
+  /-- The hash of an object's bytes. Abstract here; in Jinaga, the fact hash's
+  digest and encoding applied to the raw bytes (`vectors/content-hash/`). -/
   hash : Bytes → Hash
   /-- The fact's content hash field, if its type is declared content-bearing. -/
   contentHash : Fact → Option Hash

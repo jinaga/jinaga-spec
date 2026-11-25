@@ -53,6 +53,8 @@ echo "== Content vectors against the TypeScript reference store"
   cd ports/typescript
   npm ci --silent
   npm run --silent content | grep -E "content vectors pass|FAIL"
+  # Checked against jinaga.js's hashing primitives too, when JINAGA_JS names a checkout.
+  npm run --silent content-hash | grep -E "content-hash vectors pass|FAIL"
 )
 
 jinaga="${JINAGA_JS:-../jinaga.js}"

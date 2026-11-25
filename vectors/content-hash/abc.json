@@ -1,0 +1,6 @@
+{
+  "name": "abc",
+  "description": "\"abc\": the FIPS 180-2 SHA-512 example, whose digest is ddaf35a1...a54ca49f, in base64.",
+  "bytes": "616263",
+  "hash": "3a81oZNherrMQXNJriBBMRLm+k6JqX6iCp7u5ktV05ohkpkqJ0/BqDa6PCOj/uu9RU1EI2Q86A4qmslPpUyknw=="
+}
