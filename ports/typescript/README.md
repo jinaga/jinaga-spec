@@ -21,8 +21,8 @@ and `expected.connected` against the reference's `isConnectedDeep` and, on a
 well-formed vector, jinaga.js's `detectDisconnectedSpecification`. jinaga.js
 connects a vector when that call does not throw. The runner names, in `jinagaRefusesUnusedGiven`, the
 vectors jinaga.js is known to refuse because a given is unused
-(`unused-given`, `no-matches-two-givens`; jinaga/jinaga-spec#60): they are
-reported, not failed, until jinaga.js follows.
+(jinaga/jinaga-spec#60): they are reported, not failed. It names none since
+jinaga.js accepts an unused given.
 
 ## Cascade vectors
 
