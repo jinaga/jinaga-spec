@@ -102,12 +102,10 @@ const jinagaWellFormedMisses = new Set<string>();
 // (jinaga/jinaga.js#436, #437). It is held to `connected` on every well-formed
 // vector, as the reference's buildFeeds is. A jinaga.js that accepts a vector
 // the check refuses is one whose buildFeeds can emit a product feed, so that
-// is never excused. The one known difference is the other way:
-// detectDisconnectedSpecification counts every given, so it refuses a given no
-// match uses, which jinaga/jinaga-spec#60 allows. Those vectors, and only
-// those, are reported rather than failed until jinaga.js follows (pending its
-// port of jinaga/jinaga.js#436 and #437).
-const jinagaRefusesUnusedGiven = new Set<string>(["unused-given", "no-matches-two-givens"]);
+// is never excused. The vectors jinaga.js is expected to refuse for a given no
+// match uses, which jinaga/jinaga-spec#60 allows: none since jinaga/jinaga.js#442
+// and #443 stopped counting such a given.
+const jinagaRefusesUnusedGiven = new Set<string>();
 const jinagaConnects = (specification: any): boolean => {
     try { detectDisconnectedSpecification(structuredClone(specification)); return true; }
     catch { return false; }
