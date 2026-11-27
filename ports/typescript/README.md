@@ -52,9 +52,8 @@ reference implementation, and must pass all three. It refuses a specification
 that `well-formed.ts`'s `isConnectedDeep` refuses, and `npm run vectors` holds
 that check to each well-formedness vector's `expected.connected`. Against jinaga.js's own
 `buildFeeds`, a replica of its feeds must read the vector's results, except on
-the vectors the runner names in `jinagaMisses`: only `random-2`, whose given
-`p2` no match uses, which jinaga/jinaga-spec#60 allows and jinaga.js's
-`buildFeeds` may refuse. A `buildFeeds` that throws covers nothing. Its feeds
+the vectors the runner names in `jinagaMisses`, of which there are none now. A
+`buildFeeds` that throws covers nothing. Its feeds
 differ from the vector's, so the other two are reported.
 
 ## Content vectors

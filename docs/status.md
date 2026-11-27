@@ -37,7 +37,8 @@ last checked; check the issue before acting on one.
   be joined (`isJoined`). `isConnected_asFeed`, with no hypothesis now, makes
   the descendant clause at the specification itself exactly `isConnected`.
   jinaga.js accepts an unused given since jinaga/jinaga.js#442 and #443, so
-  `run-vectors.ts` no longer excuses `unused-given` or `no-matches-two-givens`.
+  `run-vectors.ts` no longer excuses `unused-given` or `no-matches-two-givens`,
+  nor `run-feed-vectors.ts` the feed vector `random-2`.
 - jinaga-spec#18: the given-conditions label rule's wording in
   `vectors/README.md` and `GivenConditions.lean`, and a regression check; the
   code was fixed in `287ef39`.
