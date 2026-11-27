@@ -25,6 +25,8 @@ const { describeSpecification } = await import(pathToFileURL(join(jinagaJs, "src
 const { wellFormedErrors } = await import(pathToFileURL(join(jinagaJs, "src/specification/specification-validation.ts")).href);
 const { AuthorizationRules } = await import(pathToFileURL(join(jinagaJs, "src/authorization/authorizationRules.ts")).href);
 const { detectDisconnectedSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/UnionFind.ts")).href);
+const { buildFeeds: jinagaBuildFeeds } = await import(pathToFileURL(join(jinagaJs, "src/specification/feed-builder.ts")).href);
+const { skeletonOfSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/skeleton.ts")).href);
 
 // A missing head or tail is `undefined` in TypeScript and `null` in a vector.
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
@@ -110,6 +112,15 @@ const jinagaConnects = (specification: any): boolean => {
     try { detectDisconnectedSpecification(structuredClone(specification)); return true; }
     catch { return false; }
 };
+// jinaga.js registers a feed by taking its skeleton (`computeFeedHash`), which
+// checks that the two sides of each path condition have the same type. The
+// oracle reads no types, so this holds the vectors themselves to being well
+// typed: a well-formed, connected vector whose feeds jinaga.js cannot register
+// fails here rather than in a downstream port (jinaga/jinaga-spec#68).
+const jinagaRegistersFeeds = (specification: any): boolean => {
+    try { jinagaBuildFeeds(structuredClone(specification)).forEach(skeletonOfSpecification); return true; }
+    catch { return false; }
+};
 const wellFormedFiles = readdirSync(wellFormedDir).filter(f => f.endsWith(".json")).sort();
 for (const file of wellFormedFiles) {
     const vector = JSON.parse(readFileSync(join(wellFormedDir, file), "utf8"));
@@ -126,6 +137,7 @@ for (const file of wellFormedFiles) {
     } else if (jinagaRefusesUnusedGiven.has(vector.name) && vector.expected.wellFormed) {
         console.log(`  note  ${vector.name}: jinaga.js now accepts it; remove it from jinagaRefusesUnusedGiven`);
     }
+    if (vector.expected.wellFormed && vector.expected.connected && !jinagaRefusesUnusedGiven.has(vector.name) && !jinagaRegistersFeeds(vector.specification)) wrong.push("jinaga.js buildFeeds");
     // The port's buildFeeds refuses a well-formed specification exactly when
     // it is not connected (jinaga/jinaga-spec#55).
     if (vector.expected.wellFormed && refusesAsDisconnected(vector.specification) === vector.expected.connected) wrong.push("reference buildFeeds");

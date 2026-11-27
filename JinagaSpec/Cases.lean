@@ -170,7 +170,7 @@ structure WellFormedCase where
 
 def wellFormedCases : List WellFormedCase :=
   let office := role "office" "Office"
-  let revoked := role "revoked" "Revoked"
+  let revoked := role "revoked" "Office"
   let simple := [unknown "u1" "Office" [path [] "p1" [office]]]
   [
   { name := "simple"
@@ -264,7 +264,7 @@ def wellFormedCases : List WellFormedCase :=
     source := "SpecificationParser.parseExistentialCondition adds the unknown to the scope"
     spec := spec [("p1", "Employee")]
       [unknown "u1" "Office"
-        [path [] "p1" [office], notExists [unknown "u1" "Revoked" [path [revoked] "p1"]]]]
+        [path [] "p1" [office], notExists [unknown "u1" "Revoked" [path [revoked] "p1" [office]]]]]
       (fact "u1")
     violates := ["named"] },
   { name := "unknown-uses-a-reserved-label"

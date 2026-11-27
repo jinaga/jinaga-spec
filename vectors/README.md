@@ -77,7 +77,11 @@ write a vector where the oracle disagrees. `connected` is `isConnectedDeep`'s
 verdict, stated for every case, and `run-vectors.ts` holds the reference port
 to it on every vector. Only a well-formed case's `violates` is checked against
 it: a specification that is not well formed may be disconnected too, and its
-`violates` lists only the rules of `wellFormed` it breaks. `lake exe vectors` also refuses to write the vectors unless each mutant of
+`violates` lists only the rules of `wellFormed` it breaks. Neither check reads
+types, but every path condition in these vectors compares facts of the same
+type, so a port that type-checks refuses a vector only for the rule it names;
+`run-vectors.ts` holds this by requiring that jinaga.js build and register the
+feeds of every well-formed, connected vector (jinaga/jinaga-spec#68). `lake exe vectors` also refuses to write the vectors unless each mutant of
 the connectivity check (`connectedMutants`, `CheckGen.lean`) disagrees with
 `isConnectedDeep` on one of them.
 

@@ -1,6 +1,6 @@
 {"violates": ["scoped"],
  "text":
- "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n        !E {\n            e: Revoked [\n                e->revoked: Revoked = nosuch\n            ]\n        }\n    ]\n} => u1\n",
+ "(p1: Employee) {\n    u1: Office [\n        u1 = p1->office: Office\n        !E {\n            e: Revoked [\n                e->revoked: Office = nosuch\n            ]\n        }\n    ]\n} => u1\n",
  "specification":
  {"projection": {"type": "fact", "label": "u1"},
   "matches":
@@ -16,7 +16,7 @@
         "conditions":
         [{"type": "path",
           "rolesRight": [],
-          "rolesLeft": [{"predecessorType": "Revoked", "name": "revoked"}],
+          "rolesLeft": [{"predecessorType": "Office", "name": "revoked"}],
           "labelRight": "nosuch"}]}],
       "exists": false}]}],
   "given": [{"label": {"type": "Employee", "name": "p1"}, "conditions": []}]},
