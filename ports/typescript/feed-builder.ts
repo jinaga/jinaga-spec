@@ -142,6 +142,11 @@ export function buildFeeds(specification: Specification): Specification[] {
     // jinaga.js's assertWellFormed does not look inside a child specification.
     if (!isWellFormed(specification as any))
         throw new Error("The specification is not well formed: a label is out of scope, redeclared, or reserved.");
+    // The theorems are about a specification whose givens carry no conditions.
+    // Conditions on givens are reduced to a match first (`reduceGivenConditions`),
+    // and renamed after (jinaga/jinaga-spec#71).
+    if (specification.given.some(g => (g.conditions ?? []).length > 0))
+        throw new Error("Reduce the conditions on the givens first (reduceGivenConditions): feeds are built from a specification whose givens have none.");
     // Joining positive conditions into one level would bind a label that two
     // sibling conditions both declare twice, and a child specification's feeds
     // bind its parent's labels too. The theorems assume each descendant

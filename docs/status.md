@@ -28,14 +28,19 @@ last checked; check the issue before acting on one.
 - **A reuse is allowed when it causes no ambiguity; implementations rename
   instead of refusing** (jinaga-spec#71, decided 2026-11-28). `WellFormed` is
   the language rule: a name may be declared again where no other declaration
-  of it is in scope. Implementations rename with `withDistinctLabels`
-  (`DistinctLabels.lean`, jinaga.js's renaming) before any transformation, so
-  every later stage sees each label declared once in each descendant
+  of it is in scope. A stage that needs each label declared once in each
+  descendant (`DistinctLabels`), which today is `buildFeeds`, renames with
+  `withDistinctLabels` (`DistinctLabels.lean`, jinaga.js's renaming) instead of
+  refusing: the renamed specification has that property
   (`withDistinctLabels_distinct`) and reads the same results
-  (`withDistinctLabels_reads`). Two orderings matter: conditions on givens are
-  reduced (`reduceGivenConditions`) before renaming, and connectivity
-  (`isConnectedDeep`) is checked after it, since it reads labels by name
-  (`docs/findings.md`, "Renaming reused labels").
+  (`withDistinctLabels_reads`). The inverses and the split are proved without
+  it, and keep it when the input has it (`inverses_distinct`,
+  `split_distinct`), so renaming once on entry also serves a pipeline that
+  runs them first. Two orderings matter: conditions on givens are reduced
+  (`reduceGivenConditions`) before renaming, and `feed-builder.ts` refuses
+  givens that still carry them; connectivity (`isConnectedDeep`) is checked
+  after renaming, since it reads labels by name (`docs/findings.md`,
+  "Renaming reused labels").
 
 ## Open work (checked 2026-11-22)
 
