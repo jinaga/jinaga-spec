@@ -2,7 +2,8 @@ import JinagaSpec.DistinctLabels
 import JinagaSpec.Proofs.Children
 import JinagaSpec.Proofs.Derivation
 import JinagaSpec.Proofs.Hoist
-import JinagaSpec.Candidates
+import JinagaSpec.Proofs.Candidates
+import JinagaSpec.Proofs.Contested
 import JinagaSpec.GivenConditions
 
 /-!
@@ -24,10 +25,12 @@ solutions in correspondence (`Corresponds.bind`).
 * `withDistinctLabels_evaluate`, `withDistinctLabels_readsOf`,
   `withDistinctLabels_reads`: what a replica reads is unchanged, child
   specifications' results included.
-* `withDistinctLabels_eq_self`: a specification that repeats nothing is
-  unchanged.
-* `feeds_cover_renamed`, `feeds_defer_renamed`, `buildFeeds_nodup_renamed`: the
-  feed theorems for the renamed specification, without `DistinctLabels`.
+* `withDistinctLabels_eq_self`: a specification that repeats nothing, its
+  givens' names included, is unchanged.
+* `feeds_cover_renamed`, `feed_converges_renamed`, `feeds_defer_renamed`,
+  `buildFeeds_nodup_renamed`, `buildFeeds_consistent_renamed`,
+  `buildFeeds_appendOnly_renamed`: the feed theorems for the renamed
+  specification, without `DistinctLabels`.
 * `inverses_distinct`, `split_distinct`, `reduceGivenConditions_distinct`:
   the transformations after the renaming keep each label declared once, so
   renaming once, on entry, suffices.
@@ -268,10 +271,6 @@ theorem renameConditions_declared_mono (inner outer : Name → Name) (st : Renam
     ∀ x ∈ st.declared, x ∈ (renameConditions inner outer st cs).1.declared := fun x hx => by
   rw [(renameConditions_state inner outer st cs).1]; exact List.mem_append_right _ hx
 
-theorem renameMatches_declared_mono (ρ : Name → Name) (st : RenameState) (ms : List Match) :
-    ∀ x ∈ st.declared, x ∈ (renameMatches ρ st ms).1.declared := fun x hx => by
-  rw [(renameMatches_state ρ st ms).1]; exact List.mem_append_right _ hx
-
 /-! ## Well-formedness -/
 
 mutual
@@ -500,6 +499,9 @@ theorem renameProjection_labels (ρ : Name → Name) (D T : List Name) :
 
 /-- The renamed projection's child specifications are its child specifications,
 each renamed from what its parent declared and from at least what was taken. -/
+theorem RenameState.Inv.of_taken {D T T' : List Name} (hi : ∀ x ∈ D, x ∈ T) (hT : ∀ x ∈ T, x ∈ T') :
+    RenameState.Inv { taken := T', declared := D } := fun x hx => hT x (hi x hx)
+
 theorem renameProjection_children (ρ : Name → Name) (D T : List Name) :
     ∀ p : Projection, Pointwise (fun c c' => c ∈ p.children ∧ ∃ T', (∀ x ∈ T, x ∈ T') ∧ c' = renameChild ρ D T' c)
       p.children (renameProjection ρ D T p).2.children
@@ -564,7 +566,7 @@ theorem renameProjection_resultsAt (g : Graph) : ∀ (p : Projection) (ρ : Name
     · exact List.map_congr_left fun l hl => hc l (hw.labels l hl)
     · refine (renameProjection_children ρ D T p).map_eq fun c c' ⟨hcp, T', hT, he⟩ => ?_
       subst he
-      have hi' : RenameState.Inv { taken := T', declared := D } := fun x hx => hT x (hi x hx)
+      have hi' := RenameState.Inv.of_taken hi hT
       obtain ⟨hs, hwn, hw'⟩ := hw.child hcp
       refine (renameMatches_eval g ρ _ S c.1 σ1 σ2 hi' hh hs hwn hc).map_eq fun τ1 τ2 hτ =>
         renameProjection_resultsAt g c.2 _ _ _ _ τ1 τ2 (renameMatches_inv hi' c.1)
@@ -584,7 +586,7 @@ theorem renameProjection_wellFormed : ∀ (p : Projection) (ρ : Name → Name) 
       obtain ⟨l0, hl0, rfl⟩ := List.mem_map.mp hl
       exact List.mem_map_of_mem (hw.labels l0 hl0)
     · obtain ⟨c, hc, T', hT, rfl⟩ := (renameProjection_children ρ D T p).exists_of_mem_right hc'
-      have hi' : RenameState.Inv { taken := T', declared := D } := fun x hx => hT x (hi x hx)
+      have hi' := RenameState.Inv.of_taken hi hT
       obtain ⟨hs, hwn, hw'⟩ := hw.child hc
       obtain ⟨hs', hwn'⟩ := renameMatches_wellFormed ρ _ S c.1 hi' hh hs hwn
       have hy' := renameProjection_wellFormed c.2 _ _ _ _ (renameMatches_inv hi' c.1)
@@ -604,7 +606,7 @@ theorem renameProjection_distinct : ∀ (p : Projection) (ρ : Name → Name) (D
     rcases mem_paths.mp hx with rfl | ⟨c', hc', y, hy, rfl⟩
     · simpa [declaredMatches] using hL
     · obtain ⟨c, hc, T', hT, rfl⟩ := (renameProjection_children ρ D T p).exists_of_mem_right hc'
-      have hi' : RenameState.Inv { taken := T', declared := D } := fun x hx => hT x (hi x hx)
+      have hi' := RenameState.Inv.of_taken hi hT
       obtain ⟨hn, hd⟩ := renameMatches_distinct ρ _ hi' c.1
       have hst := (renameMatches_state ρ { taken := T', declared := D } c.1).1
       have := renameProjection_distinct c.2 _ _ _ (L ++ declaredMatches (renameMatches ρ _ c.1).2.1)
@@ -931,15 +933,15 @@ theorem withDistinctLabels_eq_self_of_wellFormed {s : Specification} (hwf : ∀ 
     have hw := (hwf d hdd).wellNamed
     have : d.given = s.given := by
       obtain ⟨x, -, rfl⟩ := List.mem_map.mp hdd; rfl
-    rw [← this]; exact fun x hx => (wellNamed_declared _ _ hw x hx).1
+    rw [← this]; exact wellNamed_declared _ _ hw
 
 /-! ## Feeds accept every well-formed specification
 
 The feed theorems, for the feeds of the renamed specification, under their
 hypotheses less `DistinctLabels`, which the renaming establishes. What a
 replica reads of the renamed specification is what it reads of the
-specification (`withDistinctLabels_reads`), so `feeds_cover` and
-`feed_converges` speak of the specification itself. -/
+specification (`withDistinctLabels_reads`), so `feeds_cover_renamed` and
+`feed_converges_renamed` speak of the specification itself. -/
 
 section Feeds
 variable {g : Graph} {B : List Fact}
@@ -963,6 +965,28 @@ theorem feeds_cover_renamed {s : Specification} (hwf : ∀ d ∈ s.descendants, 
   rw [← withDistinctLabels_reads hwf, ← withDistinctLabels_reads hwf]
   exact feeds_cover (withDistinctLabels_descendants_wellFormed hwf) (withDistinctLabels_distinct s)
     (withDistinctLabels_rooted hr) hf henv hgiv hdel r
+
+theorem feed_converges_renamed {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d)
+    (hr : ∀ d ∈ s.descendants, RootedMatches d.matchList) (hf : Fresh g B) {env : Env} (henv : Settled B env)
+    (hgiv : ∀ l ∈ s.given, g.has env l = true)
+    (bookmark : Specification → List Nat) (D : List FactId)
+    (hcaught : ∀ f ∈ buildFeeds (withDistinctLabels s), Caught (f.tuples (g ++ B) env) (bookmark f) D)
+    (hsync : ∀ f ∈ buildFeeds (withDistinctLabels s), IsPage (f.tuples (g ++ B) env) [] (bookmark f))
+    (hheld : ∀ id ∈ D, Outside B id) :
+    ∀ r, s.Reads g env r ↔ s.Reads (g ++ B) env r := fun r => by
+  rw [← withDistinctLabels_reads hwf, ← withDistinctLabels_reads hwf]
+  exact feed_converges (withDistinctLabels_descendants_wellFormed hwf) (withDistinctLabels_distinct s)
+    (withDistinctLabels_rooted hr) hf henv hgiv bookmark D hcaught hsync hheld r
+
+theorem buildFeeds_consistent_renamed {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d)
+    (hr : ∀ d ∈ s.descendants, RootedMatches d.matchList) :
+    Consistent (withDistinctLabels s) (buildFeeds (withDistinctLabels s)) :=
+  buildFeeds_consistent (withDistinctLabels_descendants_wellFormed hwf) (withDistinctLabels_distinct s)
+    (withDistinctLabels_rooted hr)
+
+theorem buildFeeds_appendOnly_renamed {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d) :
+    ∀ f ∈ buildFeeds (withDistinctLabels s), AppendOnly f :=
+  buildFeeds_appendOnly (withDistinctLabels_descendants_wellFormed hwf) (withDistinctLabels_distinct s)
 
 end Feeds
 
@@ -1045,6 +1069,23 @@ theorem inverses_distinct {s : Specification} (hd : ∀ d ∈ s.descendants, Dis
     exact fun x hx => ((touchMatches_declared _ _ y hy).append (List.Sublist.refl _)).nodup (hd x hx)
 
 /-! ### The split -/
+
+mutual
+  /-- `Split.lean`'s `declaredInMatches` and `Feeds.lean`'s `declaredMatches` are
+  the same list. -/
+  theorem declaredInMatches_eq : ∀ ms : List Match, declaredInMatches ms = declaredMatches ms
+    | [] => by simp [declaredInMatches, declaredMatches]
+    | .mk _ cs :: rest => by
+      simp only [declaredInMatches, declaredMatches, declaredInConditions_eq cs, declaredInMatches_eq rest,
+        List.cons_append]
+
+  theorem declaredInConditions_eq : ∀ cs : List Condition, declaredInConditions cs = declaredConditions cs
+    | [] => by simp [declaredInConditions, declaredConditions]
+    | .path _ :: cs => by simp [declaredInConditions, declaredInCondition, declaredConditions, declaredInConditions_eq cs]
+    | .existential _ ms :: cs => by
+      simp [declaredInConditions, declaredInCondition, declaredConditions, declaredInMatches_eq ms,
+        declaredInConditions_eq cs]
+end
 
 mutual
   /-- Hoisting keeps what the matches declare. -/
@@ -1185,7 +1226,7 @@ theorem split_distinct {s : Specification} (hwf : WellFormed s) (hd : ∀ d ∈ 
         declared_append]
       refine List.nodup_append.mpr ⟨(List.nodup_append.mp hd0).1, hh.1, fun a ha b hb hab => ?_⟩
       obtain ⟨j, -, -, rfl⟩ := hh.2 b hb
-      have := (wellNamed_declared _ _ hw.1 a ha).2
+      have := declaredInMatches_ordinary _ _ hw.1 a (declaredInMatches_eq before ▸ ha)
       rw [hab, isReserved_splitLabel] at this; exact absurd this (by simp)
     · simp only [Option.some.injEq] at ht'; subst ht'
       simp only [Specification.descendants, List.forall_mem_map, DistinctLabels, declared_append, ht]

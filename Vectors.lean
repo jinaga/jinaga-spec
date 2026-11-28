@@ -196,10 +196,11 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
   ("a batch that holds one of the subscription's givens",
     fun c => c.givens.any fun (_, id) => c.batch.any (·.id == id)),
   ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone),
-  ("a reuse that jinaga.js's invertSpecification brings into scope", fun c =>
-    match invertSpecification c.spec with
-    | .ok is => is.any fun i => redeclares [] (i.given :: i.matchList)
-    | .error _ => false)]
+  ("a reuse that jinaga.js's invertSpecification brings into scope, and renaming first does not", fun c =>
+    let redeclared (s : Specification) := match invertSpecification s with
+      | .ok is => is.any fun i => redeclares [] (i.given :: i.matchList)
+      | .error _ => false
+    redeclared c.spec && !redeclared (withDistinctLabels c.spec))]
 
 
 /-! ## Feed vectors -/
@@ -304,7 +305,7 @@ def distinctLabelsVector (c : DistinctLabelsCase) : Json :=
 def distinctLabelsCoverage : List String := [
   "sibling-conditions-share-a-name", "condition-and-later-match-share-a-name", "sibling-children-share-a-name",
   "repeated-reserved-name", "candidate-taken", "repeated-label-with-next", "repeated-label-without-next",
-  "nothing-repeated"]
+  "nothing-repeated", "two-chains-share-a-name", "given-condition-shares-a-name"]
 
 /-- The theorems of `Proofs/DistinctLabels.lean`, on each case. -/
 def checkDistinctLabels (c : DistinctLabelsCase) : IO Unit := do

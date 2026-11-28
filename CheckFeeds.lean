@@ -398,7 +398,7 @@ def main (args : List String) : IO UInt32 := do
   -- The named specifications first: the feed cases, and the well-formed ones of
   -- the well-formedness vectors.
   let mut breaks : List (List Nat) :=
-    ((feedCases.map (·.spec)) ++ ((wellFormedCases.map (·.spec)).filter isWellFormedDeep)).foldl tally
+    ((feedCases.map (withDistinctLabels ·.spec)) ++ ((wellFormedCases.map (·.spec)).filter isWellFormedDeep)).foldl tally
       (checks.map fun _ => [0, 0, 0, 0])
   for c in feedCases do
     -- Feeds are built from the renamed specification (jinaga/jinaga-spec#71).

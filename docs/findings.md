@@ -411,10 +411,11 @@ is not: flattening would bind the two labels in one list. Rather than rename,
 which would need its own proof, the self-check rejects the flattened list when
 a name repeats, and the inverse is kept unordered: correct, and as slow as an
 unordered inverse. With reused names in the generator, about 6% of inverses
-fall back; without them, none do. Renaming on entry (`withDistinctLabels`,
-"Renaming reused labels", below) leaves no repeated name to fall back on: the
-inverses keep `DistinctLabels` (`inverses_distinct`), and a lifted label is one
-the descendant declares once.
+fall back; without them, none do. After renaming on entry
+(`withDistinctLabels`, "Renaming reused labels", below), the inverses declare
+each label once in each descendant (`inverses_distinct`), so a lifted label
+repeats no other; `check-inverse`, which does not rename, has not re-measured
+the fallbacks.
 
 `check-inverse` measures `candidates` itself, not a copy of the rule: it misses
 no change.
@@ -1644,17 +1645,19 @@ jinaga/jinaga.js#430), with nothing to say the renaming keeps results.
   `WellFormed` of every descendant, since `WellFormed s` says nothing of a
   child's matches): equality, not equality up to renaming, since rows are
   positional and component names do not change.
-- **It changes nothing already distinct**, given one more hypothesis than
-  jinaga-spec#71 states: no descendant declares a given's name
+- **It changes nothing already distinct**, counting the givens' names: that is
+  one more hypothesis than jinaga-spec#71 states, that no descendant declares a given's name
   (`withDistinctLabels_eq_self`). The renaming counts the givens as declared,
   as jinaga.js's does, so `(p: P) { p: P [...] }`, which `DistinctLabels`
   allows, has its match renamed. `WellFormed` of every descendant rules that
   out (`withDistinctLabels_eq_self_of_wellFormed`).
 - **The feeds accept every well-formed specification.** `feeds_cover_renamed`,
-  `feeds_defer_renamed` and `buildFeeds_nodup_renamed` (which `feed_antitone`
-  takes, with `buildFeeds_feedShape`) hold for `buildFeeds (withDistinctLabels s)`
-  under the old hypotheses less `DistinctLabels`, and `feeds_cover_renamed`
-  speaks of what a replica reads of `s` itself.
+  `feed_converges_renamed`, `feeds_defer_renamed`, `buildFeeds_consistent_renamed`,
+  `buildFeeds_appendOnly_renamed` and `buildFeeds_nodup_renamed` (which
+  `feed_antitone` takes, with `buildFeeds_feedShape`) hold for
+  `buildFeeds (withDistinctLabels s)` under the old hypotheses less
+  `DistinctLabels`, and `feeds_cover_renamed` and `feed_converges_renamed`
+  speak of what a replica reads of `s` itself.
 
 The proof is one invariant. A scope maps each label, as written, to its new
 name (`ρ`); a solution of the original corresponds to one of the renamed
@@ -1685,9 +1688,10 @@ condition that declares `y`. `isConnectedDeep` counts the two `y`s as one
 label and accepts it; its one feed is the product of the two chains, and
 binds `y` twice. Renamed, the `y`s are `y` and `y2`, and `isConnectedDeep`
 refuses it, as it should. So a port checks connectivity after renaming
-(`feed-builder.ts`). jinaga.js already does: its `detectDisconnectedSpecification`
-reads the feeds `feedsOf` builds, which `feedsOf` renames first, and it
-refuses the vector.
+(`feed-builder.ts`). jinaga.js refuses the vector: the clause of its
+`detectDisconnectedSpecification` that reads each feed reads the feeds
+`feedsOf` builds, which `feedsOf` renames first. Its clause over descendants
+runs before renaming, as `isConnectedDeep`'s does here.
 
 ### Transformations after the renaming
 
@@ -1708,9 +1712,10 @@ Renaming once, on entry, suffices for a later stage that keeps
   match may share a name, which is no reuse in scope; the reduction moves the
   condition onto a first match, so the descendant declares the name twice
   (`given-condition-shares-a-name`). So a specification with conditions on its
-  givens is reduced, then renamed. jinaga.js's `withDistinctLabels` neither
-  renames inside a given's conditions nor counts them as declared, so it
-  leaves that name twice; whether a jinaga.js path reduces given conditions
+  givens is reduced, then renamed. jinaga.js's `withDistinctLabels` keeps a
+  given's conditions as they are: it takes their names out of the candidates
+  for a new name, but does not count them as declared, so a match that shares
+  a name with one keeps it. Whether a jinaga.js path reduces given conditions
   into a feed was not checked.
 
 Whether each keeps `WellFormed`, which is the maintainer's observation that
@@ -2149,7 +2154,7 @@ drops more, so `cached_read` covers it.
 | `Proofs/Candidates.lean` | Every result a fresh batch changes is a result of one of the inverses, given one of the batch's facts. |
 | `Proofs/Reorder.lean` | Matches are a conjunction, so a checked arrangement has the same solutions; flattening an `exists` keeps them. |
 | `Proofs/Exact.lean` | Two match lists over the same unknowns read as one are a conjunction; the exact inverses are sound on the new graph and complete, so a stream that applies their changes is exact. |
-| `Proofs/DistinctLabels.lean` | Renaming reused labels keeps well-formedness, rootedness and results, at every depth, establishes `DistinctLabels`, and changes a specification that repeats nothing not at all; the inverses, the split and reducing conditions on a given keep `DistinctLabels`. |
+| `Proofs/DistinctLabels.lean` | Renaming reused labels keeps well-formedness, rootedness and results, at every depth, establishes `DistinctLabels`, and changes a specification that repeats nothing, its givens' names included, not at all; the inverses, the split and reducing conditions on a given keep `DistinctLabels`. |
 | `Proofs/Stream.lean` | The candidates cover every change a replica reads, a replica that notifies each fact of a batch is exact, and a re-checking stream is exact. |
 | `Proofs/GivenConditions.lean` | Reducing conditions on a given to a match keeps what a replica reads, so the stream of a conditioned specification is exact. |
 | `Cascade/CMap.lean`, `Json.lean` | Sorted maps with the same lookups are equal; the encoding of JSON values is injective, so it orders and compares them. |

@@ -257,7 +257,9 @@ that the specification does not declare and the renaming has not made, and
 every reference to it in its scope follows. A reserved name loses its leading
 underscores first. Givens keep their names; sibling child specifications may
 keep a shared label. jinaga.js's `withDistinctLabels` (jinaga/jinaga.js#430)
-is the same renaming.
+is the same renaming. jinaga.js's also avoids the names its givens' conditions
+declare, which a `Specification` here does not have; a specification with
+conditions on its givens is reduced before it is renamed.
 
 ```jsonc
 {

@@ -51,8 +51,12 @@ const declaredInProjection = (projection: Projection): string[] => projection.ty
 
 export function withDistinctLabels(specification: Specification): Specification {
     const givens = specification.given.map(g => g.label.name);
-    // Every name the specification declares or the walk has made.
-    const taken = new Set<string>([...givens, ...declared(specification.matches), ...declaredInProjection(specification.projection)]);
+    // Every name the specification declares, its givens' conditions included,
+    // or the walk has made.
+    const givenConditions = specification.given.flatMap(g =>
+        (g.conditions as Condition[]).flatMap(c => c.type === "existential" ? declared(c.matches) : []));
+    const taken = new Set<string>([...givens, ...givenConditions, ...declared(specification.matches),
+        ...declaredInProjection(specification.projection)]);
 
     function fresh(name: string): string {
         const base = reserved(name) ? (name.replace(/^_+/, "") || "label") : name;
