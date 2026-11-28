@@ -1,0 +1,57 @@
+{"wellFormed": true,
+ "text":
+ "(p: Project) {\n    given: Project [\n        given = p\n        !E {\n            a: Archive [\n                a->project: Project = p\n            ]\n        }\n    ]\n    a: Task [\n        a->project: Project = p\n    ]\n} => a\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "a"},
+  "matches":
+  [{"unknown": {"type": "Project", "name": "given"},
+    "conditions":
+    [{"type": "path", "rolesRight": [], "rolesLeft": [], "labelRight": "p"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Archive", "name": "a"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Project", "name": "project"}],
+          "labelRight": "p"}]}],
+      "exists": false}]},
+   {"unknown": {"type": "Task", "name": "a"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Project", "name": "project"}],
+      "labelRight": "p"}]}],
+  "given": [{"label": {"type": "Project", "name": "p"}, "conditions": []}]},
+ "source": "jinaga/jinaga-spec#71",
+ "name": "given-condition-shares-a-name",
+ "expected":
+ {"unchanged": false,
+  "text":
+  "(p: Project) {\n    given: Project [\n        given = p\n        !E {\n            a: Archive [\n                a->project: Project = p\n            ]\n        }\n    ]\n    a2: Task [\n        a2->project: Project = p\n    ]\n} => a2\n",
+  "specification":
+  {"projection": {"type": "fact", "label": "a2"},
+   "matches":
+   [{"unknown": {"type": "Project", "name": "given"},
+     "conditions":
+     [{"type": "path", "rolesRight": [], "rolesLeft": [], "labelRight": "p"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Archive", "name": "a"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Project", "name": "project"}],
+           "labelRight": "p"}]}],
+       "exists": false}]},
+    {"unknown": {"type": "Task", "name": "a2"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Project", "name": "project"}],
+       "labelRight": "p"}]}],
+   "given": [{"label": {"type": "Project", "name": "p"}, "conditions": []}]},
+  "connected": true},
+ "description":
+ "The reduction of (p: Project [!E { a: Archive [...] }]) { a: Task [...] }: the condition on the given and the match both declare a, which is no reuse in scope. Reducing moves the condition onto a first match, so the descendant then declares a twice, and the match's a is renamed. Conditions on givens are reduced before renaming.",
+ "connected": true}

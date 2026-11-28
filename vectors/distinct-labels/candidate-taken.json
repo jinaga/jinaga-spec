@@ -1,0 +1,89 @@
+{"wellFormed": true,
+ "text":
+ "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            y: Freeze [\n                y->account: Account = a\n            ]\n        }\n        E {\n            y: Mirror [\n                y->account: Account = a\n            ]\n        }\n    ]\n    y2: Owner [\n        y2->account: Account = a\n    ]\n} => {\n    account = a\n    owner = y2\n}\n",
+ "specification":
+ {"projection":
+  {"type": "composite",
+   "components":
+   [{"type": "fact", "name": "account", "label": "a"},
+    {"type": "fact", "name": "owner", "label": "y2"}]},
+  "matches":
+  [{"unknown": {"type": "Account", "name": "a"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+      "labelRight": "p1"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Freeze", "name": "y"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": false},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Mirror", "name": "y"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": true}]},
+   {"unknown": {"type": "Owner", "name": "y2"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+      "labelRight": "a"}]}],
+  "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+ "source": "jinaga.js distinct-labels.ts",
+ "name": "candidate-taken",
+ "expected":
+ {"unchanged": false,
+  "text":
+  "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            y: Freeze [\n                y->account: Account = a\n            ]\n        }\n        E {\n            y3: Mirror [\n                y3->account: Account = a\n            ]\n        }\n    ]\n    y2: Owner [\n        y2->account: Account = a\n    ]\n} => {\n    account = a\n    owner = y2\n}\n",
+  "specification":
+  {"projection":
+   {"type": "composite",
+    "components":
+    [{"type": "fact", "name": "account", "label": "a"},
+     {"type": "fact", "name": "owner", "label": "y2"}]},
+   "matches":
+   [{"unknown": {"type": "Account", "name": "a"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+       "labelRight": "p1"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Freeze", "name": "y"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": false},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Mirror", "name": "y3"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": true}]},
+    {"unknown": {"type": "Owner", "name": "y2"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+       "labelRight": "a"}]}],
+   "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+  "connected": true},
+ "description":
+ "Two conditions declare y, and a match declares y2, so the second y skips y2 and becomes y3.",
+ "connected": true}

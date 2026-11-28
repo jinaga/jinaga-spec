@@ -1,0 +1,69 @@
+{"wellFormed": true,
+ "text":
+ "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            y: Freeze [\n                y->account: Account = a\n            ]\n        }\n        E {\n            y: Mirror [\n                y->account: Account = a\n            ]\n        }\n    ]\n} => a\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "a"},
+  "matches":
+  [{"unknown": {"type": "Account", "name": "a"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+      "labelRight": "p1"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Freeze", "name": "y"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": false},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Mirror", "name": "y"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": true}]}],
+  "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+ "source": "jinaga/jinaga-spec#71",
+ "name": "sibling-conditions-share-a-name",
+ "expected":
+ {"unchanged": false,
+  "text":
+  "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            y: Freeze [\n                y->account: Account = a\n            ]\n        }\n        E {\n            y2: Mirror [\n                y2->account: Account = a\n            ]\n        }\n    ]\n} => a\n",
+  "specification":
+  {"projection": {"type": "fact", "label": "a"},
+   "matches":
+   [{"unknown": {"type": "Account", "name": "a"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+       "labelRight": "p1"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Freeze", "name": "y"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": false},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Mirror", "name": "y2"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": true}]}],
+   "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+  "connected": true},
+ "description":
+ "Two existential conditions of one match both declare y. Neither is in scope of the other, so the specification is well formed, but a feed joins the positive one's level with the negative one's matches. The second y is renamed.",
+ "connected": true}

@@ -169,6 +169,15 @@ mutual
       | .path _ => false
 end
 
+mutual
+  /-- Some match, at any depth, declares a name already in scope. -/
+  partial def redeclares (scope : List Name) : List Match → Bool
+    | [] => false
+    | .mk u cs :: rest => scope.contains u.name ||
+        cs.any (fun | .existential _ ms => redeclares (u.name :: scope) ms | .path _ => false) ||
+        redeclares (u.name :: scope) rest
+end
+
 /-- What the inverse vectors must show between them, each with the test that
 a case shows it. `lake exe vectors` refuses to write a set in which no case
 shows one, so a change to the generator cannot quietly drop a shape a port
@@ -186,7 +195,12 @@ def inverseCoverage : List (String × (InverseCase → Bool)) := [
   ("a condition on a given", fun c => !c.conditioned.conditions.isEmpty),
   ("a batch that holds one of the subscription's givens",
     fun c => c.givens.any fun (_, id) => c.batch.any (·.id == id)),
-  ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone)]
+  ("an inverse that cannot be reordered", fun c => (inverses c.spec).any fun i => (reorderChecked i).isNone),
+  ("a reuse that jinaga.js's invertSpecification brings into scope, and renaming first does not", fun c =>
+    let redeclared (s : Specification) := match invertSpecification s with
+      | .ok is => is.any fun i => redeclares [] (i.given :: i.matchList)
+      | .error _ => false
+    redeclared c.spec && !redeclared (withDistinctLabels c.spec))]
 
 
 /-! ## Feed vectors -/
@@ -201,6 +215,10 @@ partial def resultsToJson (rs : List Result) : Json :=
 
 def feedVector (c : FeedCase) : Json :=
   let env := c.env
+  -- A port renames reused labels before it builds feeds (jinaga/jinaga-spec#71).
+  let s := withDistinctLabels c.spec
+  let renamed := if describeSpecification s == describeSpecification c.spec then []
+    else [("renamed", inverseToJson s)]
   let nested := if c.spec.projection.children.isEmpty then []
     else [("nestedResults", resultsToJson (c.spec.readsOf c.graph env))]
   Json.mkObj [
@@ -212,9 +230,9 @@ def feedVector (c : FeedCase) : Json :=
     ("rowLabels", Json.arr (c.spec.projection.labels.map Json.str).toArray),
     ("givens", Json.mkObj (c.givens.map fun (n, id) => (n, Json.num id))),
     ("graph", Json.arr (c.graph.map factToJson).toArray),
-    ("expected", Json.mkObj ([
-      ("feeds", Json.arr ((buildFeeds c.spec).map inverseToJson).toArray),
-      ("delivered", Json.arr (((delivered c.spec c.graph env).eraseDups.mergeSort (· ≤ ·)).map fun (id : FactId) => Json.num id).toArray),
+    ("expected", Json.mkObj (renamed ++ [
+      ("feeds", Json.arr ((buildFeeds s).map inverseToJson).toArray),
+      ("delivered", Json.arr (((delivered s c.graph env).eraseDups.mergeSort (· ≤ ·)).map fun (id : FactId) => Json.num id).toArray),
       ("results", rowsToJson (c.spec.read c.graph env))] ++ nested))]
 
 /-- Random specifications shaped like an application's, each with a graph on
@@ -264,6 +282,44 @@ def feedCoverage : List (String × (FeedCase → Bool)) := [
     fun c => !c.spec.projection.children.isEmpty &&
       anyConditionIn (fun | .existential false _ => true | _ => false) c.spec.matchList)]
 
+
+/-! ## Renaming vectors -/
+
+def distinctLabelsVector (c : DistinctLabelsCase) : Json :=
+  let s := withDistinctLabels c.spec
+  Json.mkObj [
+    ("name", c.name),
+    ("description", c.description),
+    ("source", c.source),
+    ("specification", specificationToJson c.spec),
+    ("text", describeSpecification c.spec),
+    ("wellFormed", isWellFormedDeep c.spec),
+    ("connected", isConnectedDeep c.spec),
+    ("expected", Json.mkObj [
+      ("specification", specificationToJson s),
+      ("text", describeSpecification s),
+      ("unchanged", describeSpecification s == describeSpecification c.spec),
+      ("connected", isConnectedDeep s)])]
+
+/-- What the renaming vectors must show between them (jinaga/jinaga-spec#71). -/
+def distinctLabelsCoverage : List String := [
+  "sibling-conditions-share-a-name", "condition-and-later-match-share-a-name", "sibling-children-share-a-name",
+  "repeated-reserved-name", "candidate-taken", "repeated-label-with-next", "repeated-label-without-next",
+  "nothing-repeated", "two-chains-share-a-name", "given-condition-shares-a-name"]
+
+/-- The theorems of `Proofs/DistinctLabels.lean`, on each case. -/
+def checkDistinctLabels (c : DistinctLabelsCase) : IO Unit := do
+  let s := withDistinctLabels c.spec
+  -- `withDistinctLabels_distinct`
+  unless s.descendants.all fun d => (declaredMatches d.matchList).eraseDups.length == (declaredMatches d.matchList).length do
+    throw <| IO.userError s!"distinct-labels case {c.name}: the renamed specification repeats a label"
+  if isWellFormedDeep c.spec then
+    -- `withDistinctLabels_descendants_wellFormed`
+    unless isWellFormedDeep s do
+      throw <| IO.userError s!"distinct-labels case {c.name}: the renamed specification is not well formed"
+    -- `withDistinctLabels_eq_self_of_wellFormed`
+    if feedReady c.spec != (describeSpecification s == describeSpecification c.spec) then
+      throw <| IO.userError s!"distinct-labels case {c.name}: renamed exactly when it repeats no label, or not"
 
 /-! ## Cascade vectors -/
 
@@ -723,6 +779,14 @@ def main (args : List String) : IO Unit := do
   let inverseDir := root / "inverse"
   let cascadeDir := root / "cascade"
   let feedsDir := root / "feeds"
+  let distinctDir := root / "distinct-labels"
+  IO.FS.createDirAll distinctDir
+  for name in distinctLabelsCoverage do
+    unless distinctLabelsCases.any (·.name == name) do
+      throw <| IO.userError s!"no distinct-labels vector named {name}"
+  for c in distinctLabelsCases do
+    checkDistinctLabels c
+    IO.FS.writeFile (distinctDir / s!"{c.name}.json") ((distinctLabelsVector c).pretty ++ "\n")
   let contentDir := root / "content"
   IO.FS.createDirAll contentDir
   checkContentCases
@@ -744,6 +808,11 @@ def main (args : List String) : IO Unit := do
       throw <| IO.userError s!"inverse case {c.name} is not well-formed"
     if c.conditioned.labels.contains (givenConditionsLabel c.conditioned) then
       throw <| IO.userError s!"inverse case {c.name}: the reduction's label is already used"
+    -- The inverses keep the specification's nesting, so a reuse stays out of
+    -- scope (jinaga/jinaga-spec#71).
+    for i in inverses c.reduced do
+      if redeclares (i.given.map (·.name)) i.matchList then
+        throw <| IO.userError s!"inverse case {c.name}: an inverse declares a name already in scope"
     if c.unchanged != sameSet (c.conditioned.read c.graph c.env) (c.conditioned.read (c.graph ++ c.batch) c.env) then
       throw <| IO.userError s!"inverse case {c.name} {if c.unchanged then "changes" else "does not change"} the result"
     IO.FS.writeFile (inverseDir / s!"{c.name}.json") ((inverseVector c).pretty ++ "\n")
@@ -761,15 +830,21 @@ def main (args : List String) : IO Unit := do
     unless feedAll.any shows do
       throw <| IO.userError s!"no feed vector shows {shape}"
   for c in feedAll do
-    unless feedReady c.spec do
-      throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
-    unless isConnectedDeep c.spec do
+    let s := withDistinctLabels c.spec
+    unless isWellFormedDeep c.spec do
+      throw <| IO.userError s!"feed case {c.name} is not well-formed"
+    -- `withDistinctLabels_eq_self`, and `withDistinctLabels_distinct`.
+    if feedReady c.spec && describeSpecification s != describeSpecification c.spec then
+      throw <| IO.userError s!"feed case {c.name} repeats no label, but is renamed"
+    unless feedReady s do
+      throw <| IO.userError s!"feed case {c.name}: the renamed specification repeats a label"
+    unless isConnectedDeep s do
       throw <| IO.userError s!"feed case {c.name} has a disconnected feed or descendant"
     -- The vector's results are what a replica holding what the feeds deliver
     -- reads (`feeds_cover`), child specifications' included. `readsOf` lists
     -- exactly the results `Reads` gives, up to `Result.SetEq`
     -- (`reads_iff_readsOf`); `sameResults` compares them by `Result.key`.
-    unless sameResults (c.spec.readsOf (replica c.spec c.graph c.env (delivered c.spec c.graph c.env) []) c.env)
+    unless sameResults (c.spec.readsOf (replica c.spec c.graph c.env (delivered s c.graph c.env) []) c.env)
         (c.spec.readsOf c.graph c.env) do
       throw <| IO.userError s!"feed case {c.name}: a replica holding what the feeds deliver reads something else"
     IO.FS.writeFile (feedsDir / s!"{c.name}.json") ((feedVector c).pretty ++ "\n")
@@ -777,4 +852,4 @@ def main (args : List String) : IO Unit := do
   for c in JinagaSpec.Cascade.cases do
     CascadeVectors.check c
     IO.FS.writeFile (cascadeDir / s!"{c.name}.json") ((CascadeVectors.vector c).pretty ++ "\n")
-  IO.println s!"wrote {cases.length} split vectors to {splitDir}, {wellFormedCases.length} well-formedness vectors to {wfDir}, {inverseAll.length} inverse vectors to {inverseDir}, {feedAll.length} feed vectors to {feedsDir}, and {contentCases.length} content vectors to {contentDir}"
+  IO.println s!"wrote {cases.length} split vectors to {splitDir}, {wellFormedCases.length} well-formedness vectors to {wfDir}, {inverseAll.length} inverse vectors to {inverseDir}, {feedAll.length} feed vectors to {feedsDir}, {distinctLabelsCases.length} renaming vectors to {distinctDir}, and {contentCases.length} content vectors to {contentDir}"

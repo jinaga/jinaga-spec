@@ -204,6 +204,15 @@ Every one passes `isConnectedDeep`: the random seeds skip a specification that
 does not (jinaga-spec#55), and a named case that does not is an error. An
 unused given passes (jinaga-spec#60), so `random-2` has one.
 
+A specification that declares a label twice in one descendant, as `WellFormed`
+allows when neither declaration is in scope of the other, is renamed first
+(`withDistinctLabels`, `distinct-labels/` below, jinaga-spec#71). Its
+`expected.feeds` and `expected.delivered` are those of the renamed
+specification, which the vector gives as `expected.renamed`; `results` are the
+specification's own, which the renamed one reads too
+(`withDistinctLabels_reads`). Connectivity is checked on the renamed
+specification. A vector without `expected.renamed` repeats no label.
+
 ```jsonc
 {
   "name": "not-exists-cancelled-twice",
@@ -213,6 +222,7 @@ unused given passes (jinaga-spec#60), so `random-2` has one.
   "givens": { "t": 0 },
   "graph": [ { "id": 0, "type": "Tenant", "predecessors": [] }, ... ],
   "expected": {
+    "renamed": { "specification": { ... }, "text": "..." },   // only when a label is renamed
     "feeds": [ { "specification": { ... }, "text": "..." } ],  // in order
     "delivered": [1, 2, 3, 4, 5],     // every fact a tuple of a feed binds to one of its unknowns
     "results": [ [1, 5] ],            // the specification read on `graph`: rows of its projection's facts
@@ -236,6 +246,45 @@ deliver on `graph`, and the predecessors of each, reads `expected.results`, and
 the algorithm. The TypeScript runner also checks that a port's feeds deliver no
 fact `expected.delivered` leaves out (`feeds_defer`). `lake exe vectors` refuses to write a vector whose results the
 reference's own feeds do not cover.
+
+## `distinct-labels/<name>.json`
+
+The specification `withDistinctLabels` (`JinagaSpec/DistinctLabels.lean`) makes
+of each specification in `JinagaSpec/DistinctLabelsCases.lean`: in each
+descendant, in declaration order, a declaration of a name the descendant has
+already declared, a given's included, takes the first of `name2`, `name3`, …
+that the specification does not declare and the renaming has not made, and
+every reference to it in its scope follows. A reserved name loses its leading
+underscores first. Givens keep their names; sibling child specifications may
+keep a shared label. jinaga.js's `withDistinctLabels` (jinaga/jinaga.js#430)
+is the same renaming. jinaga.js's also avoids the names its givens' conditions
+declare, which a `Specification` here does not have; a specification with
+conditions on its givens is reduced before it is renamed.
+
+```jsonc
+{
+  "name": "candidate-taken",
+  "description": "...", "source": "...",
+  "specification": { ... }, "text": "...",
+  "wellFormed": true,             // isWellFormedDeep of the specification
+  "connected": true,              // isConnectedDeep of the specification
+  "expected": {
+    "specification": { ... },     // the renamed specification
+    "text": "...",
+    "unchanged": false,           // the renaming changed nothing
+    "connected": true             // isConnectedDeep of the renamed specification
+  }
+}
+```
+
+A port passes a vector when its renaming of `specification` is
+`expected.specification` and describes as `expected.text`. Only
+`repeated-reserved-name` is not well formed: no theorem covers it, and it pins
+how a reserved name is renamed. `two-chains-share-a-name` is connected before
+renaming and not after: `isConnected` reads labels by name, so it counts two
+declarations of `y` as one label, which is why a port checks connectivity
+after renaming. `given-condition-shares-a-name` is a reduction
+(`reduceGivenConditions`), renamed after it.
 
 ## `cascade/<name>.json`
 

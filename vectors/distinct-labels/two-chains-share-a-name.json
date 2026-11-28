@@ -1,0 +1,95 @@
+{"wellFormed": true,
+ "text":
+ "(p: Project, q: Queue) {\n    a: Assignment [\n        a->project: Project = p\n        E {\n            y: Approval [\n                y->assignment: Assignment = a\n            ]\n        }\n    ]\n    b: Batch [\n        b->queue: Queue = q\n        E {\n            y: Approval [\n                y->batch: Batch = b\n            ]\n        }\n    ]\n} => {\n    assignment = a\n    batch = b\n}\n",
+ "specification":
+ {"projection":
+  {"type": "composite",
+   "components":
+   [{"type": "fact", "name": "assignment", "label": "a"},
+    {"type": "fact", "name": "batch", "label": "b"}]},
+  "matches":
+  [{"unknown": {"type": "Assignment", "name": "a"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Project", "name": "project"}],
+      "labelRight": "p"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Approval", "name": "y"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft":
+          [{"predecessorType": "Assignment", "name": "assignment"}],
+          "labelRight": "a"}]}],
+      "exists": true}]},
+   {"unknown": {"type": "Batch", "name": "b"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Queue", "name": "queue"}],
+      "labelRight": "q"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Approval", "name": "y"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Batch", "name": "batch"}],
+          "labelRight": "b"}]}],
+      "exists": true}]}],
+  "given":
+  [{"label": {"type": "Project", "name": "p"}, "conditions": []},
+   {"label": {"type": "Queue", "name": "q"}, "conditions": []}]},
+ "source": "jinaga/jinaga-spec#71",
+ "name": "two-chains-share-a-name",
+ "expected":
+ {"unchanged": false,
+  "text":
+  "(p: Project, q: Queue) {\n    a: Assignment [\n        a->project: Project = p\n        E {\n            y: Approval [\n                y->assignment: Assignment = a\n            ]\n        }\n    ]\n    b: Batch [\n        b->queue: Queue = q\n        E {\n            y2: Approval [\n                y2->batch: Batch = b\n            ]\n        }\n    ]\n} => {\n    assignment = a\n    batch = b\n}\n",
+  "specification":
+  {"projection":
+   {"type": "composite",
+    "components":
+    [{"type": "fact", "name": "assignment", "label": "a"},
+     {"type": "fact", "name": "batch", "label": "b"}]},
+   "matches":
+   [{"unknown": {"type": "Assignment", "name": "a"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Project", "name": "project"}],
+       "labelRight": "p"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Approval", "name": "y"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft":
+           [{"predecessorType": "Assignment", "name": "assignment"}],
+           "labelRight": "a"}]}],
+       "exists": true}]},
+    {"unknown": {"type": "Batch", "name": "b"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Queue", "name": "queue"}],
+       "labelRight": "q"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Approval", "name": "y2"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Batch", "name": "batch"}],
+           "labelRight": "b"}]}],
+       "exists": true}]}],
+   "given":
+   [{"label": {"type": "Project", "name": "p"}, "conditions": []},
+    {"label": {"type": "Queue", "name": "q"}, "conditions": []}]},
+  "connected": false},
+ "description":
+ "Two chains, from p and from q, whose conditions both declare y. The connectivity check reads a label by name, so before renaming it counts the two ys as one and joins the chains; the feed is a product, and binds y twice. After renaming it refuses the specification.",
+ "connected": true}

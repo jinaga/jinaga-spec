@@ -1,0 +1,68 @@
+{"wellFormed": true,
+ "text":
+ "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            f: Freeze [\n                f->account: Account = a\n            ]\n        }\n        E {\n            m: Mirror [\n                m->account: Account = a\n            ]\n        }\n    ]\n} => a\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "a"},
+  "matches":
+  [{"unknown": {"type": "Account", "name": "a"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+      "labelRight": "p1"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Freeze", "name": "f"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": false},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Mirror", "name": "m"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": true}]}],
+  "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+ "source": "jinaga/jinaga-spec#71",
+ "name": "nothing-repeated",
+ "expected":
+ {"unchanged": true,
+  "text":
+  "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            f: Freeze [\n                f->account: Account = a\n            ]\n        }\n        E {\n            m: Mirror [\n                m->account: Account = a\n            ]\n        }\n    ]\n} => a\n",
+  "specification":
+  {"projection": {"type": "fact", "label": "a"},
+   "matches":
+   [{"unknown": {"type": "Account", "name": "a"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+       "labelRight": "p1"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Freeze", "name": "f"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": false},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Mirror", "name": "m"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": true}]}],
+   "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+  "connected": true},
+ "description": "No descendant declares a label twice, so nothing is renamed.",
+ "connected": true}

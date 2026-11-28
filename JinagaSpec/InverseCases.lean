@@ -1,5 +1,6 @@
 import JinagaSpec.Build
 import JinagaSpec.GivenConditions
+import JinagaSpec.DistinctLabelsCases
 
 /-!
 # Named cases for inversion
@@ -31,6 +32,13 @@ structure InverseCase where
 private def r (n t : Name) : Role := role n t
 
 def inverseCases : List InverseCase := [
+  { name := "condition-and-later-match-share-a-name"
+    description := "A negative condition declares n, and so does the match after it, which is a reuse WellFormed allows. A delete arrives. These inverses keep the specification's nesting, so each n stays in its own scope. jinaga.js's invertSpecification re-roots: its inverse for the match n binds n first and then declares n again inside the event's condition, where n is in scope (Inverse.lean, checked by lake exe vectors)."
+    source := "jinaga/jinaga-spec#71"
+    spec := conditionAndMatchShareName
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Name", [("event", 1)]⟩]
+    batch := [⟨3, "Delete", [("event", 1)]⟩] },
   { name := "not-exists-removes"
     description := "One notExists. A Done arrives for an open task, which leaves the result."
     source := "jinaga/jinaga-spec#8"

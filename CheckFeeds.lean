@@ -6,7 +6,10 @@ import JinagaSpec.FeedCases
 # Randomized check of feeds
 
 `lake exe check-feeds [seed] [reuse]` checks, on random well-formed
-specifications and graphs, the requirements of chapter 12:
+specifications and graphs, the requirements of chapter 12. Feeds are built
+from the renamed specification (`withDistinctLabels`), so with `reuse`, whose
+specifications may declare a label twice in one descendant, it also checks that
+the renamed specification reads what the specification reads:
 
 * **shape** — every feed has path conditions, and negative conditions over
   matches with only path conditions (`buildFeeds_feedShape`), and binds each of
@@ -387,6 +390,7 @@ def main (args : List String) : IO UInt32 := do
   -- For the connectivity check and each of its mutants, the specifications on
   -- which it breaks each statement of `connectedBreaks`.
   let mut refused := 0
+  let mut renamed := 0
   let checks : List ConnectedMutant := {} :: connectedMutants.map (·.2)
   let tally (breaks : List (List Nat)) (s : Specification) : List (List Nat) :=
     (breaks.zip checks).map fun (ns, mu) =>
@@ -394,9 +398,11 @@ def main (args : List String) : IO UInt32 := do
   -- The named specifications first: the feed cases, and the well-formed ones of
   -- the well-formedness vectors.
   let mut breaks : List (List Nat) :=
-    ((feedCases.map (·.spec)) ++ ((wellFormedCases.map (·.spec)).filter isWellFormedDeep)).foldl tally
+    ((feedCases.map (withDistinctLabels ·.spec)) ++ ((wellFormedCases.map (·.spec)).filter isWellFormedDeep)).foldl tally
       (checks.map fun _ => [0, 0, 0, 0])
   for c in feedCases do
+    -- Feeds are built from the renamed specification (jinaga/jinaga-spec#71).
+    let c := { c with spec := withDistinctLabels c.spec }
     unless feedReady c.spec do
       throw <| IO.userError s!"feed case {c.name} is not well-formed, or repeats a label"
     -- The production builder makes the mutant family's feeds, with no rule changed.
@@ -420,6 +426,11 @@ def main (args : List String) : IO UInt32 := do
     gen := g
     unless isWellFormedDeep s do
       throw <| IO.userError s!"the generator made a specification that is not well-formed:\n{describeSpecification s}"
+    -- With `reuse`, a specification may repeat a label; feeds are built from
+    -- the renamed one (`withDistinctLabels`), which reads the same.
+    let original := s
+    let s := withDistinctLabels s
+    if describeSpecification s != describeSpecification original then renamed := renamed + 1
     t := { t with specs := t.specs + 1 }
     unless connectedWith {} s == isConnectedDeep s do
       throw <| IO.userError s!"isConnectedDeep differs from the mutant family:\n{describeSpecification s}"
@@ -431,7 +442,7 @@ def main (args : List String) : IO UInt32 := do
     t := { t with feeds := t.feeds + feeds.length }
     for f in feeds do
       let names := f.matchList.map (·.unknown.name)
-      unless feedShape f.matchList && (reuse || names.eraseDups.length == names.length) do
+      unless feedShape f.matchList && names.eraseDups.length == names.length do
         t := { t with shape := t.shape + 1 }
         if t.first.isNone then t := { t with first := some s!"shape\n{describeSpecification s}\nfeed:\n{describeSpecification f}" }
     let mut found := mutants.map fun _ => false
@@ -446,6 +457,9 @@ def main (args : List String) : IO UInt32 := do
       t := { t with graphs := t.graphs + 1 }
       let D := delivered s G env
       t := { t with facts := t.facts + D.eraseDups.length }
+      unless sameResults (original.readsOf G env) (s.readsOf G env) do
+        throw <| IO.userError s!"the renamed specification reads something else:\n{describeSpecification original}"
+
       for f in feeds do
         unless antitoneHolds f G B env do
           t := { t with antitone := t.antitone + 1 }
@@ -453,17 +467,16 @@ def main (args : List String) : IO UInt32 := do
       unless coverHolds s G env D extra do
         t := { t with cover := t.cover + 1 }
         if t.first.isNone then t := { t with first := some (report s G env s!"cover, extra {extra}") }
-      unless reuse do
-        if deferViolations s G env feeds > 0 then
-          t := { t with defer := t.defer + 1 }
-          if t.first.isNone then t := { t with first := some (report s G env "deferral") }
+      if deferViolations s G env feeds > 0 then
+        t := { t with defer := t.defer + 1 }
+        if t.first.isNone then t := { t with first := some (report s G env "deferral") }
       found := (found.zip mutants).map fun (was, (_, mu)) => was || caughtOn mu s G env B extra
     caught := (caught.zip found).map fun (n, b) => if b then n + 1 else n
   measureDownload
   unless (← checkExact) do
     IO.println "a candidate defers exactly while consistent and append-only"
     return 1
-  IO.println s!"specifications {t.specs}, graphs {t.graphs}, feeds {t.feeds}, facts delivered {t.facts}"
+  IO.println s!"specifications {t.specs}, graphs {t.graphs}, feeds {t.feeds}, facts delivered {t.facts}, renamed {renamed}"
   IO.println s!"shape: {t.shape} feeds wrong"
   IO.println s!"antitone: {t.antitone} wrong"
   IO.println s!"cover: {t.cover} wrong"

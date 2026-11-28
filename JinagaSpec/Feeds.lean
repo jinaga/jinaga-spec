@@ -266,8 +266,10 @@ def feedsOf (s : Specification) (Fs : List (List Match)) : List Specification :=
 
 /-- The feeds of a specification. Its theorems assume `DistinctLabels` of each
 of its descendants: every label on the way to a child specification is
-declared once, so that a feed binds each of its labels once. A port rejects a
-specification that repeats one (`ports/typescript/feed-builder.ts`). -/
+declared once, so that a feed binds each of its labels once. A port renames a
+specification that repeats one first (`withDistinctLabels`,
+`DistinctLabels.lean`), which keeps what it reads and establishes the
+hypothesis (`feeds_cover_renamed`, `Proofs/DistinctLabels.lean`). -/
 def buildFeeds (s : Specification) : List Specification :=
   feedsOf s (levelFeeds (projectionFeeds s.projection) [] s.matchList)
 

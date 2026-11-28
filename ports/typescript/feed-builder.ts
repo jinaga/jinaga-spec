@@ -30,11 +30,13 @@
 //   - an excluding feed is not filtered, since what it would filter out a
 //     restoring feed delivers anyway.
 
-// It refuses a specification that is not well formed (`isWellFormedDeep`),
-// that repeats a label (`DistinctLabels`), or one of whose feeds or child
-// specifications is not connected (`isConnectedDeep`): the hypotheses of the
-// theorems.
+// It refuses a specification that is not well formed (`isWellFormedDeep`), or
+// one of whose feeds or child specifications is not connected
+// (`isConnectedDeep`): the hypotheses of the theorems. A specification that
+// repeats a label is renamed first (`withDistinctLabels`, ./distinct-labels.ts),
+// so the feeds are those of the renamed specification.
 
+import { withDistinctLabels } from "./distinct-labels.ts";
 import { isConnectedDeep, isWellFormed, usedGivens } from "./well-formed.ts";
 
 type Label = { name: string; type: string };
@@ -107,10 +109,6 @@ function negFeeds(k: Continuation, Q: Match[], negs: Match[][]): Match[][] {
 const traversesSuccessors = (feed: Specification) =>
     feed.matches.some(m => m.conditions.some(c => isPath(c) && c.rolesLeft.length > 0));
 
-/** Every label the matches declare, at any depth. */
-const declared = (matches: Match[]): string[] => matches.flatMap(m => [m.unknown.name,
-    ...m.conditions.flatMap(c => isPath(c) ? [] : declared(c.matches))]);
-
 /** A projection's child specifications. */
 const children = (projection: Projection): { matches: Match[]; projection: Projection }[] =>
     projection.type === "composite"
@@ -124,21 +122,6 @@ const children = (projection: Projection): { matches: Match[]; projection: Proje
  */
 const projectionFeeds = (projection: Projection): Continuation => P =>
     [P, ...children(projection).flatMap(c => levelFeeds(projectionFeeds(c.projection), P, c.matches))];
-
-/**
- * Joining positive conditions into one level would bind a label that two
- * sibling conditions both declare twice, and a child specification's feeds
- * bind its parent's labels too (`DistinctLabels` of each descendant,
- * JinagaSpec/Feeds.lean). Sibling child specifications may share a label: no
- * feed binds both.
- */
-function checkLabels(outer: string[], matches: Match[], projection: Projection) {
-    const labels = [...outer, ...declared(matches)];
-    const repeated = labels.find((l, i) => labels.indexOf(l) !== i);
-    if (repeated !== undefined)
-        throw new Error(`Rename the label "${repeated}": feeds need every label to be declared once.`);
-    for (const child of children(projection)) checkLabels(labels, child.matches, child.projection);
-}
 
 /** Matches as a feed of `given`: with the givens they use, and no projection. */
 export const asFeed = (given: { label: Label }[], matches: Match[]): Specification => ({
@@ -159,9 +142,22 @@ export function buildFeeds(specification: Specification): Specification[] {
     // jinaga.js's assertWellFormed does not look inside a child specification.
     if (!isWellFormed(specification as any))
         throw new Error("The specification is not well formed: a label is out of scope, redeclared, or reserved.");
-    checkLabels(specification.given.map(g => g.label.name), specification.matches, specification.projection);
+    // The theorems are about a specification whose givens carry no conditions.
+    // Conditions on givens are reduced to a match first (`reduceGivenConditions`),
+    // and renamed after (jinaga/jinaga-spec#71).
+    if (specification.given.some(g => (g.conditions ?? []).length > 0))
+        throw new Error("Reduce the conditions on the givens first (reduceGivenConditions): feeds are built from a specification whose givens have none.");
+    // Joining positive conditions into one level would bind a label that two
+    // sibling conditions both declare twice, and a child specification's feeds
+    // bind its parent's labels too. The theorems assume each descendant
+    // declares each label once (`DistinctLabels`, JinagaSpec/Feeds.lean); the
+    // renaming establishes it and reads the same (`withDistinctLabels_reads`,
+    // jinaga/jinaga-spec#71).
+    specification = withDistinctLabels(specification as any) as Specification;
     // No feed is a product of two chains (`ConnectedDescendants`,
-    // JinagaSpec/Connected.lean, jinaga/jinaga-spec#55).
+    // JinagaSpec/Connected.lean, jinaga/jinaga-spec#55). Checked after renaming:
+    // the check reads a label by name, so before it two declarations that share
+    // one would count as one label (`two-chains-share-a-name`).
     if (!isConnectedDeep(specification as any))
         throw new Error("The specification is not connected: a feed, or a child specification, joins givens that nothing joins to each other, or a feed is joined only by a negative condition.");
     return feedsOf(specification);

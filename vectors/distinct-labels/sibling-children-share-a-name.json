@@ -1,0 +1,79 @@
+{"wellFormed": true,
+ "text":
+ "(r: Restaurant) {\n    s: Server [\n        s->restaurant: Restaurant = r\n    ]\n} => {\n    names = {\n        n: Name [\n            n->server: Server = s\n        ]\n    } => n\n    rates = {\n        n: Rate [\n            n->server: Server = s\n        ]\n    } => n\n    server = s\n}\n",
+ "specification":
+ {"projection":
+  {"type": "composite",
+   "components":
+   [{"type": "fact", "name": "server", "label": "s"},
+    {"type": "specification",
+     "projection": {"type": "fact", "label": "n"},
+     "name": "names",
+     "matches":
+     [{"unknown": {"type": "Name", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Server", "name": "server"}],
+         "labelRight": "s"}]}]},
+    {"type": "specification",
+     "projection": {"type": "fact", "label": "n"},
+     "name": "rates",
+     "matches":
+     [{"unknown": {"type": "Rate", "name": "n"},
+       "conditions":
+       [{"type": "path",
+         "rolesRight": [],
+         "rolesLeft": [{"predecessorType": "Server", "name": "server"}],
+         "labelRight": "s"}]}]}]},
+  "matches":
+  [{"unknown": {"type": "Server", "name": "s"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Restaurant", "name": "restaurant"}],
+      "labelRight": "r"}]}],
+  "given": [{"label": {"type": "Restaurant", "name": "r"}, "conditions": []}]},
+ "source": "jinaga/jinaga-spec#71",
+ "name": "sibling-children-share-a-name",
+ "expected":
+ {"unchanged": true,
+  "text":
+  "(r: Restaurant) {\n    s: Server [\n        s->restaurant: Restaurant = r\n    ]\n} => {\n    names = {\n        n: Name [\n            n->server: Server = s\n        ]\n    } => n\n    rates = {\n        n: Rate [\n            n->server: Server = s\n        ]\n    } => n\n    server = s\n}\n",
+  "specification":
+  {"projection":
+   {"type": "composite",
+    "components":
+    [{"type": "fact", "name": "server", "label": "s"},
+     {"type": "specification",
+      "projection": {"type": "fact", "label": "n"},
+      "name": "names",
+      "matches":
+      [{"unknown": {"type": "Name", "name": "n"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Server", "name": "server"}],
+          "labelRight": "s"}]}]},
+     {"type": "specification",
+      "projection": {"type": "fact", "label": "n"},
+      "name": "rates",
+      "matches":
+      [{"unknown": {"type": "Rate", "name": "n"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Server", "name": "server"}],
+          "labelRight": "s"}]}]}]},
+   "matches":
+   [{"unknown": {"type": "Server", "name": "s"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Restaurant", "name": "restaurant"}],
+       "labelRight": "r"}]}],
+   "given": [{"label": {"type": "Restaurant", "name": "r"}, "conditions": []}]},
+  "connected": true},
+ "description":
+ "Two child specifications declare n. They are separate descendants, and no feed binds both, so neither is renamed.",
+ "connected": true}
