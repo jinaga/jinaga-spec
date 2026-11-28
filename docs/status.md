@@ -25,6 +25,18 @@ last checked; check the issue before acting on one.
   specification `isConnectedDeep` refuses. Reordering cannot connect, cover,
   defer and not widen all at once (N and J!, `docs/findings.md`).
 
+- **A reuse is allowed when it causes no ambiguity; implementations rename
+  instead of refusing** (jinaga-spec#71, decided 2026-11-28). `WellFormed` is
+  the language rule: a name may be declared again where no other declaration
+  of it is in scope. Implementations rename with `withDistinctLabels`
+  (`DistinctLabels.lean`, jinaga.js's renaming) before any transformation, so
+  every later stage sees each label declared once in each descendant
+  (`withDistinctLabels_distinct`) and reads the same results
+  (`withDistinctLabels_reads`). Two orderings matter: conditions on givens are
+  reduced (`reduceGivenConditions`) before renaming, and connectivity
+  (`isConnectedDeep`) is checked after it, since it reads labels by name
+  (`docs/findings.md`, "Renaming reused labels").
+
 ## Open work (checked 2026-11-22)
 
 - jinaga-spec#45: superseded by jinaga-spec#60 (2026-11-24). Unused givens

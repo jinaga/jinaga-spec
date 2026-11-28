@@ -7,6 +7,33 @@ import JinagaSpec.GivenConditions
 
 /-!
 # Renaming reused labels keeps results
+
+`withDistinctLabels` (`DistinctLabels.lean`) renames each declaration that
+repeats a name in its descendant. Every theorem here comes from one invariant
+of the walk: a scope `ρ` maps each label in scope, as written, to its new name,
+and each of those new names is declared in the descendant (`Hygienic`). A new
+declaration's name is never one already declared (`RenameState.declare_fresh`),
+so it is the new name of nothing else in scope, and binding it keeps two
+solutions in correspondence (`Corresponds.bind`).
+
+* `withDistinctLabels_distinct`: every descendant declares each label once,
+  whatever the specification.
+* `withDistinctLabels_wellFormed`, `withDistinctLabels_descendants_wellFormed`,
+  `withDistinctLabels_rooted`: the other hypotheses of the feed theorems are
+  kept.
+* `withDistinctLabels_evaluate`, `withDistinctLabels_readsOf`,
+  `withDistinctLabels_reads`: what a replica reads is unchanged, child
+  specifications' results included.
+* `withDistinctLabels_eq_self`: a specification that repeats nothing is
+  unchanged.
+* `feeds_cover_renamed`, `feeds_defer_renamed`, `buildFeeds_nodup_renamed`: the
+  feed theorems for the renamed specification, without `DistinctLabels`.
+* `inverses_distinct`, `split_distinct`, `reduceGivenConditions_distinct`:
+  the transformations after the renaming keep each label declared once, so
+  renaming once, on entry, suffices.
+
+Renaming does not keep `ConnectedDescendants`, which reads labels by name
+(`vectors/distinct-labels/two-chains-share-a-name.json`, `docs/findings.md`).
 -/
 namespace JinagaSpec
 
@@ -20,7 +47,7 @@ theorem isReserved_append_toString {n : Name} (h : isReserved n = false) (k : Na
     isReserved (n ++ toString k) = false := by
   rw [Bool.eq_false_iff, ne_eq, isReserved_iff] at h ⊢
   have hd : '_' ∉ (toString k).toList := by
-    simpa [Nat.toString_eq_repr, Nat.repr] using Nat.underscore_not_in_toDigits
+    simp [Nat.toString_eq_repr, Nat.repr, Nat.underscore_not_in_toDigits]
   rw [String.toList_append]
   generalize n.toList = l at h; generalize (toString k).toList = d at hd
   rintro ⟨t, ht⟩
@@ -524,8 +551,8 @@ theorem PathsWellFormed.child {S : List Name} {p : Projection} (h : PathsWellFor
 
 theorem resultsAt_eq (g : Graph) (p : Projection) (σ : Env) :
     p.resultsAt g σ = .mk (p.labels.map σ) (p.children.map fun c => (evalMatches g σ c.1).map (c.2.resultsAt g)) := by
-  rw [Projection.resultsAt]; congr 1
-  exact List.map_attach_eq_pmap .. ▸ by simp
+  rw [Projection.resultsAt]
+  simp [List.map_attach_eq_pmap, List.pmap_eq_map]
 
 /-- **Renaming keeps results, at every depth.** -/
 theorem renameProjection_resultsAt (g : Graph) : ∀ (p : Projection) (ρ : Name → Name) (D T S : List Name)
@@ -896,32 +923,6 @@ theorem withDistinctLabels_eq_self {s : Specification} (hd : ∀ d ∈ s.descend
   · exact this.2.2 z (List.mem_reverse.mp hm') z hz rfl
   · exact hg x hx z (List.mem_append_right _ hz) hm'
 
-mutual
-  /-- A well-named match declares nothing already in scope, and nothing
-  reserved, at any depth. -/
-  theorem wellNamedMatches_declared : ∀ (S : List Name) (ms : List Match), WellNamedMatches S ms →
-      ∀ x ∈ declaredMatches ms, x ∉ S ∧ isReserved x = false
-    | _, [], _ => by simp [declaredMatches]
-    | S, .mk u cs :: rest, ⟨hu, hres, hc, hr⟩ => fun x hx => by
-      simp only [declaredMatches, List.mem_cons, List.mem_append] at hx
-      rcases hx with rfl | hx | hx
-      · exact ⟨hu, hres⟩
-      · have := wellNamedConditions_declared _ cs hc x hx
-        exact ⟨fun h => this.1 (List.mem_cons_of_mem _ h), this.2⟩
-      · have := wellNamedMatches_declared _ rest hr x hx
-        exact ⟨fun h => this.1 (List.mem_cons_of_mem _ h), this.2⟩
-
-  theorem wellNamedConditions_declared : ∀ (S : List Name) (cs : List Condition), WellNamedConditions S cs →
-      ∀ x ∈ declaredConditions cs, x ∉ S ∧ isReserved x = false
-    | _, [], _ => by simp [declaredConditions]
-    | S, .path _ :: cs, ⟨_, h⟩ => by simpa [declaredConditions] using wellNamedConditions_declared S cs h
-    | S, .existential _ ms :: cs, ⟨hm, h⟩ => fun x hx => by
-      simp only [declaredConditions, List.mem_append] at hx
-      rcases hx with hx | hx
-      · exact wellNamedMatches_declared S ms hm x hx
-      · exact wellNamedConditions_declared S cs h x hx
-end
-
 /-- `withDistinctLabels_eq_self` for a well-formed specification: no
 descendant of one declares a given's name. -/
 theorem withDistinctLabels_eq_self_of_wellFormed {s : Specification} (hwf : ∀ d ∈ s.descendants, WellFormed d)
@@ -930,7 +931,7 @@ theorem withDistinctLabels_eq_self_of_wellFormed {s : Specification} (hwf : ∀ 
     have hw := (hwf d hdd).wellNamed
     have : d.given = s.given := by
       obtain ⟨x, -, rfl⟩ := List.mem_map.mp hdd; rfl
-    rw [← this]; exact fun x hx => (wellNamedMatches_declared _ _ hw x hx).1
+    rw [← this]; exact fun x hx => (wellNamed_declared _ _ hw x hx).1
 
 /-! ## Feeds accept every well-formed specification
 
@@ -1184,7 +1185,7 @@ theorem split_distinct {s : Specification} (hwf : WellFormed s) (hd : ∀ d ∈ 
         declared_append]
       refine List.nodup_append.mpr ⟨(List.nodup_append.mp hd0).1, hh.1, fun a ha b hb hab => ?_⟩
       obtain ⟨j, -, -, rfl⟩ := hh.2 b hb
-      have := (wellNamedMatches_declared _ _ hw.1 a ha).2
+      have := (wellNamed_declared _ _ hw.1 a ha).2
       rw [hab, isReserved_splitLabel] at this; exact absurd this (by simp)
     · simp only [Option.some.injEq] at ht'; subst ht'
       simp only [Specification.descendants, List.forall_mem_map, DistinctLabels, declared_append, ht]

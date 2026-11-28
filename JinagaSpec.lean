@@ -46,6 +46,7 @@ import JinagaSpec.Proofs.Exact
 import JinagaSpec.GivenConditions
 import JinagaSpec.Proofs.GivenConditions
 import JinagaSpec.DistinctLabels
+import JinagaSpec.DistinctLabelsCases
 import JinagaSpec.Proofs.DistinctLabels
 import JinagaSpec.Content
 import JinagaSpec.Proofs.Content

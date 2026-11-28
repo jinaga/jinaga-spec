@@ -562,7 +562,7 @@ theorem flatFeeds_defer {s : Specification} (hwf : WellFormed s) (hd : DistinctL
   have hdecl : (declaredMatches A ++ declaredMatches b).Nodup := by
     have := hd; rw [DistinctLabels, hs', declared_append A b] at this; exact this
   have hord : ∀ x ∈ declaredMatches A ++ declaredMatches b, x ∉ G0 := by
-    intro x hx; rw [← declared_append, ← hs'] at hx; exact wellNamed_declared _ _ hwf.wellNamed x hx
+    intro x hx; rw [← declared_append, ← hs'] at hx; exact (wellNamed_declared _ _ hwf.wellNamed x hx).1
   have hsc : ScopedMatches G0 (A ++ b) := by rw [← hs']; exact hwf.inScope
   obtain ⟨hscA, hscB⟩ := scopedMatches_append.mp hsc
   have hyD : y ∈ declaredMatches b := mem_of_count_le (fun x => flatten_declared b x) (List.mem_append_left _ hyb)

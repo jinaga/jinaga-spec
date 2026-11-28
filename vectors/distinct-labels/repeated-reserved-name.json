@@ -1,0 +1,69 @@
+{"wellFormed": false,
+ "text":
+ "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            __x: Freeze [\n                __x->account: Account = a\n            ]\n        }\n        E {\n            __x: Mirror [\n                __x->account: Account = a\n            ]\n        }\n    ]\n} => a\n",
+ "specification":
+ {"projection": {"type": "fact", "label": "a"},
+  "matches":
+  [{"unknown": {"type": "Account", "name": "a"},
+    "conditions":
+    [{"type": "path",
+      "rolesRight": [],
+      "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+      "labelRight": "p1"},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Freeze", "name": "__x"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": false},
+     {"type": "existential",
+      "matches":
+      [{"unknown": {"type": "Mirror", "name": "__x"},
+        "conditions":
+        [{"type": "path",
+          "rolesRight": [],
+          "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+          "labelRight": "a"}]}],
+      "exists": true}]}],
+  "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+ "source": "jinaga.js distinct-labels.ts",
+ "name": "repeated-reserved-name",
+ "expected":
+ {"unchanged": false,
+  "text":
+  "(p1: Tenant) {\n    a: Account [\n        a->tenant: Tenant = p1\n        !E {\n            __x: Freeze [\n                __x->account: Account = a\n            ]\n        }\n        E {\n            x2: Mirror [\n                x2->account: Account = a\n            ]\n        }\n    ]\n} => a\n",
+  "specification":
+  {"projection": {"type": "fact", "label": "a"},
+   "matches":
+   [{"unknown": {"type": "Account", "name": "a"},
+     "conditions":
+     [{"type": "path",
+       "rolesRight": [],
+       "rolesLeft": [{"predecessorType": "Tenant", "name": "tenant"}],
+       "labelRight": "p1"},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Freeze", "name": "__x"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": false},
+      {"type": "existential",
+       "matches":
+       [{"unknown": {"type": "Mirror", "name": "x2"},
+         "conditions":
+         [{"type": "path",
+           "rolesRight": [],
+           "rolesLeft": [{"predecessorType": "Account", "name": "account"}],
+           "labelRight": "a"}]}],
+       "exists": true}]}],
+   "given": [{"label": {"type": "Tenant", "name": "p1"}, "conditions": []}]},
+  "connected": true},
+ "description":
+ "Two conditions declare __x, a name reserved for the split, so the specification is not well formed. The second loses its leading underscores, so that a new name is never reserved.",
+ "connected": true}

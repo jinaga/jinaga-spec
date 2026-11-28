@@ -456,18 +456,22 @@ mutual
 end
 
 mutual
+  /-- A well-named match declares nothing already in scope, and nothing
+  reserved, at any depth. -/
   theorem wellNamed_declared : ∀ (S : List Name) (ms : List Match), WellNamedMatches S ms →
-      ∀ x ∈ declaredMatches ms, x ∉ S
+      ∀ x ∈ declaredMatches ms, x ∉ S ∧ isReserved x = false
     | _, [], _, _, h => by simp [declaredMatches] at h
-    | S, .mk u cs :: rest, ⟨hu, _, hcs, hrest⟩, x, hx => by
+    | S, .mk u cs :: rest, ⟨hu, hres, hcs, hrest⟩, x, hx => by
       simp only [declaredMatches, List.mem_cons, List.mem_append] at hx
       rcases hx with rfl | hx | hx
-      · exact hu
-      · exact fun h => wellNamed_declaredConditions _ cs hcs x hx (List.mem_cons_of_mem _ h)
-      · exact fun h => wellNamed_declared _ rest hrest x hx (List.mem_cons_of_mem _ h)
+      · exact ⟨hu, hres⟩
+      · have := wellNamed_declaredConditions _ cs hcs x hx
+        exact ⟨fun h => this.1 (List.mem_cons_of_mem _ h), this.2⟩
+      · have := wellNamed_declared _ rest hrest x hx
+        exact ⟨fun h => this.1 (List.mem_cons_of_mem _ h), this.2⟩
 
   theorem wellNamed_declaredConditions : ∀ (S : List Name) (cs : List Condition), WellNamedConditions S cs →
-      ∀ x ∈ declaredConditions cs, x ∉ S
+      ∀ x ∈ declaredConditions cs, x ∉ S ∧ isReserved x = false
     | _, [], _, _, h => by simp [declaredConditions] at h
     | S, .path _ :: cs, ⟨_, hcs⟩, x, hx => wellNamed_declaredConditions S cs hcs x (by simpa [declaredConditions] using hx)
     | S, .existential _ ms :: cs, ⟨hms, hcs⟩, x, hx => by

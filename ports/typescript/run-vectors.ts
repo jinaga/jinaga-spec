@@ -10,6 +10,7 @@ import { deepStrictEqual } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withDistinctLabels } from "./distinct-labels.ts";
 import { buildFeeds } from "./feed-builder.ts";
 import { isConnectedDeep, isWellFormed } from "./well-formed.ts";
 
@@ -18,6 +19,7 @@ const jinagaJs = resolve(process.env.JINAGA_JS ?? join(here, "../../../jinaga.js
 const vectorsRoot = resolve(process.env.VECTORS ?? join(here, "../../vectors"));
 const vectorsDir = join(vectorsRoot, "split");
 const wellFormedDir = join(vectorsRoot, "well-formed");
+const distinctLabelsDir = join(vectorsRoot, "distinct-labels");
 
 const { splitBeforeFirstSuccessor } = await import(pathToFileURL(join(jinagaJs, "src/specification/specification.ts")).href);
 const { describeSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/description.ts")).href);
@@ -27,6 +29,9 @@ const { AuthorizationRules } = await import(pathToFileURL(join(jinagaJs, "src/au
 const { detectDisconnectedSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/UnionFind.ts")).href);
 const { buildFeeds: jinagaBuildFeeds } = await import(pathToFileURL(join(jinagaJs, "src/specification/feed-builder.ts")).href);
 const { skeletonOfSpecification } = await import(pathToFileURL(join(jinagaJs, "src/specification/skeleton.ts")).href);
+// jinaga.js's renaming (jinaga/jinaga.js#430); earlier commits have none.
+const { withDistinctLabels: jinagaWithDistinctLabels } =
+    await import(pathToFileURL(join(jinagaJs, "src/specification/distinct-labels.ts")).href).catch(() => ({}));
 
 // A missing head or tail is `undefined` in TypeScript and `null` in a vector.
 const normalize = (value: unknown) => JSON.parse(JSON.stringify(value ?? null));
@@ -153,4 +158,30 @@ for (const file of wellFormedFiles) {
     }
 }
 console.log(`\n${wellFormedFiles.length - wellFormedFailed} of ${wellFormedFiles.length} well-formedness vectors pass (${checkers.map(([name]) => name).join(", ")})`);
-process.exit(failed === 0 && tailReadsGivenFailed === 0 && wellFormedFailed === 0 ? 0 : 1);
+
+// The renaming (jinaga/jinaga-spec#71): the reference port's and jinaga.js's
+// `withDistinctLabels` make the vector's renamed specification, text for text,
+// and the reference port's structure for structure.
+let distinctLabelsFailed = 0;
+const distinctLabelsFiles = readdirSync(distinctLabelsDir).filter(f => f.endsWith(".json")).sort();
+for (const file of distinctLabelsFiles) {
+    const vector = JSON.parse(readFileSync(join(distinctLabelsDir, file), "utf8"));
+    const wrong: string[] = [];
+    const port = withDistinctLabels(structuredClone(vector.specification));
+    try { deepStrictEqual(normalize(port), vector.expected.specification); } catch { wrong.push("reference structure"); }
+    if (describeSpecification(structuredClone(port), 0) !== vector.expected.text) wrong.push("reference text");
+    if (isConnectedDeep(port as any) !== vector.expected.connected) wrong.push("reference isConnectedDeep");
+    if (jinagaWithDistinctLabels === undefined) {
+        wrong.push("jinaga.js has no withDistinctLabels");
+    } else if (describeSpecification(jinagaWithDistinctLabels(structuredClone(vector.specification)), 0) !== vector.expected.text) {
+        wrong.push("jinaga.js text");
+    }
+    if (wrong.length === 0) {
+        console.log(`  ok    ${vector.name}`);
+    } else {
+        distinctLabelsFailed++;
+        console.log(`  FAIL  ${vector.name}   (${vector.source}): ${wrong.join(", ")}`);
+    }
+}
+console.log(`\n${distinctLabelsFiles.length - distinctLabelsFailed} of ${distinctLabelsFiles.length} renaming vectors pass (reference withDistinctLabels, jinaga.js withDistinctLabels)`);
+process.exit(failed === 0 && tailReadsGivenFailed === 0 && wellFormedFailed === 0 && distinctLabelsFailed === 0 ? 0 : 1);

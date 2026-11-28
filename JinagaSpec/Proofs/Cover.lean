@@ -1112,7 +1112,7 @@ variable {g : Graph} {B : List Fact}
 theorem hygiene_top {s : Specification} (hwf : WellFormed s) (hd : DistinctLabels s) :
     Hygiene (s.given.map (·.name)) [] [s.matchList] :=
   ⟨by simpa [names, DistinctLabels] using hd,
-   fun x hx => wellNamed_declared _ _ hwf.wellNamed x (by simpa [names] using hx),
+   fun x hx => (wellNamed_declared _ _ hwf.wellNamed x (by simpa [names] using hx)).1,
    fun n hn => by simp at hn; subst hn; simpa [names] using hwf.inScope⟩
 
 /-- A feed binds each label the specification declares at most once. -/
@@ -1153,8 +1153,8 @@ theorem feeds_settled {s : Specification} (hwf : WellFormed s) (hd : DistinctLab
     have hw := levelFeeds_within hwf hd F hF
     have hnd := nodup_within hw hd
     refine dropped_settled hf (F.map Match.paths) G0 env
-      ⟨hroot.1, by rw [names_paths]; exact hnd, fun x hx => wellNamed_declared _ _ hwf.wellNamed x
-        (mem_within hw (by rwa [names_paths] at hx))⟩ (fun m hm => ?_) henv τ (evalMatches_paths hτ)
+      ⟨hroot.1, by rw [names_paths]; exact hnd, fun x hx => (wellNamed_declared _ _ hwf.wellNamed x
+        (mem_within hw (by rwa [names_paths] at hx))).1⟩ (fun m hm => ?_) henv τ (evalMatches_paths hτ)
     obtain ⟨m0, hm0, rfl⟩ := List.mem_map.mp hm
     obtain ⟨c, hc, hp⟩ := hroot.2 m0 hm0
     cases c with
@@ -1192,7 +1192,7 @@ theorem flatFeeds_cover {s : Specification} (hwf : WellFormed s) (hd : DistinctL
   let ms := s.matchList
   have hall := feeds_settled hwf hd hr hf henv hdel
   have hsc : ScopedMatches G0 ms := hwf.inScope
-  have hdis : ∀ x ∈ declaredMatches ms, x ∉ G0 := wellNamed_declared _ _ hwf.wellNamed
+  have hdis : ∀ x ∈ declaredMatches ms, x ∉ G0 := fun x hx => (wellNamed_declared _ _ hwf.wellNamed x hx).1
   have hdist : Distinct G0 ms := ⟨hd, hdis⟩
   have hyg := hygiene_top hwf hd
   have hR : ReachedL (levelFeeds (fun P => [P]) [] ms) (fun P => [P]) [] ms := fun _ h => h

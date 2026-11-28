@@ -1,5 +1,6 @@
 import JinagaSpec.Build
 import JinagaSpec.Semantics
+import JinagaSpec.DistinctLabelsCases
 
 /-!
 # Named cases for feeds
@@ -70,6 +71,44 @@ def contested : Specification :=
     (fact "n")
 
 def feedCases : List FeedCase := [
+  { name := "sibling-conditions-share-a-name"
+    description := "An account with no freeze and with a mirror, each condition declaring y. The feeds are those of the renamed specification (withDistinctLabels), whose second y is y2."
+    source := "jinaga/jinaga-spec#71"
+    spec := siblingConditionsShareName
+    givens := [("p1", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Account", [("tenant", 0)]⟩, ⟨2, "Mirror", [("account", 1)]⟩,
+      ⟨3, "Account", [("tenant", 0)]⟩, ⟨4, "Freeze", [("account", 3)]⟩, ⟨5, "Mirror", [("account", 3)]⟩] },
+  { name := "condition-and-later-match-share-a-name"
+    description := "An event with no delete, and its names, the condition and the match both declaring n. The feeds are those of the renamed specification, whose match is n2."
+    source := "jinaga/jinaga-spec#71"
+    spec := conditionAndMatchShareName
+    givens := [("t", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Event", [("tenant", 0)]⟩, ⟨2, "Name", [("event", 1)]⟩,
+      ⟨3, "Event", [("tenant", 0)]⟩, ⟨4, "Delete", [("event", 3)]⟩, ⟨5, "Name", [("event", 3)]⟩] },
+  { name := "repeated-label-with-next"
+    description := "jinaga.js's vector: servers not terminated unless rehired, and their current rates. The negative condition and the child specification both declare sr; the child's is sr2 in the renamed specification."
+    source := "jinaga/jinaga.js#387, jinaga/jinaga.js#426"
+    spec := rehiredServerRates true
+    givens := [("r", 0)]
+    graph := [⟨0, "Restaurant", []⟩, ⟨1, "Server", [("restaurant", 0)]⟩, ⟨2, "Terminated", [("server", 1)]⟩,
+      ⟨3, "Rehired", [("terminated", 2)]⟩, ⟨4, "Rate", [("server", 1)]⟩, ⟨5, "Rate", [("server", 1), ("prior", 4)]⟩,
+      ⟨6, "Server", [("restaurant", 0)]⟩, ⟨7, "Terminated", [("server", 6)]⟩, ⟨8, "Rate", [("server", 6)]⟩] },
+  { name := "repeated-label-without-next"
+    description := "jinaga.js's vector: servers not terminated unless rehired, and their rates. The negative condition and the child specification both declare sr; the child's is sr2 in the renamed specification."
+    source := "jinaga/jinaga.js#387, jinaga/jinaga.js#426"
+    spec := rehiredServerRates false
+    givens := [("r", 0)]
+    graph := [⟨0, "Restaurant", []⟩, ⟨1, "Server", [("restaurant", 0)]⟩, ⟨2, "Terminated", [("server", 1)]⟩,
+      ⟨3, "Rehired", [("terminated", 2)]⟩, ⟨4, "Rate", [("server", 1)]⟩,
+      ⟨6, "Server", [("restaurant", 0)]⟩, ⟨7, "Terminated", [("server", 6)]⟩, ⟨8, "Rate", [("server", 6)]⟩] },
+  { name := "candidate-taken"
+    description := "Two conditions declare y and a match declares y2, so the renamed specification's second y is y3."
+    source := "jinaga/jinaga-spec#71"
+    spec := candidateTaken
+    givens := [("p1", 0)]
+    graph := [⟨0, "Tenant", []⟩, ⟨1, "Account", [("tenant", 0)]⟩, ⟨2, "Mirror", [("account", 1)]⟩,
+      ⟨3, "Owner", [("account", 1)]⟩, ⟨4, "Account", [("tenant", 0)]⟩, ⟨5, "Freeze", [("account", 4)]⟩,
+      ⟨6, "Mirror", [("account", 4)]⟩, ⟨7, "Owner", [("account", 4)]⟩] },
   { name := "not-exists-excludes"
     description := "One notExists. The ordinary feed is filtered by it; the excluding feed delivers the Done that removes a task, and stops."
     source := "jinaga-server feeds"
