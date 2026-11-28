@@ -1737,7 +1737,9 @@ re-rooting turns a valid reuse into an invalid one:
 
 `check-feeds 1 reuse` now renames each random specification that repeats a
 label and checks it reads the same and that its feeds meet every requirement,
-with none of the exemptions that run used to need.
+with none of the exemptions that run used to need. On seed 1 it renames 39 of
+600 specifications, and finds no feed wrong for shape, antitone, cover or
+deferral.
 
 ## Content storage: SEC-1 to SEC-5
 
