@@ -1,6 +1,9 @@
 import JinagaSpec.DistinctLabels
 import JinagaSpec.Proofs.Children
 import JinagaSpec.Proofs.Derivation
+import JinagaSpec.Proofs.Hoist
+import JinagaSpec.Candidates
+import JinagaSpec.GivenConditions
 
 /-!
 # Renaming reused labels keeps results
@@ -89,6 +92,13 @@ theorem RenameState.declare_ordinary (st : RenameState) {n : Name} (h : isReserv
 theorem declaredConditions_cons (c : Condition) (cs : List Condition) :
     declaredConditions (c :: cs) = declaredConditions [c] ++ declaredConditions cs := by
   cases c <;> simp [declaredConditions]
+
+theorem declaredConditions_append (a b : List Condition) :
+    declaredConditions (a ++ b) = declaredConditions a ++ declaredConditions b := by
+  induction a with
+  | nil => simp [declaredConditions]
+  | cons c a ih => rw [List.cons_append, declaredConditions_cons, ih, declaredConditions_cons c a,
+      List.append_assoc]
 
 mutual
   /-- A walk over matches declares, in `declared` and in `taken`, exactly the
@@ -887,19 +897,22 @@ theorem withDistinctLabels_eq_self {s : Specification} (hd : ∀ d ∈ s.descend
   · exact hg x hx z (List.mem_append_right _ hz) hm'
 
 mutual
-  /-- A well-named match declares nothing already in scope, at any depth. -/
+  /-- A well-named match declares nothing already in scope, and nothing
+  reserved, at any depth. -/
   theorem wellNamedMatches_declared : ∀ (S : List Name) (ms : List Match), WellNamedMatches S ms →
-      ∀ x ∈ declaredMatches ms, x ∉ S
+      ∀ x ∈ declaredMatches ms, x ∉ S ∧ isReserved x = false
     | _, [], _ => by simp [declaredMatches]
-    | S, .mk u cs :: rest, ⟨hu, _, hc, hr⟩ => fun x hx hxS => by
+    | S, .mk u cs :: rest, ⟨hu, hres, hc, hr⟩ => fun x hx => by
       simp only [declaredMatches, List.mem_cons, List.mem_append] at hx
       rcases hx with rfl | hx | hx
-      · exact hu hxS
-      · exact wellNamedConditions_declared _ cs hc x hx (List.mem_cons_of_mem _ hxS)
-      · exact wellNamedMatches_declared _ rest hr x hx (List.mem_cons_of_mem _ hxS)
+      · exact ⟨hu, hres⟩
+      · have := wellNamedConditions_declared _ cs hc x hx
+        exact ⟨fun h => this.1 (List.mem_cons_of_mem _ h), this.2⟩
+      · have := wellNamedMatches_declared _ rest hr x hx
+        exact ⟨fun h => this.1 (List.mem_cons_of_mem _ h), this.2⟩
 
   theorem wellNamedConditions_declared : ∀ (S : List Name) (cs : List Condition), WellNamedConditions S cs →
-      ∀ x ∈ declaredConditions cs, x ∉ S
+      ∀ x ∈ declaredConditions cs, x ∉ S ∧ isReserved x = false
     | _, [], _ => by simp [declaredConditions]
     | S, .path _ :: cs, ⟨_, h⟩ => by simpa [declaredConditions] using wellNamedConditions_declared S cs h
     | S, .existential _ ms :: cs, ⟨hm, h⟩ => fun x hx => by
@@ -917,7 +930,7 @@ theorem withDistinctLabels_eq_self_of_wellFormed {s : Specification} (hwf : ∀ 
     have hw := (hwf d hdd).wellNamed
     have : d.given = s.given := by
       obtain ⟨x, -, rfl⟩ := List.mem_map.mp hdd; rfl
-    rw [← this]; exact wellNamedMatches_declared _ _ hw
+    rw [← this]; exact fun x hx => (wellNamedMatches_declared _ _ hw x hx).1
 
 /-! ## Feeds accept every well-formed specification
 
@@ -951,5 +964,264 @@ theorem feeds_cover_renamed {s : Specification} (hwf : ∀ d ∈ s.descendants, 
     (withDistinctLabels_rooted hr) hf henv hgiv hdel r
 
 end Feeds
+
+/-! ## Transformations keep labels distinct
+
+Renaming once, on entry, suffices for every stage after it, provided each stage
+keeps `DistinctLabels` of every descendant. -/
+
+/-! ### The inverse -/
+
+open List in
+theorem relax_declared (gained : Bool) (cs : List Condition) :
+    declaredConditions (relax gained cs) <+ declaredConditions cs := by
+  unfold relax; split
+  · exact List.Sublist.refl _
+  · have : declaredConditions (cs.filter (·.isPath)) = [] := by
+      induction cs with
+      | nil => simp [declaredConditions]
+      | cons c cs ih => cases c <;> simp_all [declaredConditions, Condition.isPath]
+    rw [this]; exact List.nil_sublist _
+
+open List in
+theorem relaxMatches_declared (gained : Bool) (ms : List Match) :
+    declaredMatches (relaxMatches gained ms) <+ declaredMatches ms := by
+  unfold relaxMatches; split
+  · exact List.Sublist.refl _
+  · induction ms with
+    | nil => exact List.Sublist.refl _
+    | cons m ms ih =>
+      obtain ⟨u, cs⟩ := m
+      simpa [declaredMatches] using (relax_declared false cs).append ih
+
+open List in
+mutual
+  /-- An inverse declares what the specification declares, less what a relaxed
+  level drops. -/
+  theorem touchMatches_declared : ∀ (gained : Bool) (ms : List Match),
+      ∀ x ∈ touchMatches gained ms, declaredMatches x.2 <+ declaredMatches ms
+    | _, [] => by simp [touchMatches]
+    | gained, .mk u cs :: rest => fun x hx => by
+      simp only [touchMatches, List.mem_append, List.mem_map] at hx
+      rcases hx with (hx | ⟨y, hy, rfl⟩) | ⟨y, hy, rfl⟩
+      · split at hx
+        · simp only [List.mem_singleton] at hx; subst hx
+          simp [declaredMatches, pinCondition, declaredConditions]
+        · simp at hx
+      · simpa [declaredMatches] using
+          ((touchConditions_declared gained cs y hy).append (relaxMatches_declared gained rest)).cons_cons u.name
+      · simpa [declaredMatches] using
+          ((relax_declared gained cs).append (touchMatches_declared gained rest y hy)).cons_cons u.name
+
+  theorem touchConditions_declared : ∀ (gained : Bool) (cs : List Condition),
+      ∀ x ∈ touchConditions gained cs, declaredConditions x.2 <+ declaredConditions cs
+    | _, [] => by simp [touchConditions]
+    | gained, c :: cs => fun x hx => by
+      simp only [touchConditions, List.mem_append, List.mem_map] at hx
+      rw [declaredConditions_cons]
+      rcases hx with ⟨y, hy, rfl⟩ | ⟨y, hy, rfl⟩
+      · rw [declaredConditions_cons]
+        exact (touchCondition_declared gained c y hy).append (relax_declared gained cs)
+      · rw [declaredConditions_append]
+        exact (relax_declared gained [c]).append (touchConditions_declared gained cs y hy)
+
+  theorem touchCondition_declared : ∀ (gained : Bool) (c : Condition),
+      ∀ x ∈ touchCondition gained c, declaredConditions [x.2] <+ declaredConditions [c]
+    | _, .path _ => by simp [touchCondition]
+    | gained, .existential e ms => fun x hx => by
+      simp only [touchCondition, List.mem_map] at hx
+      obtain ⟨y, hy, rfl⟩ := hx
+      simpa [declaredConditions] using touchMatches_declared _ ms y hy
+end
+
+/-- **The inverses keep labels distinct.** -/
+theorem inverses_distinct {s : Specification} (hd : ∀ d ∈ s.descendants, DistinctLabels d) :
+    ∀ i ∈ inverses s, ∀ d ∈ i.descendants, DistinctLabels d := by
+  intro i hi
+  simp only [inverses, inversesFor, List.mem_append, List.mem_map] at hi
+  simp only [Specification.descendants, List.forall_mem_map, DistinctLabels, declared_append] at hd ⊢
+  rcases hi with ⟨y, hy, rfl⟩ | ⟨y, hy, rfl⟩ <;>
+    exact fun x hx => ((touchMatches_declared _ _ y hy).append (List.Sublist.refl _)).nodup (hd x hx)
+
+/-! ### The split -/
+
+mutual
+  /-- Hoisting keeps what the matches declare. -/
+  theorem hoistMatches_declared (scope : List Name) : ∀ (i : Nat) (pos : Bool) (ms : List Match),
+      declaredMatches (hoistMatches scope i pos ms).2.2 = declaredMatches ms
+    | _, _, [] => rfl
+    | i, pos, .mk u cs :: rest => by
+      have h1 := hoistConditions_declared scope i pos cs
+      have h2 := hoistMatches_declared scope (hoistConditions scope i pos cs).1 pos rest
+      rcases hgenC : hoistConditions scope i pos cs with ⟨i1, headCs, cs'⟩
+      rcases hgenM : hoistMatches scope i1 pos rest with ⟨i2, headRest, rest'⟩
+      rw [hgenC] at h1 h2; rw [hgenM] at h2
+      simp only [hoistMatches, hgenC, hgenM, declaredMatches] at h1 h2 ⊢
+      rw [h1, h2]
+
+  theorem hoistConditions_declared (scope : List Name) : ∀ (i : Nat) (pos : Bool) (cs : List Condition),
+      declaredConditions (hoistConditions scope i pos cs).2.2 = declaredConditions cs
+    | _, _, [] => rfl
+    | i, pos, c :: cs => by
+      have h1 := hoistCondition_declared scope i pos c
+      have h2 := hoistConditions_declared scope (hoistCondition scope i pos c).1 pos cs
+      rcases hgenC : hoistCondition scope i pos c with ⟨i1, headC, c'⟩
+      rcases hgenCs : hoistConditions scope i1 pos cs with ⟨i2, headCs, cs'⟩
+      rw [hgenC] at h1 h2; rw [hgenCs] at h2
+      simp only [hoistConditions, hgenC, hgenCs] at h1 h2 ⊢
+      rw [declaredConditions_cons, h1, h2, ← declaredConditions_cons]
+
+  theorem hoistCondition_declared (scope : List Name) : ∀ (i : Nat) (pos : Bool) (c : Condition),
+      declaredConditions [(hoistCondition scope i pos c).2.2] = declaredConditions [c]
+    | i, pos, .path pc => by
+      unfold hoistCondition
+      split <;> simp [declaredConditions]
+    | i, pos, .existential e ms => by
+      have h := hoistMatches_declared scope i (pos && e) ms
+      rcases hgenM : hoistMatches scope i (pos && e) ms with ⟨i1, headMs, ms'⟩
+      rw [hgenM] at h
+      simp only [hoistCondition, hgenM, declaredConditions] at h ⊢
+      rw [h]
+end
+
+mutual
+  /-- The head matches a hoist produces declare distinct split labels, numbered
+  from `i` up to the next free index. -/
+  theorem hoistMatches_head (scope : List Name) : ∀ (i : Nat) (pos : Bool) (ms : List Match),
+      (declaredMatches (hoistMatches scope i pos ms).2.1).Nodup ∧
+        ∀ x ∈ declaredMatches (hoistMatches scope i pos ms).2.1,
+          ∃ j, i ≤ j ∧ j < (hoistMatches scope i pos ms).1 ∧ x = splitLabel j
+    | _, _, [] => by simp [hoistMatches, declaredMatches]
+    | i, pos, .mk u cs :: rest => by
+      have h1 := hoistConditions_head scope i pos cs
+      have hm1 := hoistConditions_mono scope i pos cs
+      have h2 := hoistMatches_head scope (hoistConditions scope i pos cs).1 pos rest
+      have hm2 := hoistMatches_mono scope (hoistConditions scope i pos cs).1 pos rest
+      rcases hgenC : hoistConditions scope i pos cs with ⟨i1, headCs, cs'⟩
+      rcases hgenM : hoistMatches scope i1 pos rest with ⟨i2, headRest, rest'⟩
+      rw [hgenC] at h1 h2 hm1 hm2; rw [hgenM] at h2 hm2
+      simp only [hoistMatches, hgenC, hgenM, declared_append] at h1 h2 hm1 hm2 ⊢
+      refine ⟨List.nodup_append.mpr ⟨h1.1, h2.1, fun a ha b hb hab => ?_⟩, fun x hx => ?_⟩
+      · obtain ⟨j, -, hj, rfl⟩ := h1.2 a ha
+        obtain ⟨k, hk, -, he⟩ := h2.2 b hb
+        have := splitLabel_injective (hab.trans he); omega
+      · rcases List.mem_append.mp hx with hx | hx
+        · obtain ⟨j, hj1, hj2, rfl⟩ := h1.2 x hx; exact ⟨j, hj1, by omega, rfl⟩
+        · obtain ⟨j, hj1, hj2, rfl⟩ := h2.2 x hx; exact ⟨j, by omega, hj2, rfl⟩
+
+  theorem hoistConditions_head (scope : List Name) : ∀ (i : Nat) (pos : Bool) (cs : List Condition),
+      (declaredMatches (hoistConditions scope i pos cs).2.1).Nodup ∧
+        ∀ x ∈ declaredMatches (hoistConditions scope i pos cs).2.1,
+          ∃ j, i ≤ j ∧ j < (hoistConditions scope i pos cs).1 ∧ x = splitLabel j
+    | _, _, [] => by simp [hoistConditions, declaredMatches]
+    | i, pos, c :: cs => by
+      have h1 := hoistCondition_head scope i pos c
+      have hm1 := hoistCondition_mono scope i pos c
+      have h2 := hoistConditions_head scope (hoistCondition scope i pos c).1 pos cs
+      have hm2 := hoistConditions_mono scope (hoistCondition scope i pos c).1 pos cs
+      rcases hgenC : hoistCondition scope i pos c with ⟨i1, headC, c'⟩
+      rcases hgenCs : hoistConditions scope i1 pos cs with ⟨i2, headCs, cs'⟩
+      rw [hgenC] at h1 h2 hm1 hm2; rw [hgenCs] at h2 hm2
+      simp only [hoistConditions, hgenC, hgenCs, declared_append] at h1 h2 hm1 hm2 ⊢
+      refine ⟨List.nodup_append.mpr ⟨h1.1, h2.1, fun a ha b hb hab => ?_⟩, fun x hx => ?_⟩
+      · obtain ⟨j, -, hj, rfl⟩ := h1.2 a ha
+        obtain ⟨k, hk, -, he⟩ := h2.2 b hb
+        have := splitLabel_injective (hab.trans he); omega
+      · rcases List.mem_append.mp hx with hx | hx
+        · obtain ⟨j, hj1, hj2, rfl⟩ := h1.2 x hx; exact ⟨j, hj1, by omega, rfl⟩
+        · obtain ⟨j, hj1, hj2, rfl⟩ := h2.2 x hx; exact ⟨j, by omega, hj2, rfl⟩
+
+  theorem hoistCondition_head (scope : List Name) : ∀ (i : Nat) (pos : Bool) (c : Condition),
+      (declaredMatches (hoistCondition scope i pos c).2.1).Nodup ∧
+        ∀ x ∈ declaredMatches (hoistCondition scope i pos c).2.1,
+          ∃ j, i ≤ j ∧ j < (hoistCondition scope i pos c).1 ∧ x = splitLabel j
+    | i, pos, .path pc => by
+      unfold hoistCondition
+      split <;> simp [declaredMatches, declaredConditions]
+      exact ⟨i, Nat.le_refl _, Nat.lt_succ_self _, rfl⟩
+    | i, pos, .existential e ms => by
+      have h := hoistMatches_head scope i (pos && e) ms
+      rcases hgenM : hoistMatches scope i (pos && e) ms with ⟨i1, headMs, ms'⟩
+      rw [hgenM] at h
+      simpa only [hoistCondition, hgenM] using h
+end
+
+theorem paths_of_children_nil {p : Projection} (h : p.children = []) : p.paths = [([], p)] := by
+  rw [Projection.paths]; simp [h]
+
+/-- **The split keeps labels distinct**: its head's and its tail's. -/
+theorem split_distinct {s : Specification} (hwf : WellFormed s) (hd : ∀ d ∈ s.descendants, DistinctLabels d) :
+    (∀ d ∈ (splitBeforeFirstSuccessor s).head.descendants, DistinctLabels d) ∧
+      ∀ t, (splitBeforeFirstSuccessor s).tail = some t → ∀ d ∈ t.descendants, DistinctLabels d := by
+  have hd0 : (declaredMatches s.matchList).Nodup := by
+    simpa [DistinctLabels] using hd _ (List.mem_map_of_mem (mem_paths.mpr (Or.inl rfl)))
+  simp only [Specification.descendants, List.forall_mem_map, DistinctLabels, declared_append] at hd
+  unfold splitBeforeFirstSuccessor
+  generalize hspan : s.matchList.span matchIsDeterministic = sp
+  obtain ⟨before, rest⟩ := sp
+  cases rest with
+  | nil =>
+    simp only [Specification.descendants, List.forall_mem_map, DistinctLabels, declared_append]
+    exact ⟨hd, fun _ h => nomatch h⟩
+  | cons pivot after =>
+    have hs : s.matchList = before ++ pivot :: after := by
+      have h := span_loop_append matchIsDeterministic s.matchList []
+      unfold List.span at hspan
+      rw [hspan] at h
+      simpa using h.symm
+    have hw := hwf.wellNamed
+    rw [hs, wellNamedMatches_append] at hw
+    rw [hs, declared_append] at hd0 hd
+    unfold hoistAt
+    have hh := hoistMatches_head (scopeAt s before) 0 true (pivot :: after)
+    have ht := hoistMatches_declared (scopeAt s before) 0 true (pivot :: after)
+    rcases hgenM : hoistMatches (scopeAt s before) 0 true (pivot :: after) with ⟨n, hm, tailMatches⟩
+    rw [hgenM] at hh ht
+    simp only [hgenM] at hh ht ⊢
+    refine ⟨?_, fun t ht' => ?_⟩
+    · rw [Specification.descendants, paths_of_children_nil (by simp [Projection.children])]
+      simp only [List.map_cons, List.map_nil, List.mem_singleton, forall_eq, DistinctLabels, List.append_nil,
+        declared_append]
+      refine List.nodup_append.mpr ⟨(List.nodup_append.mp hd0).1, hh.1, fun a ha b hb hab => ?_⟩
+      obtain ⟨j, -, -, rfl⟩ := hh.2 b hb
+      have := (wellNamedMatches_declared _ _ hw.1 a ha).2
+      rw [hab, isReserved_splitLabel] at this; exact absurd this (by simp)
+    · simp only [Option.some.injEq] at ht'; subst ht'
+      simp only [Specification.descendants, List.forall_mem_map, DistinctLabels, declared_append, ht]
+      exact fun x hx => (List.sublist_append_right _ _).nodup (by simpa [List.append_assoc] using hd x hx)
+
+/-! ### Conditions on a given
+
+Reducing moves the givens' conditions onto a new first match, so their matches
+join the first level of every descendant. `DistinctLabels` of the
+specification without them does not say that they declare names the matches do
+not: a condition on a given and a match may share a name, which is no reuse in
+scope for `WellFormed` (the condition is in scope of neither), and the
+reduction then declares it twice in one descendant
+(`vectors/distinct-labels/given-condition-shares-a-name.json`). So the
+distinctness reduction keeps is one that counts the conditions; and a
+specification with conditions on its givens is renamed after it is reduced. -/
+
+/-- No descendant declares a name twice, counting the givens' conditions as
+part of every descendant. -/
+def ConditionedSpecification.DistinctLabels (c : ConditionedSpecification) : Prop :=
+  ∀ d ∈ c.spec.descendants, (declaredConditions c.conditions ++ declaredMatches d.matchList).Nodup
+
+/-- **Reducing conditions on a given keeps labels distinct**, counting the
+conditions, when its new label is one no descendant declares. -/
+theorem reduceGivenConditions_distinct {c : ConditionedSpecification} {x : Name} (hd : c.DistinctLabels)
+    (hx : ∀ d ∈ c.spec.descendants, x ∉ declaredConditions c.conditions ++ declaredMatches d.matchList) :
+    ∀ d ∈ (reduceGivenConditions x c).descendants, DistinctLabels d := by
+  unfold reduceGivenConditions
+  simp only [ConditionedSpecification.DistinctLabels, Specification.descendants, List.forall_mem_map,
+    ConditionedSpecification.spec] at hd hx
+  split
+  · simp only [Specification.descendants, List.forall_mem_map, DistinctLabels, List.cons_append,
+      declaredMatches, declaredConditions, declared_append]
+    intro y hy
+    rw [← declared_append, List.nodup_cons]
+    exact ⟨hx y hy, by simpa [declared_append, List.append_assoc] using hd y hy⟩
+  · simp only [Specification.descendants, List.forall_mem_map, DistinctLabels]
+    exact fun y hy => (List.sublist_append_right _ _).nodup (hd y hy)
 
 end JinagaSpec
